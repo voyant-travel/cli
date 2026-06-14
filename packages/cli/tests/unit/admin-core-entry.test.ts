@@ -98,11 +98,11 @@ describe("resolveCoreAdminEntry", () => {
   })
 
   function writeAdminApp(exports: Record<string, string>, files: Record<string, string> = {}) {
-    const dir = join(tmp, "node_modules", "@voyantjs", "admin-app")
+    const dir = join(tmp, "node_modules", "@voyant-travel", "admin-app")
     mkdirSync(dir, { recursive: true })
     writeFileSync(
       join(dir, "package.json"),
-      JSON.stringify({ name: "@voyantjs/admin-app", version: "0.0.0", exports }),
+      JSON.stringify({ name: "@voyant-travel/admin-app", version: "0.0.0", exports }),
     )
     for (const [rel, content] of Object.entries(files)) {
       const abs = join(dir, rel)

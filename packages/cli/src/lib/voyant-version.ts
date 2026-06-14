@@ -1,5 +1,5 @@
 /**
- * The version of the `@voyantjs/*` framework packages that scaffolded code
+ * The version of the `@voyant-travel/*` framework packages that scaffolded code
  * — projects from `voyant new`, modules from `voyant generate module` —
  * should depend on by default.
  *
@@ -9,7 +9,7 @@
  * and we want fresh scaffolds to track it.
  *
  * It also drives the URL for `voyant new --template <built-in>`, which
- * resolves to `https://github.com/voyantjs/voyant/releases/download/v<X>/voyant-starter-<name>-<X>.tar.gz`.
+ * resolves to `https://github.com/voyant-travel/voyant/releases/download/v<X>/voyant-starter-<name>-<X>.tar.gz`.
  * That release tag must exist with the matching starter assets attached.
  */
 export const VOYANT_FRAMEWORK_VERSION = "0.18.0"

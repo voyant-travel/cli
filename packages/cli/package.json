@@ -1,5 +1,5 @@
 {
-  "name": "@voyantjs/cli",
+  "name": "@voyant-travel/cli",
   "version": "0.26.0",
   "license": "Apache-2.0",
   "description": "Unified CLI for the Voyant open-source framework and the Voyant Cloud platform.",
@@ -49,17 +49,17 @@
     "prepack": "pnpm run build"
   },
   "dependencies": {
-    "@voyantjs/cloud-sdk": "^0.6.1",
-    "@voyantjs/core": "^0.18.0",
-    "@voyantjs/workflows": "^0.107.9",
-    "@voyantjs/workflows-orchestrator": "^0.107.9",
-    "@voyantjs/workflows-orchestrator-node": "^0.107.9",
+    "@voyant-travel/cloud-sdk": "^0.6.1",
+    "@voyant-travel/core": "^0.18.0",
+    "@voyant-travel/workflows": "^0.107.9",
+    "@voyant-travel/workflows-orchestrator": "^0.107.9",
+    "@voyant-travel/workflows-orchestrator-node": "^0.107.9",
     "esbuild": "^0.28.0",
     "tar": "^7.4.3"
   },
   "devDependencies": {
     "@types/node": "^22.10.1",
-    "@voyantjs/cli-tsconfig": "workspace:*",
+    "@voyant-travel/cli-tsconfig": "workspace:*",
     "typescript": "5.9.2",
     "vitest": "^4.1.2"
   },
@@ -206,7 +206,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/voyantjs/cli.git",
+    "url": "https://github.com/voyant-travel/cli.git",
     "directory": "packages/cli"
   }
 }

@@ -7,7 +7,7 @@
 //                    (except the `run` bodies, which live in the
 //                    bundle).
 //
-// The bundle is self-contained: @voyantjs/workflows and any workspace
+// The bundle is self-contained: @voyant-travel/workflows and any workspace
 // deps are inlined so the artifact is hermetic. The bundle is then
 // imported in-process to populate the workflow registry and a
 // manifest is extracted via `buildManifest`.

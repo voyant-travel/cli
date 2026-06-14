@@ -40,7 +40,7 @@ describe("parseDrizzleConfig", () => {
 
   it("returns null entries when schema is derived (a call), not a literal list", () => {
     const source = `
-      import { resolveSchemas } from "@voyantjs/cli/drizzle"
+      import { resolveSchemas } from "@voyant-travel/cli/drizzle"
       import config from "./voyant.config"
       export default defineConfig({
         schema: resolveSchemas(config),
@@ -86,7 +86,7 @@ describe("parseDrizzleConfig", () => {
 
   it("flags derived schemas that include local schemas (resolveSchemaManifest)", () => {
     const source = `
-      import { resolveSchemaManifest } from "@voyantjs/cli/drizzle"
+      import { resolveSchemaManifest } from "@voyant-travel/cli/drizzle"
       export default defineConfig({ schema: resolveSchemaManifest(config), out: "./migrations" })
     `
     expect(parseDrizzleConfig(source).derivedIncludesLocalSchemas).toBe(true)
@@ -94,7 +94,7 @@ describe("parseDrizzleConfig", () => {
 
   it("does NOT flag a bare resolveSchemas() (omits template-local schemas)", () => {
     const source = `
-      import { resolveSchemas } from "@voyantjs/cli/drizzle"
+      import { resolveSchemas } from "@voyant-travel/cli/drizzle"
       export default defineConfig({ schema: resolveSchemas(config), out: "./migrations" })
     `
     expect(parseDrizzleConfig(source).derivedIncludesLocalSchemas).toBe(false)

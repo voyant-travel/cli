@@ -40,7 +40,7 @@ const SKIP_PATHS = new Set([
 
 const BUILT_IN_TEMPLATES = new Set(["operator"])
 const STARTER_RELEASE_BASE_URL =
-  process.env.VOYANT_STARTER_BASE_URL ?? "https://github.com/voyantjs/voyant/releases/download"
+  process.env.VOYANT_STARTER_BASE_URL ?? "https://github.com/voyant-travel/voyant/releases/download"
 
 const TEMPLATE_ALIAS_FALLBACK = "operator"
 
@@ -226,7 +226,7 @@ function starterAssetUrl(starter: string, voyantVersion: string): string {
 }
 
 function defaultConfigSource(): string {
-  return `import { defineVoyantConfig } from "@voyantjs/core/config"
+  return `import { defineVoyantConfig } from "@voyant-travel/core/config"
 
 export default defineVoyantConfig({
   deployment: "cloudflare-worker",
@@ -266,7 +266,7 @@ function ensureVoyantDependencyVersions(
 function normalizeWorkspaceRanges(deps: Record<string, unknown>, voyantVersion: string): void {
   for (const [name, value] of Object.entries(deps)) {
     if (
-      name.startsWith("@voyantjs/") &&
+      name.startsWith("@voyant-travel/") &&
       typeof value === "string" &&
       value.startsWith("workspace:")
     ) {
@@ -303,10 +303,10 @@ function inferSchemaImports(rawConfig: string): string[] {
 
 function toPublishedSchemaImport(pkgDir: string, srcPath: string): string | null {
   if (pkgDir === "db" && srcPath === "schema/index.ts") {
-    return "@voyantjs/db/schema"
+    return "@voyant-travel/db/schema"
   }
 
-  const packageName = `@voyantjs/${pkgDir}`
+  const packageName = `@voyant-travel/${pkgDir}`
   if (srcPath === "schema.ts") return `${packageName}/schema`
   return null
 }

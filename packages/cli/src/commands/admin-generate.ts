@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path"
 
-import type { VoyantConfig } from "@voyantjs/core/config"
+import type { VoyantConfig } from "@voyant-travel/core/config"
 import { resolveCoreAdminEntry } from "../lib/admin-core-entry.js"
 import {
   type AdminEntryScanResult,
@@ -48,7 +48,7 @@ import type { CommandContext, CommandResult } from "../types.js"
  * package.json inspection only, and emit a committed file of static imports:
  *
  * ```ts
- * import { createPromotionsAdminExtension } from "@voyantjs/promotions-react/admin"
+ * import { createPromotionsAdminExtension } from "@voyant-travel/promotions-react/admin"
  * export const generatedAdminExtensionFactories = { ... } as const
  * ```
  *
@@ -66,7 +66,7 @@ import type { CommandContext, CommandResult } from "../types.js"
  * host's `router.tsx` merges. Layout contributions with nested `children`
  * become `addChildren` subtrees whose tail spreads
  * `adminExtensionChildRoutes` for runtime-known children. The BUILT-IN core
- * entry (`@voyantjs/admin-app/core-extension`, extension id `core`, factory
+ * entry (`@voyant-travel/admin-app/core-extension`, extension id `core`, factory
  * `createAdminCoreExtension`) is included independently of the manifest
  * module list whenever the package is resolvable from the host with a
  * `"./core-extension"` export — pre-core hosts are unaffected. NO
@@ -307,7 +307,7 @@ function generateRoutesModule(options: GenerateRoutesModuleOptions): CommandResu
   const found = foundEntries(results)
 
   // Manifest-derived admin entries plus the built-in core entry
-  // (`@voyantjs/admin-app/core-extension`), which is not a manifest module.
+  // (`@voyant-travel/admin-app/core-extension`), which is not a manifest module.
   // Conditional on resolvability so pre-core hosts are unaffected.
   interface RoutesEntry {
     importSpec: string
@@ -348,7 +348,7 @@ function generateRoutesModule(options: GenerateRoutesModuleOptions): CommandResu
   } else {
     ctx.stderr(
       `[admin-generate] routes: note — built-in core entry skipped (no ` +
-        `@voyantjs/admin-app with a "./core-extension" export resolvable from the host)\n`,
+        `@voyant-travel/admin-app with a "./core-extension" export resolvable from the host)\n`,
     )
   }
 

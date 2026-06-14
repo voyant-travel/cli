@@ -31,14 +31,14 @@ interface FixtureOpts {
 
 function fixture(tmp: string, opts: FixtureOpts): void {
   writeFileSync(join(tmp, "package.json"), JSON.stringify({ name: "consumer", version: "0.0.0" }))
-  // Plain object default export — no @voyantjs/core import needed to load it.
-  writeFileSync(join(tmp, "voyant.config.ts"), `export default { modules: ["@voyantjs/db"] }\n`)
+  // Plain object default export — no @voyant-travel/core import needed to load it.
+  writeFileSync(join(tmp, "voyant.config.ts"), `export default { modules: ["@voyant-travel/db"] }\n`)
 
   const dbDir = join(tmp, "packages", "db")
   mkdirSync(join(dbDir, "src"), { recursive: true })
   writeFileSync(
     join(dbDir, "package.json"),
-    JSON.stringify({ name: "@voyantjs/db", version: "0.0.0", voyant: { schema: "./schema" } }),
+    JSON.stringify({ name: "@voyant-travel/db", version: "0.0.0", voyant: { schema: "./schema" } }),
   )
   writeFileSync(join(dbDir, "src", "schema.ts"), "export const t = 1\n")
 

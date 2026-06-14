@@ -69,16 +69,16 @@ describe("resolveCloudAuth", () => {
 
   it("uses --api-url for both base URL and credentials lookup", () => {
     setCredential(
-      "https://staging.api.voyantjs.com",
+      "https://staging.api.voyant.travel",
       { accessToken: "tok_staging", createdAt: "x" },
       credentialsPath,
     )
     const got = resolveCloudAuth({
-      apiUrl: "https://staging.api.voyantjs.com",
+      apiUrl: "https://staging.api.voyant.travel",
       env: {},
       credentialsPath,
     })
-    expect(got.apiUrl).toBe("https://staging.api.voyantjs.com")
+    expect(got.apiUrl).toBe("https://staging.api.voyant.travel")
     expect(got.accessToken).toBe("tok_staging")
     expect(got.source).toBe("credentials")
   })
@@ -129,18 +129,18 @@ describe("resolveCloudAuth", () => {
   it("throws CloudAuthError when no source produces a token", () => {
     expect(() => resolveCloudAuth({ env: {}, credentialsPath })).toThrow(CloudAuthError)
     expect(() => resolveCloudAuth({ env: {}, credentialsPath })).toThrow(
-      /No Voyant Cloud credentials found for https:\/\/api\.voyantjs\.com/,
+      /No Voyant Cloud credentials found for https:\/\/api\.voyant\.travel/,
     )
   })
 
   it("throws with the resolved apiUrl in the message (helps when staging is misconfigured)", () => {
     expect(() =>
       resolveCloudAuth({
-        apiUrl: "https://staging.api.voyantjs.com",
+        apiUrl: "https://staging.api.voyant.travel",
         env: {},
         credentialsPath,
       }),
-    ).toThrow(/staging\.api\.voyantjs\.com/)
+    ).toThrow(/staging\.api\.voyant\.travel/)
   })
 })
 
@@ -170,11 +170,11 @@ describe("createCloudClient", () => {
   it("threads --api-url into the client baseUrl", () => {
     const client = createCloudClient({
       token: "tok_flag",
-      apiUrl: "https://staging.api.voyantjs.com",
+      apiUrl: "https://staging.api.voyant.travel",
       env: {},
       credentialsPath,
     })
-    expect(client.transport.baseUrl).toBe("https://staging.api.voyantjs.com")
+    expect(client.transport.baseUrl).toBe("https://staging.api.voyant.travel")
   })
 
   it("throws CloudAuthError when no credentials are available", () => {

@@ -23,7 +23,7 @@ function makeCtx(argv: string[], cwd: string) {
 /**
  * A synthetic `links.mjs` file that fabricates a minimal LinkDefinition
  * without importing `defineLink` (so tests don't need to resolve
- * @voyantjs/core from a tmpdir).
+ * @voyant-travel/core from a tmpdir).
  */
 const SYNTHETIC_LINK = `
 const personLinkable = { module: "crm", entity: "person", table: "people" }

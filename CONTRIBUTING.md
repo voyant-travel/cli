@@ -1,16 +1,16 @@
 # Contributing
 
-This repo publishes the unified `@voyantjs/cli` binary.
+This repo publishes the unified `@voyant-travel/cli` binary.
 
 ## Scope
 
 - OSS commands that scaffold and run Voyant projects without authentication
-- Cloud commands that talk to Voyant Cloud over HTTP via `@voyantjs/cloud-sdk`
+- Cloud commands that talk to Voyant Cloud over HTTP via `@voyant-travel/cloud-sdk`
 - Shared CLI infrastructure (arg parsing, credentials, config loading,
   template fetching)
 
 Out of scope: server-side code (lives in `voyant-cloud`), framework runtime
-(lives in `voyantjs/voyant`).
+(lives in `voyant-travel/voyant`).
 
 ## Working rules
 

@@ -3,7 +3,7 @@ import { existsSync, writeFileSync } from "node:fs"
 import { isAbsolute, join, resolve } from "node:path"
 import { pathToFileURL } from "node:url"
 
-import { generateLinkTableSql, type LinkDefinition } from "@voyantjs/core/links"
+import { generateLinkTableSql, type LinkDefinition } from "@voyant-travel/core/links"
 
 import { parseArgs } from "../lib/args.js"
 import { renderLinkDrizzleSchema } from "../lib/link-schema.js"

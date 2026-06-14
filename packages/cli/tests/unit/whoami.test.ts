@@ -43,17 +43,17 @@ describe("whoamiCommand", () => {
   })
 
   it("prints the credentials-file source when only a stored cred exists", () => {
-    setCredential("https://api.voyantjs.com", { accessToken: "tok_file", createdAt: "x" })
+    setCredential("https://api.voyant.travel", { accessToken: "tok_file", createdAt: "x" })
     const { ctx, stdout } = makeCtx([])
     const code = whoamiCommand(ctx)
     expect(code).toBe(0)
     const text = stdout.join("")
-    expect(text).toContain("API URL:      https://api.voyantjs.com")
+    expect(text).toContain("API URL:      https://api.voyant.travel")
     expect(text).toContain("Token source: credentials")
   })
 
   it("prefers --token flag and reports source as 'flag'", () => {
-    setCredential("https://api.voyantjs.com", { accessToken: "tok_file", createdAt: "x" })
+    setCredential("https://api.voyant.travel", { accessToken: "tok_file", createdAt: "x" })
     const { ctx, stdout } = makeCtx(["--token", "tok_flag"])
     const code = whoamiCommand(ctx)
     expect(code).toBe(0)
@@ -68,13 +68,13 @@ describe("whoamiCommand", () => {
   })
 
   it("uses --api-url for the lookup", () => {
-    setCredential("https://staging.api.voyantjs.com", {
+    setCredential("https://staging.api.voyant.travel", {
       accessToken: "tok_stg",
       createdAt: "x",
     })
-    const { ctx, stdout } = makeCtx(["--api-url", "https://staging.api.voyantjs.com"])
+    const { ctx, stdout } = makeCtx(["--api-url", "https://staging.api.voyant.travel"])
     const code = whoamiCommand(ctx)
     expect(code).toBe(0)
-    expect(stdout.join("")).toContain("API URL:      https://staging.api.voyantjs.com")
+    expect(stdout.join("")).toContain("API URL:      https://staging.api.voyant.travel")
   })
 })

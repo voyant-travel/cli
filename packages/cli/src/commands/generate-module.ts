@@ -76,7 +76,7 @@ export async function generateModuleCommand(ctx: CommandContext): Promise<Comman
   }
 
   ctx.stdout(
-    `Created module @voyantjs/${kebab} at ${moduleDir}\n` +
+    `Created module @voyant-travel/${kebab} at ${moduleDir}\n` +
       `Next steps:\n` +
       `  1. Add the package to pnpm-workspace.yaml (already covered by packages/*)\n` +
       `  2. pnpm install\n` +

@@ -35,11 +35,11 @@ function seedTemplate(root: string) {
         name: "template-operator",
         version: "1.2.3",
         dependencies: {
-          "@voyantjs/core": "workspace:*",
-          "@voyantjs/db": "workspace:*",
+          "@voyant-travel/core": "workspace:*",
+          "@voyant-travel/db": "workspace:*",
         },
         devDependencies: {
-          "@voyantjs/voyant-typescript-config": "workspace:*",
+          "@voyant-travel/voyant-typescript-config": "workspace:*",
         },
       },
       null,
@@ -160,10 +160,10 @@ describe("newCommand", () => {
     expect(pkg.name).toBe("my-app")
     expect(pkg.version).toBe("0.0.1")
     expect(pkg.private).toBe(true)
-    expect(pkg.dependencies["@voyantjs/core"]).toBe(expectedVoyantVersionRange)
-    expect(pkg.dependencies["@voyantjs/crm"]).toBe(expectedVoyantVersionRange)
-    expect(pkg.dependencies["@voyantjs/legal"]).toBe(expectedVoyantVersionRange)
-    expect(pkg.devDependencies["@voyantjs/voyant-typescript-config"]).toBe(
+    expect(pkg.dependencies["@voyant-travel/core"]).toBe(expectedVoyantVersionRange)
+    expect(pkg.dependencies["@voyant-travel/crm"]).toBe(expectedVoyantVersionRange)
+    expect(pkg.dependencies["@voyant-travel/legal"]).toBe(expectedVoyantVersionRange)
+    expect(pkg.devDependencies["@voyant-travel/voyant-typescript-config"]).toBe(
       expectedVoyantVersionRange,
     )
   })
@@ -222,9 +222,9 @@ describe("newCommand", () => {
     const drizzle = readFileSync(join(tmp, "my-app", "drizzle.config.ts"), "utf8")
     const schema = readFileSync(join(tmp, "my-app", "src", "db", "voyant-schema.ts"), "utf8")
     expect(drizzle).toContain('schema: "./src/db/voyant-schema.ts"')
-    expect(schema).toContain('export * from "@voyantjs/db/schema"')
-    expect(schema).toContain('export * from "@voyantjs/bookings/schema"')
-    expect(schema).toContain('export * from "@voyantjs/legal/schema"')
+    expect(schema).toContain('export * from "@voyant-travel/db/schema"')
+    expect(schema).toContain('export * from "@voyant-travel/bookings/schema"')
+    expect(schema).toContain('export * from "@voyant-travel/legal/schema"')
   })
 
   it("downloads a built-in starter from a versioned release tarball", async () => {

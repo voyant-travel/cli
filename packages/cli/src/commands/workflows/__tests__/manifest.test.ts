@@ -1,4 +1,4 @@
-import type { WorkflowDefinition } from "@voyantjs/workflows"
+import type { WorkflowDefinition } from "@voyant-travel/workflows"
 import { describe, expect, it } from "vitest"
 import {
   buildManifest,

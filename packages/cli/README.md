@@ -1,9 +1,9 @@
-# `@voyantjs/cli`
+# `@voyant-travel/cli`
 
 Unified CLI for the Voyant open-source framework and the Voyant Cloud platform.
 
 ```sh
-npm i -g @voyantjs/cli
+npm i -g @voyant-travel/cli
 voyant --help
 ```
 
@@ -46,7 +46,7 @@ Cloud commands accept these inputs in priority order:
   keyed by API URL — multiple environments coexist cleanly)
 
 `--api-url <url>` and `VOYANT_CLOUD_API_URL` likewise override the default
-`https://api.voyantjs.com`.
+`https://api.voyant.travel`.
 
 ## Workflow bundles
 
@@ -61,15 +61,15 @@ workflow bundles from the filesystem.
 
 ## Programmatic use
 
-`@voyantjs/cli` exposes its lib helpers and command handlers for embedding
+`@voyant-travel/cli` exposes its lib helpers and command handlers for embedding
 in scripts and other tools:
 
 ```ts
-import { resolveSchemas } from "@voyantjs/cli/drizzle"
-import { runDeviceCodeFlow } from "@voyantjs/cli/lib/device-code"
-import { resolveCloudAuth } from "@voyantjs/cli/lib/cloud-client"
-import { setCredential } from "@voyantjs/cli/lib/credentials"
-import { newCommand } from "@voyantjs/cli/commands/new"
+import { resolveSchemas } from "@voyant-travel/cli/drizzle"
+import { runDeviceCodeFlow } from "@voyant-travel/cli/lib/device-code"
+import { resolveCloudAuth } from "@voyant-travel/cli/lib/cloud-client"
+import { setCredential } from "@voyant-travel/cli/lib/credentials"
+import { newCommand } from "@voyant-travel/cli/commands/new"
 ```
 
 Subpath exports under `./commands/*` and `./lib/*` are stable; see the
@@ -82,7 +82,7 @@ package.json `exports` field for the full list.
 
 ## Source
 
-[github.com/voyantjs/cli](https://github.com/voyantjs/cli)
+[github.com/voyant-travel/cli](https://github.com/voyant-travel/cli)
 
 ## License
 

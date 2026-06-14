@@ -7,7 +7,7 @@
 
 import { writeFile } from "node:fs/promises"
 import { resolve as resolvePath } from "node:path"
-import type { WorkflowDefinition } from "@voyantjs/workflows"
+import type { WorkflowDefinition } from "@voyant-travel/workflows"
 import { getStringFlag, type ParsedArgs } from "../../lib/args.js"
 import type { WorkflowDef } from "./list.js"
 import { buildManifest, type Manifest } from "./manifest.js"
@@ -65,7 +65,7 @@ export async function runWorkflowsManifest(
 export async function defaultManifestDeps(): Promise<ManifestDeps> {
   const [entryMod, wfMod] = await Promise.all([
     import("../../lib/load-entry.js"),
-    import("@voyantjs/workflows") as Promise<{
+    import("@voyant-travel/workflows") as Promise<{
       __listRegisteredWorkflows: () => WorkflowDef[]
     }>,
   ])

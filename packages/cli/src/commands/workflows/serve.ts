@@ -18,7 +18,7 @@ import {
   type SchedulerHandle,
   type ScheduleSource,
   snapshotToRecord,
-} from "@voyantjs/workflows-orchestrator-node"
+} from "@voyant-travel/workflows-orchestrator-node"
 import { getStringFlag, type ParsedArgs } from "../../lib/args.js"
 import { createFsRunStore, type ListFilter, type RunStore } from "../../lib/run-store.js"
 import { createStoreStream, type StoreEvent, type StoreStream } from "../../lib/store-stream.js"
@@ -139,7 +139,7 @@ export function createChunkBus(): ChunkBus {
   }
 }
 
-/** HTTP-flavoured injection argument, mirroring @voyantjs/workflows/testing. */
+/** HTTP-flavoured injection argument, mirroring @voyant-travel/workflows/testing. */
 export type WaitpointInjection =
   | { kind: "EVENT"; eventType: string; payload?: unknown }
   | { kind: "SIGNAL"; name: string; payload?: unknown }
@@ -875,12 +875,12 @@ export async function defaultServeDeps(opts: DefaultServeDepsOptions = {}): Prom
     const { loadEntryFile } = await import("../../lib/load-entry.js")
     await loadEntryFile(entryAbs, { cacheBust: opts.cacheBustEntry })
 
-    const wfMod = (await import("@voyantjs/workflows")) as unknown as {
+    const wfMod = (await import("@voyant-travel/workflows")) as unknown as {
       __listRegisteredWorkflows: () => import("./list.js").WorkflowDef[]
     }
-    const handlerMod = await import("@voyantjs/workflows/handler")
-    const rateLimitMod = await import("@voyantjs/workflows/rate-limit")
-    const orchMod = await import("@voyantjs/workflows-orchestrator")
+    const handlerMod = await import("@voyant-travel/workflows/handler")
+    const rateLimitMod = await import("@voyant-travel/workflows/rate-limit")
+    const orchMod = await import("@voyant-travel/workflows-orchestrator")
 
     // One in-memory rate limiter for the life of the serve process.
     // Shared across every step invocation so `rateLimit` buckets
@@ -892,9 +892,9 @@ export async function defaultServeDeps(opts: DefaultServeDepsOptions = {}): Prom
     // anyway — the important part is that the routing works and the
     // runtime label flows into the journal / timeline. Production
     // replaces this with `createCfContainerStepRunner` from
-    // `@voyantjs/workflows-orchestrator-cloudflare`, which dispatches to a CF
+    // `@voyant-travel/workflows-orchestrator-cloudflare`, which dispatches to a CF
     // Container binding sized for the step.
-    const nodeStepRunner: import("@voyantjs/workflows/handler").StepRunner = async ({
+    const nodeStepRunner: import("@voyant-travel/workflows/handler").StepRunner = async ({
       attempt,
       fn,
       stepCtx,
@@ -929,7 +929,7 @@ export async function defaultServeDeps(opts: DefaultServeDepsOptions = {}): Prom
     // workflow registry each call, so it stays live for the entry's lifetime.
     // Forwards per-invocation options (signal + onStreamChunk) so cancel
     // and live-stream chunks work end-to-end.
-    const stepHandler: import("@voyantjs/workflows-orchestrator").StepHandler = async (
+    const stepHandler: import("@voyant-travel/workflows-orchestrator").StepHandler = async (
       req,
       stepOpts,
     ) => handlerMod.handleStepRequest(req, { rateLimiter, nodeStepRunner }, stepOpts)
@@ -982,7 +982,7 @@ export async function defaultServeDeps(opts: DefaultServeDepsOptions = {}): Prom
       // chunk with it before the trigger returns.
       const runId = generateLocalRunId()
       const memStore = orchMod.createInMemoryRunStore()
-      let record: import("@voyantjs/workflows-orchestrator").RunRecord
+      let record: import("@voyant-travel/workflows-orchestrator").RunRecord
       try {
         record = await orchMod.trigger(
           {
@@ -1079,7 +1079,7 @@ export async function defaultServeDeps(opts: DefaultServeDepsOptions = {}): Prom
   // them through the same trigger path as `POST /api/runs`. The
   // scheduler is started by `startServer()` and stopped in close().
   if (opts.entryFile && triggerRun) {
-    const wfMod2 = (await import("@voyantjs/workflows")) as unknown as {
+    const wfMod2 = (await import("@voyant-travel/workflows")) as unknown as {
       __listRegisteredWorkflows: () => import("./list.js").WorkflowDef[]
     }
     const sources: ScheduleSource[] = []

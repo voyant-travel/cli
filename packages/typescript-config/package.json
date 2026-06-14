@@ -1,5 +1,5 @@
 {
-  "name": "@voyantjs/cli-tsconfig",
+  "name": "@voyant-travel/cli-tsconfig",
   "version": "0.0.0",
   "private": true,
   "license": "Apache-2.0"

@@ -4,7 +4,7 @@
 import { getBooleanFlag, getStringFlag, type ParsedArgs } from "../../lib/args.js"
 
 /**
- * Enumerate workflows registered under @voyantjs/workflows after loading
+ * Enumerate workflows registered under @voyant-travel/workflows after loading
  * the entry file. Returns the list for programmatic callers; the CLI
  * entrypoint prints it.
  */
@@ -76,12 +76,12 @@ export async function runWorkflowsList(
 
 /**
  * Default deps binding: reads from the real filesystem and the real
- * @voyantjs/workflows registry.
+ * @voyant-travel/workflows registry.
  */
 export async function defaultListDeps(): Promise<ListDeps> {
   const [entryMod, wfMod] = await Promise.all([
     import("../../lib/load-entry.js"),
-    import("@voyantjs/workflows") as Promise<{ __listRegisteredWorkflows: () => WorkflowDef[] }>,
+    import("@voyant-travel/workflows") as Promise<{ __listRegisteredWorkflows: () => WorkflowDef[] }>,
   ])
   return {
     loadEntry: (path) => entryMod.loadEntryFile(path),

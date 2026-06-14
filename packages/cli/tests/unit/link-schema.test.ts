@@ -1,4 +1,4 @@
-import type { LinkDefinition } from "@voyantjs/core/links"
+import type { LinkDefinition } from "@voyant-travel/core/links"
 import { describe, expect, it } from "vitest"
 
 import { renderLinkDrizzleSchema } from "../../src/lib/link-schema.js"

@@ -2,7 +2,7 @@ import { existsSync } from "node:fs"
 import { isAbsolute, join, resolve as resolvePath } from "node:path"
 import { pathToFileURL } from "node:url"
 
-import type { VoyantConfig } from "@voyantjs/core/config"
+import type { VoyantConfig } from "@voyant-travel/core/config"
 
 import type { SchemaSeedConfig } from "./resolve-schemas.js"
 

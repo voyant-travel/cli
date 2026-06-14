@@ -1,5 +1,5 @@
 {
-  "extends": "@voyantjs/cli-tsconfig/base.json",
+  "extends": "@voyant-travel/cli-tsconfig/base.json",
   "compilerOptions": {
     "composite": false,
     "outDir": "dist",

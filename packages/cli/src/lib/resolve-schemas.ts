@@ -2,15 +2,15 @@ import { existsSync, readFileSync } from "node:fs"
 import { createRequire } from "node:module"
 import { dirname, join } from "node:path"
 
-import type { VoyantConfig } from "@voyantjs/core/config"
-import { resolveEntry } from "@voyantjs/core/config"
+import type { VoyantConfig } from "@voyant-travel/core/config"
+import { resolveEntry } from "@voyant-travel/core/config"
 
 /** Output mode for {@link resolveSchemas}. */
 export type SchemaResolutionStyle = "specifier" | "file"
 
 /**
  * Config shape the resolver reads. `additionalSchemas` is not yet part of the
- * published `@voyantjs/core` `VoyantConfig` type, so it is augmented here and
+ * published `@voyant-travel/core` `VoyantConfig` type, so it is augmented here and
  * read off the manifest at runtime. It lists schema-owning packages a template
  * **migrates but does not mount as a Hono module** — plugin-provided schemas
  * (e.g. catalog behind a bridge bundle) and FK-target packages (e.g.
@@ -29,7 +29,7 @@ export interface ResolveSchemasOptions {
   /** Working directory (defaults to `process.cwd()`). */
   cwd?: string
   /**
-   * "specifier" → returns package subpath strings like `@voyantjs/db/schema`.
+   * "specifier" → returns package subpath strings like `@voyant-travel/db/schema`.
    * "file" → resolves each subpath to an absolute file via Node's resolver.
    *
    * Defaults to "specifier", which works with drizzle-kit's bundler-style loader.
@@ -53,7 +53,7 @@ interface VoyantPackageManifest {
  * ```ts
  * // drizzle.config.ts
  * import { defineConfig } from "drizzle-kit"
- * import { resolveSchemas } from "@voyantjs/cli/drizzle"
+ * import { resolveSchemas } from "@voyant-travel/cli/drizzle"
  * import voyantConfig from "./voyant.config"
  *
  * export default defineConfig({
@@ -168,7 +168,7 @@ export function resolvePackageJson(mod: string, cwd: string): string | null {
   }
 
   // 3. Workspace fallback: monorepo-relative location.
-  const base = mod.startsWith("@voyantjs/") ? mod.slice("@voyantjs/".length) : mod
+  const base = mod.startsWith("@voyant-travel/") ? mod.slice("@voyant-travel/".length) : mod
   const ws = join(cwd, "packages", base, "package.json")
   if (existsSync(ws)) return ws
 

@@ -139,10 +139,10 @@ export async function runWorkflowsReplay(
 }
 
 export async function defaultReplayDeps(): Promise<ReplayDeps> {
-  const wfMod = (await import("@voyantjs/workflows")) as unknown as {
+  const wfMod = (await import("@voyant-travel/workflows")) as unknown as {
     getWorkflow: (id: string) => WorkflowDef | undefined
   }
-  const testingMod = (await import("@voyantjs/workflows/testing")) as unknown as {
+  const testingMod = (await import("@voyant-travel/workflows/testing")) as unknown as {
     runWorkflowForTest: ReplayDeps["runWorkflowForTest"]
   }
   return {

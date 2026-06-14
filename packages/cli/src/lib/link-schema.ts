@@ -1,4 +1,4 @@
-import type { LinkDefinition } from "@voyantjs/core/links"
+import type { LinkDefinition } from "@voyant-travel/core/links"
 
 /**
  * Render a Drizzle schema module that defines a `pgTable` for each materialized

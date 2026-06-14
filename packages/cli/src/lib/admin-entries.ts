@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from "node:fs"
 import { dirname, join } from "node:path"
 
-import { type ModuleEntry, resolveEntry } from "@voyantjs/core/config"
+import { type ModuleEntry, resolveEntry } from "@voyant-travel/core/config"
 
 import { toCamelCase, toPascalCase } from "./strings.js"
 
@@ -28,7 +28,7 @@ export type AdminEntryStatus =
 
 /** One manifest module's admin-entry scan outcome. */
 export interface AdminEntryScanResult {
-  /** Module specifier as listed in the manifest (e.g. `@voyantjs/promotions`). */
+  /** Module specifier as listed in the manifest (e.g. `@voyant-travel/promotions`). */
   moduleName: string
   /** Last path segment minus scope (e.g. `promotions`). */
   domain: string
@@ -37,7 +37,7 @@ export interface AdminEntryScanResult {
   /** Conventional factory export name (e.g. `createPromotionsAdminExtension`). */
   exportName: string
   status: AdminEntryStatus
-  /** Import specifier for the admin entry (e.g. `@voyantjs/promotions-react/admin`). */
+  /** Import specifier for the admin entry (e.g. `@voyant-travel/promotions-react/admin`). */
   importSpec?: string
   /** Absolute path to the admin entry source, when resolvable on disk. */
   sourcePath?: string

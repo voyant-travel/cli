@@ -6,6 +6,7 @@ import { adminCommand } from "./commands/admin.js"
 import { configCommand } from "./commands/config.js"
 import { dbCommand } from "./commands/db.js"
 import { devCommand } from "./commands/dev-command.js"
+import { doctorCommand } from "./commands/doctor.js"
 import { execCommand } from "./commands/exec.js"
 import { generateLinkCommand } from "./commands/generate-link.js"
 import { generateModuleCommand } from "./commands/generate-module.js"
@@ -69,6 +70,9 @@ export async function main(
     }
     case "admin": {
       return adminCommand({ ...ctx, argv: rest })
+    }
+    case "doctor": {
+      return doctorCommand({ ...ctx, argv: rest })
     }
     case "new": {
       return newCommand({ ...ctx, argv: rest })

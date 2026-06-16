@@ -18,6 +18,8 @@ OPEN-SOURCE COMMANDS
   admin generate --destinations [--check]  Emit the generated destination resolver map (RFC 4.7)
   admin doctor                       Check manifest <-> admin extension <-> route/destination parity
                                      (generated-destination drift gates: exit 1; the rest reports)
+  doctor [--strict] [--skip-*]       Preflight: env/bindings (env.d.ts <-> wrangler.jsonc +
+                                     placeholders) + db doctor + admin doctor (exit 1 on any gate)
   dev --file <path>                  Watch and serve workflows locally with hot reload
   db <generate|migrate|studio|push>  Proxy drizzle-kit commands (generate defaults to --prefix timestamp)
   db schemas [--emit]                Print/emit the manifest-derived schema list

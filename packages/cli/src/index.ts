@@ -15,6 +15,7 @@ import { loginCommand } from "./commands/login.js"
 import { logoutCommand } from "./commands/logout.js"
 import { newCommand } from "./commands/new.js"
 import { secretsCommand } from "./commands/secrets.js"
+import { upgradeCommand } from "./commands/upgrade.js"
 import { vaultsCommand } from "./commands/vaults.js"
 import { whoamiCommand } from "./commands/whoami.js"
 import { workflowsCommand } from "./commands/workflows-command.js"
@@ -73,6 +74,9 @@ export async function main(
     }
     case "doctor": {
       return doctorCommand({ ...ctx, argv: rest })
+    }
+    case "upgrade": {
+      return upgradeCommand({ ...ctx, argv: rest })
     }
     case "new": {
       return newCommand({ ...ctx, argv: rest })

@@ -20,6 +20,8 @@ OPEN-SOURCE COMMANDS
                                      (generated-destination drift gates: exit 1; the rest reports)
   doctor [--strict] [--skip-*]       Preflight: env/bindings (env.d.ts <-> wrangler.jsonc +
                                      placeholders) + db doctor + admin doctor (exit 1 on any gate)
+  upgrade [--to <version>] [--dry-run]  Bump the @voyant-travel/framework BOM + install
+                                     (then run: voyant db migrate && voyant doctor)
   dev --file <path>                  Watch and serve workflows locally with hot reload
   db <generate|migrate|studio|push>  Proxy drizzle-kit commands (generate defaults to --prefix timestamp)
   db schemas [--emit]                Print/emit the manifest-derived schema list

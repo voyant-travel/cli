@@ -12,7 +12,7 @@ OPEN-SOURCE COMMANDS
   config <show|validate|path>        Inspect the nearest voyant.config.* manifest
   admin generate [--check]           Emit admin.extensions.generated.ts from the manifest
   admin generate --routes [--check]  Emit the code-assembled admin route module (--files: legacy thin files)
-                                     (auto-includes the built-in core entry @voyantjs/admin-app/core-extension
+                                     (auto-includes the built-in core entry @voyant-travel/admin-app/core-extension
                                      when the package resolves with a ./core-extension export;
                                      pre-core hosts are unaffected)
   admin generate --destinations [--check]  Emit the generated destination resolver map (RFC 4.7)

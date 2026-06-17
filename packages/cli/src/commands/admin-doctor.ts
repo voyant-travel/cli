@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from "node:fs"
 import { dirname, isAbsolute, join, relative, resolve } from "node:path"
 
-import type { VoyantConfig } from "@voyantjs/core/config"
+import type { VoyantConfig } from "@voyant-travel/core/config"
 import { resolveCoreAdminEntry } from "../lib/admin-core-entry.js"
 import {
   type AdminEntryScanResult,
@@ -54,7 +54,7 @@ export const DEFAULT_DESTINATIONS_RELATIVE_PATH = "src/lib/admin-destinations.ts
  *   `children` are traversed (absolute paths reconstructed on both sides);
  *   redirect-only contributions count as implemented and are satisfied by a
  *   module entry alone; the built-in core entry
- *   (`@voyantjs/admin-app/core-extension`) participates when resolvable.
+ *   (`@voyant-travel/admin-app/core-extension`) participates when resolvable.
  *   Static scan only — nothing is imported.
  * - **D** — destination parity (RFC §4.7). Two halves:
  *   - GENERATED (gate, exit 1): the generated resolver module (default
@@ -65,7 +65,7 @@ export const DEFAULT_DESTINATIONS_RELATIVE_PATH = "src/lib/admin-destinations.ts
  *     drift is a gating finding. An ejected module (no generated header) is
  *     host-owned and skips the gate.
  *   - CUSTOM (report-only): `AdminDestinations` keys the mounted admin
- *     entries declare via `declare module "@voyantjs/admin"` versus the
+ *     entries declare via `declare module "@voyant-travel/admin"` versus the
  *     union of generated resolvers and the host map's own keys (the object
  *     literal marked `satisfies AdminDestinationResolvers`, default
  *     `src/lib/admin-destinations.ts`, override with `--destinations`).

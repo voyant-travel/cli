@@ -3,7 +3,7 @@ import {
   resolveEntry,
   type VoyantConfig,
   validateVoyantConfig,
-} from "@voyantjs/core/config"
+} from "@voyant-travel/core/config"
 
 import { parseArgs } from "../lib/args.js"
 import { loadVoyantConfigFile, resolveConfigPath } from "../lib/config-loader.js"

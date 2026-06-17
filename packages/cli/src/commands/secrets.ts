@@ -1,4 +1,4 @@
-import type { VaultSecretSummary, VaultSecretValue } from "@voyantjs/cloud-sdk"
+import type { VaultSecretSummary, VaultSecretValue } from "@voyant-travel/cloud-sdk"
 
 import { getStringFlag, parseArgs } from "../lib/args.js"
 import { CloudAuthError, createCloudClient } from "../lib/cloud-client.js"
@@ -15,7 +15,7 @@ import type { CommandContext, CommandResult } from "../types.js"
  *
  * `set` / `rm` use `client.transport.request` directly because typed
  * helpers (`vault.setSecret`, `vault.deleteSecret`) only land in
- * `@voyantjs/cloud-sdk@0.7.0` — refactor to `client.vault.setSecret(...)`
+ * `@voyant-travel/cloud-sdk@0.7.0` — refactor to `client.vault.setSecret(...)`
  * once the CLI bumps its cloud-sdk dep.
  */
 export async function secretsCommand(ctx: CommandContext): Promise<CommandResult> {

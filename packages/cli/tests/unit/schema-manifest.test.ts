@@ -15,7 +15,7 @@ function seedPackage(
   name: string,
   voyant: { schema?: string; requiresSchemas?: string[] },
 ): void {
-  const basename = name.startsWith("@voyantjs/") ? name.slice("@voyantjs/".length) : name
+  const basename = name.startsWith("@voyant-travel/") ? name.slice("@voyant-travel/".length) : name
   const dir = join(cwd, "packages", basename)
   mkdirSync(join(dir, "src"), { recursive: true })
   writeFileSync(join(dir, "package.json"), JSON.stringify({ name, version: "0.0.0", voyant }))
@@ -38,25 +38,25 @@ describe("schema-manifest", () => {
   })
 
   it("appends template-local `schemas` after the package-derived closure", () => {
-    seedPackage(tmp, "@voyantjs/db", { schema: "./schema", requiresSchemas: [] })
-    seedPackage(tmp, "@voyantjs/crm", { schema: "./schema", requiresSchemas: ["@voyantjs/db"] })
+    seedPackage(tmp, "@voyant-travel/db", { schema: "./schema", requiresSchemas: [] })
+    seedPackage(tmp, "@voyant-travel/crm", { schema: "./schema", requiresSchemas: ["@voyant-travel/db"] })
 
     const result = resolveSchemaManifest(
-      { modules: ["@voyantjs/crm"], schemas: ["./src/db/schema.ts"] },
+      { modules: ["@voyant-travel/crm"], schemas: ["./src/db/schema.ts"] },
       { cwd: tmp, style: "specifier" },
     )
 
-    expect(result).toEqual(["@voyantjs/db/schema", "@voyantjs/crm/schema", "./src/db/schema.ts"])
+    expect(result).toEqual(["@voyant-travel/db/schema", "@voyant-travel/crm/schema", "./src/db/schema.ts"])
   })
 
   it("renders a portable, relative, diff-friendly generated manifest", () => {
-    seedPackage(tmp, "@voyantjs/db", { schema: "./schema", requiresSchemas: [] })
+    seedPackage(tmp, "@voyant-travel/db", { schema: "./schema", requiresSchemas: [] })
     // Local glue file must exist for style:"file" resolution.
     mkdirSync(join(tmp, "src", "db"), { recursive: true })
     writeFileSync(join(tmp, "src", "db", "schema.ts"), "export const local = 1\n")
 
     const generated = renderSchemaManifest(
-      { modules: ["@voyantjs/db"], schemas: ["./src/db/schema.ts"] },
+      { modules: ["@voyant-travel/db"], schemas: ["./src/db/schema.ts"] },
       { cwd: tmp },
     )
 

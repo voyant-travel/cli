@@ -5,7 +5,7 @@ Voyant Cloud platform. Ships as a single binary, no login required for the
 open-source workflows.
 
 ```sh
-npm i -g @voyantjs/cli
+npm i -g @voyant-travel/cli
 voyant --help
 ```
 
@@ -49,7 +49,7 @@ voyant secrets rm production OLD_KEY
 ## Login flows
 
 `voyant login` runs an OAuth 2.0 device-code grant ([RFC 8628](https://datatracker.ietf.org/doc/html/rfc8628))
-against `https://api.voyantjs.com/cli/v1/device/*`. It prints a verification
+against `https://api.voyant.travel/cli/v1/device/*`. It prints a verification
 URL, opens it in your browser (suppress with `--no-browser`), and polls
 until you approve. The minted token is stored in
 `~/.voyant/credentials.json` (mode 0600), keyed by API URL — so you can be
@@ -67,7 +67,7 @@ Token resolution order on every cloud command:
 ## Status
 
 - **0.19.0** — first release from this repo.
-- Earlier `0.18.x` was published from the `voyantjs/voyant` monorepo. That
+- Earlier `0.18.x` was published from the `voyant-travel/voyant` monorepo. That
   copy is now `private: true` and serves only internal workspace consumers
   inside the framework repo.
 
@@ -75,7 +75,7 @@ See [ROADMAP.md](./ROADMAP.md) for what's next.
 
 ## Workspace layout
 
-- `packages/cli` — `@voyantjs/cli`, the published binary.
+- `packages/cli` — `@voyant-travel/cli`, the published binary.
 - `packages/typescript-config` — internal TS preset.
 
 ## Develop

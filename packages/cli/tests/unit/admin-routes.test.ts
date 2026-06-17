@@ -29,7 +29,7 @@ import {
 } from "../../src/lib/admin-routes.js"
 
 const PROMOTIONS_LIKE_SOURCE = `
-import { defineAdminExtension } from "@voyantjs/admin"
+import { defineAdminExtension } from "@voyant-travel/admin"
 import { loadFooPage, FooPage } from "../foo-page.js"
 
 export function createFooAdminExtension(options = {}) {
@@ -374,7 +374,7 @@ describe("isExportedIdent", () => {
 describe("destination bindings — unresolvable param maps", () => {
   it("skips a binding whose destinationParams is not an object literal", () => {
     const source = `
-declare module "@voyantjs/admin" {
+declare module "@voyant-travel/admin" {
   interface AdminDestinations {
     "foo.detail": { fooId: string }
   }
@@ -397,7 +397,7 @@ export function createFooAdminExtension() {
 }
 `
     const { bindings, notes } = collectDestinationBindings([
-      { importSpec: "@voyantjs/foo-react/admin", source },
+      { importSpec: "@voyant-travel/foo-react/admin", source },
     ])
     expect(bindings).toHaveLength(0)
     expect(notes.join("\n")).toContain("not a statically-resolvable object literal")
@@ -478,7 +478,7 @@ describe("resolveAdminRoutesManifestConfig", () => {
 describe("scanDeclaredDestinationKeys", () => {
   it("extracts quoted keys from AdminDestinations declaration-merging blocks", () => {
     const source = `
-      declare module "@voyantjs/admin" {
+      declare module "@voyant-travel/admin" {
         interface AdminDestinations {
           /** The list page. */
           "foo.list": Record<string, never>
@@ -497,7 +497,7 @@ describe("scanDeclaredDestinationKeys", () => {
   it("ignores quoted strings outside the interface and other modules", () => {
     const source = `
       const slot = { slot: "booking.details.header" }
-      declare module "@voyantjs/other" {
+      declare module "@voyant-travel/other" {
         interface AdminDestinations { "nope.key": {} }
       }
     `
@@ -553,7 +553,7 @@ describe("route file paths", () => {
 describe("renderRouteFile", () => {
   const baseOptions = {
     fileRouteId: "/_workspace/promotions/",
-    importSpec: "@voyantjs/promotions-react/admin",
+    importSpec: "@voyant-travel/promotions-react/admin",
     exportName: "createPromotionsAdminExtension",
     routeId: "promotions-index",
     ssr: "data-only" as const,
@@ -573,9 +573,9 @@ describe("renderRouteFile", () => {
     expect(isGeneratedRouteFile(content)).toBe(true)
     expect(content).toContain(GENERATED_ROUTE_HEADER)
     expect(content).toContain(
-      `import { createPromotionsAdminExtension } from "@voyantjs/promotions-react/admin"`,
+      `import { createPromotionsAdminExtension } from "@voyant-travel/promotions-react/admin"`,
     )
-    expect(content).toContain(`import { requireAdminRoute } from "@voyantjs/admin"`)
+    expect(content).toContain(`import { requireAdminRoute } from "@voyant-travel/admin"`)
     expect(content).toContain(
       `const route = requireAdminRoute(createPromotionsAdminExtension(), "promotions-index")`,
     )
@@ -626,7 +626,7 @@ describe("renderAdminRoutesModule", () => {
     sections: [
       {
         extensionId: "bookings",
-        importSpec: "@voyantjs/bookings-react/admin",
+        importSpec: "@voyant-travel/bookings-react/admin",
         routes: [
           {
             constName: "BookingsIndexRoute",
@@ -644,7 +644,7 @@ describe("renderAdminRoutesModule", () => {
       },
       {
         extensionId: "notifications",
-        importSpec: "@voyantjs/notifications-react/admin",
+        importSpec: "@voyant-travel/notifications-react/admin",
         routes: [
           {
             constName: "NotificationsReminderRulesIndexRoute",
@@ -662,7 +662,7 @@ describe("renderAdminRoutesModule", () => {
     expect(isGeneratedRouteFile(content)).toBe(true)
     expect(content).toContain(`${GENERATED_ROUTE_HEADER} — do not edit.`)
     expect(content).toContain(`import { createRoute } from "@tanstack/react-router"`)
-    expect(content).toContain(`import { adminExtensionRouteOptions } from "@voyantjs/admin-app"`)
+    expect(content).toContain(`import { adminExtensionRouteOptions } from "@voyant-travel/admin-app"`)
     expect(content).toContain(`import { adminExtensions } from "@/lib/admin-extensions"`)
     expect(content).toContain(`import { Route as WorkspaceRoute } from "@/routes/_workspace/route"`)
     expect(content).toContain(
@@ -687,7 +687,7 @@ describe("renderAdminRoutesModule", () => {
         "import {",
         "  bookingDetailSearchSchema,",
         "  bookingsIndexSearchSchema,",
-        `} from "@voyantjs/bookings-react/admin"`,
+        `} from "@voyant-travel/bookings-react/admin"`,
       ].join("\n"),
     )
     expect(content).toContain(
@@ -733,7 +733,7 @@ describe("renderAdminRoutesModule — nested subtrees (core-extension shape)", (
     sections: [
       {
         extensionId: "core",
-        importSpec: "@voyantjs/admin-app/core-extension",
+        importSpec: "@voyant-travel/admin-app/core-extension",
         routes: [
           {
             constName: "CoreDashboardRoute",
@@ -774,7 +774,7 @@ describe("renderAdminRoutesModule — nested subtrees (core-extension shape)", (
 
   it("imports adminExtensionChildRoutes alongside adminExtensionRouteOptions", () => {
     expect(content).toContain(
-      `import { adminExtensionChildRoutes, adminExtensionRouteOptions } from "@voyantjs/admin-app"`,
+      `import { adminExtensionChildRoutes, adminExtensionRouteOptions } from "@voyant-travel/admin-app"`,
     )
   })
 
@@ -822,7 +822,7 @@ describe("renderAdminRoutesModule — nested subtrees (core-extension shape)", (
       sections: [
         {
           extensionId: "core",
-          importSpec: "@voyantjs/admin-app/core-extension",
+          importSpec: "@voyant-travel/admin-app/core-extension",
           routes: [
             {
               constName: "CoreSettingsRoute",
@@ -962,7 +962,7 @@ describe("renderAdminRoutesModule — nested subtrees (core-extension shape)", (
       sections: [
         {
           extensionId: "core",
-          importSpec: "@voyantjs/admin-app/core-extension",
+          importSpec: "@voyant-travel/admin-app/core-extension",
           routes: [
             {
               constName: "CoreSettingsRoute",
@@ -983,7 +983,7 @@ describe("renderAdminRoutesModule — nested subtrees (core-extension shape)", (
       ],
     })
     expect(withSchema).toContain(
-      `import { teamSearchSchema } from "@voyantjs/admin-app/core-extension"`,
+      `import { teamSearchSchema } from "@voyant-travel/admin-app/core-extension"`,
     )
     expect(withSchema).toContain("  validateSearch: teamSearchSchema,")
     // The emitted nested module is readable back by the doctor's path scan.
@@ -1069,7 +1069,7 @@ describe("scanRouteContributions — destination annotations", () => {
 describe("collectDestinationBindings", () => {
   it("collects annotated contributions sorted by key", () => {
     const { bindings, notes } = collectDestinationBindings([
-      { importSpec: "@voyantjs/suppliersish-react/admin", source: DESTINATION_SOURCE },
+      { importSpec: "@voyant-travel/suppliersish-react/admin", source: DESTINATION_SOURCE },
     ])
     expect(notes).toEqual([])
     expect(bindings.map((binding) => binding.key)).toEqual([
@@ -1080,7 +1080,7 @@ describe("collectDestinationBindings", () => {
     expect(bindings[0]).toMatchObject({
       key: "supplierish.detail",
       path: "/suppliersish/$id",
-      importSpec: "@voyantjs/suppliersish-react/admin",
+      importSpec: "@voyant-travel/suppliersish-react/admin",
       params: { id: "supplierId" },
     })
   })
@@ -1092,7 +1092,7 @@ describe("collectDestinationBindings", () => {
       ],
     `
     const { bindings, notes } = collectDestinationBindings([
-      { importSpec: "@voyantjs/x-react/admin", source },
+      { importSpec: "@voyant-travel/x-react/admin", source },
     ])
     expect(bindings).toEqual([])
     expect(notes.join("\n")).toContain('skipped destination "x.list"')
@@ -1103,23 +1103,23 @@ describe("collectDestinationBindings", () => {
     const first = `routes: [{ id: "a", path: "/a", destination: "shared.list" }]`
     const second = `routes: [{ id: "b", path: "/b", destination: "shared.list" }]`
     const { bindings, notes } = collectDestinationBindings([
-      { importSpec: "@voyantjs/a-react/admin", source: first },
-      { importSpec: "@voyantjs/b-react/admin", source: second },
+      { importSpec: "@voyant-travel/a-react/admin", source: first },
+      { importSpec: "@voyant-travel/b-react/admin", source: second },
     ])
     expect(bindings).toHaveLength(1)
     expect(bindings[0]?.path).toBe("/a")
     expect(notes.join("\n")).toContain('skipped duplicate destination "shared.list"')
-    expect(notes.join("\n")).toContain("@voyantjs/a-react/admin /a")
+    expect(notes.join("\n")).toContain("@voyant-travel/a-react/admin /a")
   })
 })
 
 describe("renderAdminDestinationsModule", () => {
   const { bindings } = collectDestinationBindings([
-    { importSpec: "@voyantjs/suppliersish-react/admin", source: DESTINATION_SOURCE },
+    { importSpec: "@voyant-travel/suppliersish-react/admin", source: DESTINATION_SOURCE },
   ])
   const content = renderAdminDestinationsModule({
     bindings,
-    importSpecs: ["@voyantjs/suppliersish-react/admin", "@voyantjs/other-react/admin"],
+    importSpecs: ["@voyant-travel/suppliersish-react/admin", "@voyant-travel/other-react/admin"],
   })
 
   it("emits the generated header and the ejection contract", () => {
@@ -1129,13 +1129,13 @@ describe("renderAdminDestinationsModule", () => {
   })
 
   it("binds every admin entry's augmentations type-only, sorted", () => {
-    const otherIndex = content.indexOf(`import type {} from "@voyantjs/other-react/admin"`)
+    const otherIndex = content.indexOf(`import type {} from "@voyant-travel/other-react/admin"`)
     const suppliersIndex = content.indexOf(
-      `import type {} from "@voyantjs/suppliersish-react/admin"`,
+      `import type {} from "@voyant-travel/suppliersish-react/admin"`,
     )
     expect(otherIndex).toBeGreaterThan(-1)
     expect(suppliersIndex).toBeGreaterThan(otherIndex)
-    expect(content).toContain(`import type { AdminDestinationResolvers } from "@voyantjs/admin"`)
+    expect(content).toContain(`import type { AdminDestinationResolvers } from "@voyant-travel/admin"`)
   })
 
   it("emits param-less resolvers as plain string returns", () => {
@@ -1168,7 +1168,7 @@ describe("renderAdminDestinationsModule", () => {
     expect(
       renderAdminDestinationsModule({
         bindings,
-        importSpecs: ["@voyantjs/other-react/admin", "@voyantjs/suppliersish-react/admin"],
+        importSpecs: ["@voyant-travel/other-react/admin", "@voyant-travel/suppliersish-react/admin"],
       }),
     ).toBe(content)
   })

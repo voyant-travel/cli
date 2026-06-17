@@ -53,9 +53,9 @@ export async function generateLinkCommand(ctx: CommandContext): Promise<CommandR
 
   const optionsArg = cascade ? ",\n  { deleteCascade: true }" : ""
 
-  const snippet = `import { defineLink } from "@voyantjs/core/links"
-import { ${leftLinkableVar} } from "@voyantjs/${leftRef.module}"
-import { ${rightLinkableVar} } from "@voyantjs/${rightRef.module}"
+  const snippet = `import { defineLink } from "@voyant-travel/core/links"
+import { ${leftLinkableVar} } from "@voyant-travel/${leftRef.module}"
+import { ${rightLinkableVar} } from "@voyant-travel/${rightRef.module}"
 
 /**
  * ${leftRef.module}.${leftRef.entity} <-> ${rightRef.module}.${rightRef.entity} link.

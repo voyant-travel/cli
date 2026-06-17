@@ -1,4 +1,4 @@
-import type { VaultSummary } from "@voyantjs/cloud-sdk"
+import type { VaultSummary } from "@voyant-travel/cloud-sdk"
 
 import { getStringFlag, parseArgs } from "../lib/args.js"
 import { CloudAuthError, createCloudClient } from "../lib/cloud-client.js"

@@ -7,7 +7,7 @@ import { join } from "node:path"
  * Everything here is pure source-text scanning — no admin entry is ever
  * imported or executed. The scanners are deliberately convention-bound: they
  * understand the `defineAdminExtension({ routes: [...] })` shape and the
- * `declare module "@voyantjs/admin"` destination declarations the `*-react`
+ * `declare module "@voyant-travel/admin"` destination declarations the `*-react`
  * packages actually write, resolving option-destructuring string defaults
  * (`const { path = "/promotions" } = options`) and template-literal paths
  * (`` `${basePath}/contracts` ``) against those defaults.
@@ -570,11 +570,11 @@ function parseContribution(
 
 /**
  * Destination keys an admin entry declares via
- * `declare module "@voyantjs/admin" { interface AdminDestinations { ... } }`.
+ * `declare module "@voyant-travel/admin" { interface AdminDestinations { ... } }`.
  */
 export function scanDeclaredDestinationKeys(source: string): string[] {
   const keys = new Set<string>()
-  const modulePattern = /declare\s+module\s+["']@voyantjs\/admin["']/g
+  const modulePattern = /declare\s+module\s+["']@voyant-travel\/admin["']/g
   let moduleMatch: RegExpExecArray | null = modulePattern.exec(source)
   while (moduleMatch !== null) {
     const moduleOpen = source.indexOf("{", moduleMatch.index + moduleMatch[0].length - 1)
@@ -650,7 +650,7 @@ export interface ScannedDestinationBinding {
   key: string
   /** Resolved route path the resolver interpolates, e.g. `/suppliers/$id`. */
   path: string
-  /** Admin entry that contributed the binding (e.g. `@voyantjs/suppliers-react/admin`). */
+  /** Admin entry that contributed the binding (e.g. `@voyant-travel/suppliers-react/admin`). */
   importSpec: string
   /** Route param name → destination param name; identity for absent params. */
   params: Record<string, string>
@@ -799,7 +799,7 @@ export function renderAdminDestinationsModule(
     "// without it. To override one key, re-declare it after the spread in the",
     "// host map (later properties win); to unbind one, remove the",
     "// contribution's `destination:` annotation and regenerate.",
-    `import type { AdminDestinationResolvers } from "@voyantjs/admin"`,
+    `import type { AdminDestinationResolvers } from "@voyant-travel/admin"`,
     "// Type-only: bind the mounted admin entries' `AdminDestinations`",
     "// augmentations into this module without pulling any runtime code into",
     "// the chunk that imports the resolver map.",
@@ -1137,7 +1137,7 @@ export function alternativeRouteFileRelPaths(routePath: string): string[] {
 export interface RenderRouteFileOptions {
   /** createFileRoute id, e.g. `/_workspace/promotions/`. */
   fileRouteId: string
-  /** Admin entry import specifier, e.g. `@voyantjs/promotions-react/admin`. */
+  /** Admin entry import specifier, e.g. `@voyant-travel/promotions-react/admin`. */
   importSpec: string
   /** Extension factory export, e.g. `createPromotionsAdminExtension`. */
   exportName: string
@@ -1161,7 +1161,7 @@ export function renderRouteFile(options: RenderRouteFileOptions): string {
 
   const imports = [
     `import { createFileRoute } from "@tanstack/react-router"`,
-    `import { requireAdminRoute } from "@voyantjs/admin"`,
+    `import { requireAdminRoute } from "@voyant-travel/admin"`,
     `import { ${exportName} } from "${importSpec}"`,
   ]
   if (options.hasLoader) {
@@ -1394,8 +1394,8 @@ export function renderAdminRoutesModule(options: RenderAdminRoutesModuleOptions)
     "// hand-written route file — the generator skips files without this header.",
     `import { createRoute } from "@tanstack/react-router"`,
     hasChildRoutes
-      ? `import { adminExtensionChildRoutes, adminExtensionRouteOptions } from "@voyantjs/admin-app"`
-      : `import { adminExtensionRouteOptions } from "@voyantjs/admin-app"`,
+      ? `import { adminExtensionChildRoutes, adminExtensionRouteOptions } from "@voyant-travel/admin-app"`
+      : `import { adminExtensionRouteOptions } from "@voyant-travel/admin-app"`,
     ...schemaImportLines,
     "",
     ...appImportLines,

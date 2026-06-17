@@ -2,16 +2,16 @@ import {
   getVoyantCloudClient,
   type VoyantCloudClient,
   VoyantCloudConfigError,
-} from "@voyantjs/cloud-sdk"
+} from "@voyant-travel/cloud-sdk"
 
 import { getCredential } from "./credentials.js"
 
 /**
  * Default Voyant Cloud production base URL. Matches the default baked into
- * `@voyantjs/cloud-sdk` so CLI behavior stays consistent with programmatic
+ * `@voyant-travel/cloud-sdk` so CLI behavior stays consistent with programmatic
  * use of the SDK.
  */
-export const DEFAULT_CLOUD_API_URL = "https://api.voyantjs.com"
+export const DEFAULT_CLOUD_API_URL = "https://api.voyant.travel"
 
 export interface ResolveCloudAuthOptions {
   /** From `--token <value>` flag. Highest priority. */

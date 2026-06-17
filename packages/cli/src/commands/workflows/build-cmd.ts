@@ -52,7 +52,7 @@ export async function runWorkflowsBuild(
 }
 
 export async function defaultBuildDeps(): Promise<BuildCmdDeps> {
-  const wfMod = (await import("@voyantjs/workflows")) as unknown as {
+  const wfMod = (await import("@voyant-travel/workflows")) as unknown as {
     __listRegisteredWorkflows: () => WorkflowDef[]
     __resetRegistry: () => void
   }

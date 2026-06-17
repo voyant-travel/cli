@@ -31,7 +31,7 @@ describe("credentials", () => {
 
   it("round-trips a credential keyed by apiUrl", () => {
     setCredential(
-      "https://api.voyantjs.com",
+      "https://api.voyant.travel",
       {
         accessToken: "tok_abc",
         organizationId: "org_x",
@@ -40,19 +40,19 @@ describe("credentials", () => {
       },
       path,
     )
-    const got = getCredential("https://api.voyantjs.com", path)
+    const got = getCredential("https://api.voyant.travel", path)
     expect(got?.accessToken).toBe("tok_abc")
     expect(got?.organizationId).toBe("org_x")
   })
 
   it("normalizes trailing slashes on the apiUrl key", () => {
     setCredential(
-      "https://api.voyantjs.com/",
+      "https://api.voyant.travel/",
       { accessToken: "tok", createdAt: "2026-01-01T00:00:00Z" },
       path,
     )
-    expect(getCredential("https://api.voyantjs.com", path)?.accessToken).toBe("tok")
-    expect(getCredential("https://api.voyantjs.com//", path)?.accessToken).toBe("tok")
+    expect(getCredential("https://api.voyant.travel", path)?.accessToken).toBe("tok")
+    expect(getCredential("https://api.voyant.travel//", path)?.accessToken).toBe("tok")
   })
 
   it("supports multiple apiUrls in one file", () => {
@@ -65,7 +65,7 @@ describe("credentials", () => {
   it("writes the file with mode 0600", () => {
     if (process.platform === "win32") return
     setCredential(
-      "https://api.voyantjs.com",
+      "https://api.voyant.travel",
       { accessToken: "tok", createdAt: "2026-01-01T00:00:00Z" },
       path,
     )

@@ -30,8 +30,8 @@ const AUTHORIZE_OK = {
   body: {
     device_code: "dev_long_secret",
     user_code: "ABCD-1234",
-    verification_uri: "https://app.voyantjs.com/cli",
-    verification_uri_complete: "https://app.voyantjs.com/cli?user_code=ABCD-1234",
+    verification_uri: "https://app.voyant.travel/cli",
+    verification_uri_complete: "https://app.voyant.travel/cli?user_code=ABCD-1234",
     expires_in: 600,
     interval: 5,
   },
@@ -72,8 +72,8 @@ describe("runDeviceCodeFlow", () => {
     expect(calls[1]?.url).toBe("https://api.test/cli/v1/device/token")
     expect(onCodes).toHaveBeenCalledWith({
       userCode: "ABCD-1234",
-      verificationUri: "https://app.voyantjs.com/cli",
-      verificationUriComplete: "https://app.voyantjs.com/cli?user_code=ABCD-1234",
+      verificationUri: "https://app.voyant.travel/cli",
+      verificationUriComplete: "https://app.voyant.travel/cli?user_code=ABCD-1234",
       expiresInSeconds: 600,
     })
   })

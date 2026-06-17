@@ -20,7 +20,7 @@ import type {
   ScheduleDeclaration,
   WorkflowConfig,
   WorkflowDefinition,
-} from "@voyantjs/workflows"
+} from "@voyant-travel/workflows"
 
 export const MANIFEST_SCHEMA_VERSION = 1 as const
 

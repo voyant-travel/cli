@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto"
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { join } from "node:path"
 import { pathToFileURL } from "node:url"
-import { __listRegisteredWorkflows, __resetRegistry } from "@voyantjs/workflows"
+import { __listRegisteredWorkflows, __resetRegistry } from "@voyant-travel/workflows"
 import { afterEach, describe, expect, it } from "vitest"
 import {
   type BuildModuleDeps,
@@ -41,7 +41,7 @@ describe("runBuild", () => {
     await writeFile(
       entryFile,
       [
-        `import { workflow } from "@voyantjs/workflows"`,
+        `import { workflow } from "@voyant-travel/workflows"`,
         `import { readableName } from "./dynamic-require.cjs"`,
         ``,
         `const nodeBuiltinName = readableName()`,

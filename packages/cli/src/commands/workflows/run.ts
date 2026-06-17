@@ -143,12 +143,12 @@ export async function runWorkflowsRun(args: ParsedArgs, deps: RunDeps): Promise<
   return { ok: true, result, saved }
 }
 
-/** Default deps binding (filesystem + real @voyantjs/workflows). */
+/** Default deps binding (filesystem + real @voyant-travel/workflows). */
 export async function defaultRunDeps(): Promise<RunDeps> {
-  const wfMod = (await import("@voyantjs/workflows")) as unknown as {
+  const wfMod = (await import("@voyant-travel/workflows")) as unknown as {
     getWorkflow: (id: string) => WorkflowDef | undefined
   }
-  const testingMod = (await import("@voyantjs/workflows/testing")) as unknown as {
+  const testingMod = (await import("@voyant-travel/workflows/testing")) as unknown as {
     runWorkflowForTest: RunDeps["runWorkflowForTest"]
   }
   return {

@@ -37,13 +37,13 @@ describe("generateModuleCommand", () => {
     const code = await generateModuleCommand(ctx)
     expect(code).toBe(0)
     expect(stderr.join("")).toBe("")
-    expect(stdout.join("")).toContain("Created module @voyantjs/invoices")
+    expect(stdout.join("")).toContain("Created module @voyant-travel/invoices")
 
     const pkgPath = join(tmp, "packages", "invoices", "package.json")
     const pkg = JSON.parse(readFileSync(pkgPath, "utf8"))
-    expect(pkg.name).toBe("@voyantjs/invoices")
+    expect(pkg.name).toBe("@voyant-travel/invoices")
     expect(pkg.exports["."]).toBe("./src/index.ts")
-    expect(pkg.dependencies["@voyantjs/core"]).toBe(`^${VOYANT_FRAMEWORK_VERSION}`)
+    expect(pkg.dependencies["@voyant-travel/core"]).toBe(`^${VOYANT_FRAMEWORK_VERSION}`)
 
     const schema = readFileSync(join(tmp, "packages", "invoices", "src/schema.ts"), "utf8")
     expect(schema).toContain('pgTable("invoices"')
@@ -69,7 +69,7 @@ describe("generateModuleCommand", () => {
     const pkg = JSON.parse(
       readFileSync(join(tmp, "packages", "credit-notes", "package.json"), "utf8"),
     )
-    expect(pkg.name).toBe("@voyantjs/credit-notes")
+    expect(pkg.name).toBe("@voyant-travel/credit-notes")
     const schema = readFileSync(join(tmp, "packages", "credit-notes", "src/schema.ts"), "utf8")
     expect(schema).toContain('pgTable("credit-notes"')
     expect(schema).toContain("export const creditNotes")

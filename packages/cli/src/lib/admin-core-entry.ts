@@ -6,13 +6,13 @@ import type { ScannedRouteContribution } from "./admin-routes.js"
 
 /**
  * The BUILT-IN core admin entry (packaged-admin RFC #1643 final sweep):
- * `@voyantjs/admin-app/core-extension` ships the pages every Voyant admin
+ * `@voyant-travel/admin-app/core-extension` ships the pages every Voyant admin
  * mounts regardless of domains — dashboard, account, and the settings area
  * (layout + built-in pages). It is not a manifest module, so `voyant admin
  * generate --routes` includes it independently of the modules list —
  * CONDITIONALLY on the package being resolvable from the host with a
  * `"./core-extension"` exports entry, so hosts on a pre-core
- * `@voyantjs/admin-app` are unaffected.
+ * `@voyant-travel/admin-app` are unaffected.
  *
  * The factory builds its route contributions imperatively (`routes.push`,
  * option-driven children), which the convention-bound static scanner cannot
@@ -24,9 +24,9 @@ import type { ScannedRouteContribution } from "./admin-routes.js"
  * eject the generated module (delete its header) or hand-edit after
  * regeneration.
  */
-export const CORE_ADMIN_ENTRY_PACKAGE = "@voyantjs/admin-app"
+export const CORE_ADMIN_ENTRY_PACKAGE = "@voyant-travel/admin-app"
 export const CORE_ADMIN_ENTRY_SUBPATH = "./core-extension"
-export const CORE_ADMIN_ENTRY_IMPORT_SPEC = "@voyantjs/admin-app/core-extension"
+export const CORE_ADMIN_ENTRY_IMPORT_SPEC = "@voyant-travel/admin-app/core-extension"
 export const CORE_ADMIN_EXTENSION_ID = "core"
 export const CORE_ADMIN_FACTORY_EXPORT = "createAdminCoreExtension"
 
@@ -57,7 +57,7 @@ export interface CoreAdminEntryResolution {
 
 /**
  * Resolve the built-in core admin entry from the host. Returns null when
- * `@voyantjs/admin-app` is not resolvable from `configDir` or its exports
+ * `@voyant-travel/admin-app` is not resolvable from `configDir` or its exports
  * map has no `"./core-extension"` entry (pre-core hosts).
  */
 export function resolveCoreAdminEntry(configDir: string): CoreAdminEntryResolution | null {

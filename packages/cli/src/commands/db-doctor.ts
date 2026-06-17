@@ -2,7 +2,7 @@ import { existsSync, readdirSync, readFileSync, realpathSync } from "node:fs"
 import { createRequire } from "node:module"
 import { isAbsolute, join, relative, resolve as resolvePath } from "node:path"
 
-import { resolveEntry } from "@voyantjs/core/config"
+import { resolveEntry } from "@voyant-travel/core/config"
 
 import { parseArgs } from "../lib/args.js"
 import { resolvePackageJson } from "../lib/resolve-schemas.js"

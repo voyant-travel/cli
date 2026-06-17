@@ -23,21 +23,21 @@ importers:
 
   packages/cli:
     dependencies:
-      '@voyantjs/cloud-sdk':
-        specifier: ^0.6.1
-        version: 0.6.1
-      '@voyantjs/core':
-        specifier: ^0.18.0
-        version: 0.18.0
-      '@voyantjs/workflows':
+      '@voyant-travel/cloud-sdk':
+        specifier: ^0.9.0
+        version: 0.9.0
+      '@voyant-travel/core':
+        specifier: ^0.109.0
+        version: 0.109.0
+      '@voyant-travel/workflows':
         specifier: ^0.107.9
-        version: 0.107.9
-      '@voyantjs/workflows-orchestrator':
+        version: 0.107.10
+      '@voyant-travel/workflows-orchestrator':
         specifier: ^0.107.9
-        version: 0.107.9
-      '@voyantjs/workflows-orchestrator-node':
+        version: 0.107.10
+      '@voyant-travel/workflows-orchestrator-node':
         specifier: ^0.107.9
-        version: 0.107.9
+        version: 0.107.10
       esbuild:
         specifier: ^0.28.0
         version: 0.28.0
@@ -48,7 +48,7 @@ importers:
       '@types/node':
         specifier: ^22.10.1
         version: 22.19.17
-      '@voyantjs/cli-tsconfig':
+      '@voyant-travel/cli-tsconfig':
         specifier: workspace:*
         version: link:../typescript-config
       typescript:
@@ -554,27 +554,27 @@ packages:
   '@vitest/utils@4.1.5':
     resolution: {integrity: sha512-76wdkrmfXfqGjueGgnb45ITPyUi1ycZ4IHgC2bhPDUfWHklY/q3MdLOAB+TF1e6xfl8NxNY0ZYaPCFNWSsw3Ug==}
 
-  '@voyantjs/cloud-sdk@0.6.1':
-    resolution: {integrity: sha512-7u9Hxrnr5lxxzQo0lnQXrJY4Y62XPq2PF+9Uf4xu0QRZ7s1Rfy/B86iWj7g7Lk05V3PgfYKTLWB2wO759/nMSA==}
+  '@voyant-travel/cloud-sdk@0.9.0':
+    resolution: {integrity: sha512-pMaoOYSHbPW3V2KncU6PuzTyAphPx3q7HrNXADSiUpPWQxqq+trXnVqVyYRJBicuThfj7FLKe2RGx5+EN9Sdng==}
     peerDependencies:
-      typesense: ^2.0.0
+      typesense: '>=2.0.0 <4.0.0'
     peerDependenciesMeta:
       typesense:
         optional: true
     bundledDependencies:
-      - '@voyant-sdk/sdk-core'
+      - '@voyant-travel/sdk-core'
 
-  '@voyantjs/core@0.18.0':
-    resolution: {integrity: sha512-LGWoE07g9ECc/QBhXL14oKMurWheCBf0cAMXq55AIBit2uX0uy2vZJY4qAFD/l2+RiAgNGvedG6STlyOnib3lQ==}
+  '@voyant-travel/core@0.109.0':
+    resolution: {integrity: sha512-eu15XfqHgZbRXDTw6Tg2vlUC4s7Qiubi478cqmA3602AvQ8jBJ3rmpyClpobDWcY7cGKFmqUYKjBdc0xzTQALg==}
 
-  '@voyantjs/workflows-orchestrator-node@0.107.9':
-    resolution: {integrity: sha512-tKrApkNjVeFxft97zLdbhRS+U0U0QjXcmTm3kMPOeWI7izpWcizCsaALlwwzbGkzy1ZFZ2RVC4W/NidViQ3bHw==}
+  '@voyant-travel/workflows-orchestrator-node@0.107.10':
+    resolution: {integrity: sha512-OcgQ1H2TCFgPnyU3QavZ872mZWYCDA4Av1W7emyIIVhKG2SNI7vgm2htcsX8YrUs84S6s24ZXneorCv25cRyZg==}
 
-  '@voyantjs/workflows-orchestrator@0.107.9':
-    resolution: {integrity: sha512-jeVc8ffchz2P7qQewMttq/T18OydwbjBjeLF+TltTx6zVhXo2S73GSFRiK6l2elnzM/O+eOO85WgeYs/iBgs6g==}
+  '@voyant-travel/workflows-orchestrator@0.107.10':
+    resolution: {integrity: sha512-6zaLA7l7Clj5NOnlmgDAKgNQXZp8zSU7p+gRRmQN/XaDravHdp4+hVVEBucNoix0sH7RyT4NDg4Xu+Fxq0Ar1Q==}
 
-  '@voyantjs/workflows@0.107.9':
-    resolution: {integrity: sha512-qtVL41BgXACLq67RsDR+pe7X0xLOP4sajWJ4jF826Uyt5hgJ7L56mFexmc25GCOPoanCSlD0fHeQNybaC440KA==}
+  '@voyant-travel/workflows@0.107.10':
+    resolution: {integrity: sha512-fZLD6b1146ecnIC0TovIYOjqcMCx5bKvBs8qDAFL55M3/LiljFcISV6PrFeWTImIy4658hEUdORl0e9BbjBgyg==}
     peerDependencies:
       zod: ^3.23.0 || ^4.0.0
     peerDependenciesMeta:
@@ -1764,14 +1764,14 @@ snapshots:
       convert-source-map: 2.0.0
       tinyrainbow: 3.1.0
 
-  '@voyantjs/cloud-sdk@0.6.1': {}
+  '@voyant-travel/cloud-sdk@0.9.0': {}
 
-  '@voyantjs/core@0.18.0': {}
+  '@voyant-travel/core@0.109.0': {}
 
-  '@voyantjs/workflows-orchestrator-node@0.107.9':
+  '@voyant-travel/workflows-orchestrator-node@0.107.10':
     dependencies:
-      '@voyantjs/workflows': 0.107.9
-      '@voyantjs/workflows-orchestrator': 0.107.9
+      '@voyant-travel/workflows': 0.107.10
+      '@voyant-travel/workflows-orchestrator': 0.107.10
       drizzle-orm: 0.45.2(pg@8.20.0)
       pg: 8.20.0
     transitivePeerDependencies:
@@ -1806,13 +1806,13 @@ snapshots:
       - sqlite3
       - zod
 
-  '@voyantjs/workflows-orchestrator@0.107.9':
+  '@voyant-travel/workflows-orchestrator@0.107.10':
     dependencies:
-      '@voyantjs/workflows': 0.107.9
+      '@voyant-travel/workflows': 0.107.10
     transitivePeerDependencies:
       - zod
 
-  '@voyantjs/workflows@0.107.9': {}
+  '@voyant-travel/workflows@0.107.10': {}
 
   ansi-colors@4.1.3: {}
 

@@ -200,7 +200,7 @@ function getApplyConfig(
     }
   }
   return {
-    command: ["pnpm", "--filter", "@voyantjs/workflows-selfhost-cloudflare-worker", "deploy"],
+    command: ["pnpm", "--filter", "@voyant-travel/workflows-selfhost-cloudflare-worker", "deploy"],
   }
 }
 
@@ -212,7 +212,7 @@ function formatNextStep(target: DeployTarget, applied: boolean, stagedConfigPath
   }
   return applied
     ? "cloudflare target applied via wrangler deploy"
-    : "run `pnpm --filter @voyantjs/workflows-selfhost-cloudflare-worker deploy`"
+    : "run `pnpm --filter @voyant-travel/workflows-selfhost-cloudflare-worker deploy`"
 }
 
 function renderDockerEnvFile(config: DockerDeployConfig): string {

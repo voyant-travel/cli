@@ -9,7 +9,7 @@ export interface ModuleNames {
 
 export function packageJson(names: ModuleNames, version: string): string {
   const body = {
-    name: `@voyantjs/${names.kebab}`,
+    name: `@voyant-travel/${names.kebab}`,
     version,
     type: "module",
     exports: {
@@ -27,9 +27,9 @@ export function packageJson(names: ModuleNames, version: string): string {
       test: "vitest run",
     },
     dependencies: {
-      "@voyantjs/core": `^${version}`,
-      "@voyantjs/db": `^${version}`,
-      "@voyantjs/hono": `^${version}`,
+      "@voyant-travel/core": `^${version}`,
+      "@voyant-travel/db": `^${version}`,
+      "@voyant-travel/hono": `^${version}`,
       "drizzle-orm": "^0.45.2",
       hono: "^4.12.10",
       zod: "^4.3.6",
@@ -90,7 +90,7 @@ export function tsconfigJson(): string {
 }
 
 export function schemaTs(names: ModuleNames): string {
-  return `import { typeId } from "@voyantjs/db/lib/typeid-column"
+  return `import { typeId } from "@voyant-travel/db/lib/typeid-column"
 import { pgTable, text, timestamp } from "drizzle-orm/pg-core"
 
 export const ${names.camel} = pgTable("${names.kebab}", {
@@ -129,7 +129,7 @@ export function serviceTs(names: ModuleNames): string {
   return `/**
  * Thin service scaffold for the ${names.kebab} module.
  *
- * Replace this with \`createCrudService\` from \`@voyantjs/db/crud\`
+ * Replace this with \`createCrudService\` from \`@voyant-travel/db/crud\`
  * once your table is finalized, or expand to capture multi-step workflows
  * and cross-module calls.
  */
@@ -155,8 +155,8 @@ export type ${names.pascal}Routes = typeof ${names.camel}Routes
 }
 
 export function indexTs(names: ModuleNames): string {
-  return `import type { Module } from "@voyantjs/core"
-import type { HonoModule } from "@voyantjs/hono/module"
+  return `import type { Module } from "@voyant-travel/core"
+import type { HonoModule } from "@voyant-travel/hono/module"
 
 import { ${names.camel}Routes } from "./routes.js"
 

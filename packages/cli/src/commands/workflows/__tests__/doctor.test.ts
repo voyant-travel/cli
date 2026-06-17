@@ -167,7 +167,7 @@ describe("runWorkflowsDoctor", () => {
       command: [
         "pnpm",
         "--filter",
-        "@voyantjs/workflows-selfhost-cloudflare-worker",
+        "@voyant-travel/workflows-selfhost-cloudflare-worker",
         "run",
         "deploy",
         "--dry-run",

@@ -202,7 +202,7 @@ export async function defaultDevDeps(): Promise<DevDeps> {
       // Every reload reimports the bundle with a cache-busting query
       // and clears the globalThis-backed registry so the serve sees
       // only the current bundle's workflows.
-      const wfMod = (await import("@voyantjs/workflows")) as unknown as {
+      const wfMod = (await import("@voyant-travel/workflows")) as unknown as {
         __resetRegistry: () => void
       }
       wfMod.__resetRegistry()

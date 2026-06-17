@@ -8,4 +8,4 @@ export {
   type SchedulerHandle,
   type ScheduleSource,
   toMs,
-} from "@voyantjs/workflows-orchestrator-node"
+} from "@voyant-travel/workflows-orchestrator-node"

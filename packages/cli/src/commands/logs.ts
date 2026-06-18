@@ -33,7 +33,7 @@ Read runtime logs for a deployed app, or follow them live.
 Options:
   --env <name>        Environment (default: production)
   --level <level>     Filter by level: info | warn | error
-  -q, --search <text> Full-text search across messages
+  --search <text>     Full-text search across messages
   --since <duration>  Relative window start, e.g. 30s, 15m, 2h, 1d
   --from <time>       Window start (ISO timestamp or epoch ms)
   --to <time>         Window end (ISO timestamp or epoch ms)
@@ -46,8 +46,8 @@ Options:
 Examples:
   voyant logs my-app
   voyant logs my-app --level error --since 1h
-  voyant logs my-app -q "timeout" --json
-  voyant logs my-app --follow
+  voyant logs my-app --search "timeout" --json
+  voyant logs my-app --follow --from 2026-06-18T00:00:00Z
 `
 
 export async function logsCommand(ctx: CommandContext): Promise<CommandResult> {
@@ -133,7 +133,11 @@ async function followLogs(
   const intervalMs = followIntervalMs(args)
   const sinceMs = parseSince(getStringFlag(args, "since")) ?? DEFAULT_FOLLOW_LOOKBACK_MS
 
-  let fromMs = Date.now() - sinceMs
+  // An explicit --from wins so `--follow --from <ts>` streams the requested
+  // history before tailing live; otherwise start `--since` ago (default 5m).
+  const fromFlag = getStringFlag(args, "from")
+  const explicitFrom = fromFlag ? parseTimeMs(fromFlag) : undefined
+  let fromMs = explicitFrom ?? Date.now() - sinceMs
   // Dedupe across polls: only entries sharing the latest seen millisecond can
   // legitimately reappear once the window advances to that millisecond.
   let seen = new Set<string>()
@@ -187,7 +191,7 @@ export function buildQuery(
   if (env) query.environment = env
   const level = getStringFlag(args, "level")
   if (level) query.level = level
-  const search = getStringFlag(args, "search", "q")
+  const search = getStringFlag(args, "search")
   if (search) query.q = search
 
   if (opts.omitWindow) return query
@@ -199,6 +203,14 @@ export function buildQuery(
   else if (sinceMs !== undefined) query.from = String(Date.now() - sinceMs)
   if (to) query.to = to
   return query
+}
+
+/** Parse an absolute time (epoch ms or ISO string) into epoch milliseconds. */
+export function parseTimeMs(value: string): number | undefined {
+  const ms = Number(value)
+  if (Number.isFinite(ms)) return ms
+  const parsed = Date.parse(value)
+  return Number.isNaN(parsed) ? undefined : parsed
 }
 
 /** Parse a relative duration like `30s`, `15m`, `2h`, `1d` into milliseconds. */

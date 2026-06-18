@@ -5,6 +5,7 @@ import {
   formatLine,
   logsCommand,
   parseSince,
+  parseTimeMs,
   type RuntimeLogEntry,
 } from "../../src/commands/logs.js"
 import { parseArgs } from "../../src/lib/args.js"
@@ -125,6 +126,13 @@ describe("logsCommand", () => {
     expect(lastUrl).toContain("from=")
   })
 
+  it("forwards --search as the q query param", async () => {
+    stubFetch(page([]))
+    const { ctx } = makeCtx(["my-app", "--token", "tok", "--search", "timeout"])
+    await logsCommand(ctx)
+    expect(lastUrl).toContain("q=timeout")
+  })
+
   it("reports an unavailable window without failing", async () => {
     stubFetch(page([], true))
     const { ctx, stderr } = makeCtx(["my-app", "--token", "tok"])
@@ -170,6 +178,17 @@ describe("parseSince", () => {
   it("returns undefined for junk", () => {
     expect(parseSince(undefined)).toBeUndefined()
     expect(parseSince("soon")).toBeUndefined()
+  })
+})
+
+describe("parseTimeMs", () => {
+  it("accepts epoch ms and ISO strings", () => {
+    expect(parseTimeMs("1750200000000")).toBe(1750200000000)
+    expect(parseTimeMs("2026-06-18T00:00:00.000Z")).toBe(Date.parse("2026-06-18T00:00:00.000Z"))
+  })
+
+  it("returns undefined for junk", () => {
+    expect(parseTimeMs("not-a-time")).toBeUndefined()
   })
 })
 

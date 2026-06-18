@@ -3,8 +3,9 @@ import { hostname, platform } from "node:os"
 
 import { getStringFlag, parseArgs } from "../lib/args.js"
 import { createCloudClient, DEFAULT_CLOUD_API_URL } from "../lib/cloud-client.js"
-import { setCredential } from "../lib/credentials.js"
+import { setOrgCredential } from "../lib/credentials.js"
 import { DeviceFlowError, type DeviceFlowResult, runDeviceCodeFlow } from "../lib/device-code.js"
+import { type CloudOrganizationInfo, fetchOrganization } from "../lib/org.js"
 import type { CommandContext, CommandResult } from "../types.js"
 
 /**
@@ -47,10 +48,19 @@ async function runPasteTokenLogin(opts: PasteTokenLoginOptions): Promise<Command
   const { ctx, token, apiUrl, args } = opts
   const skipValidate = args.flags.validate === false
 
+  // Resolve the org the token is bound to. The call doubles as validation: a
+  // rejected token throws and we refuse to store it. We call the route directly
+  // (rather than the error-swallowing fetchOrganization) so a 401/403 surfaces
+  // as a rejection; a non-org body (older API) just yields a null org.
+  let org: CloudOrganizationInfo | null = null
   if (!skipValidate) {
     try {
       const client = createCloudClient({ token, apiUrl })
-      await client.vault.listVaults()
+      const result = await client.transport.request<unknown>("/cloud/v1/organization")
+      org =
+        result && typeof (result as CloudOrganizationInfo).id === "string"
+          ? (result as CloudOrganizationInfo)
+          : null
     } catch (err) {
       const reason = err instanceof Error ? err.message : String(err)
       ctx.stderr(`Token rejected by ${apiUrl}: ${reason}\n`)
@@ -58,12 +68,16 @@ async function runPasteTokenLogin(opts: PasteTokenLoginOptions): Promise<Command
     }
   }
 
-  setCredential(apiUrl, {
+  setOrgCredential(apiUrl, {
     accessToken: token,
+    organizationId: org?.id ?? "default",
+    organizationSlug: org?.slug,
     createdAt: new Date().toISOString(),
   })
 
-  ctx.stdout(`Logged in to ${apiUrl}\n`)
+  ctx.stdout(
+    org ? `Logged in to ${apiUrl} (org ${org.slug ?? org.id})\n` : `Logged in to ${apiUrl}\n`,
+  )
   return 0
 }
 
@@ -105,14 +119,24 @@ async function runDeviceCodeLogin(opts: DeviceCodeLoginOptions): Promise<Command
     return 1
   }
 
-  setCredential(apiUrl, {
+  // Best-effort: resolve the org slug for a friendlier display + storage key.
+  let slug: string | undefined
+  try {
+    const client = createCloudClient({ token: result.accessToken, apiUrl })
+    slug = (await fetchOrganization(client))?.slug
+  } catch {
+    // Non-fatal — we already have the org id from the device flow.
+  }
+
+  setOrgCredential(apiUrl, {
     accessToken: result.accessToken,
     organizationId: result.organizationId,
+    organizationSlug: slug,
     userId: result.userId,
     createdAt: new Date().toISOString(),
   })
 
-  ctx.stdout(`\nLogged in to ${apiUrl} (org ${result.organizationId})\n`)
+  ctx.stdout(`\nLogged in to ${apiUrl} (org ${slug ?? result.organizationId})\n`)
   return 0
 }
 

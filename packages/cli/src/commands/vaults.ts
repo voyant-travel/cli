@@ -1,24 +1,21 @@
-import type { VaultSummary } from "@voyant-travel/cloud-sdk"
-
-import { getStringFlag, parseArgs } from "../lib/args.js"
-import { CloudAuthError, createCloudClient } from "../lib/cloud-client.js"
+import { parseArgs } from "../lib/args.js"
+import { clientFromFlags, out, printJson, runCloud, wantsJson } from "../lib/output.js"
 import type { CommandContext, CommandResult } from "../types.js"
 
 /**
  * `voyant vaults <subcommand>` — Voyant Cloud Vault operations.
  *
  * Subcommands:
- *   - `list` — list vaults visible to the current credential
+ *   - `list` — list vaults in the active organization (names + secret counts)
  *
- * Mostly a first cloud surface that exercises the createCloudClient →
- * cloud-sdk pipe end-to-end. More subcommands (`get`, secret CRUD) follow
- * once the device-code login lands.
+ * Listing returns metadata only; the CLI never decrypts. Manage individual
+ * secrets with `voyant secrets <list|set|rm>`.
  */
 export async function vaultsCommand(ctx: CommandContext): Promise<CommandResult> {
   const [sub, ...rest] = ctx.argv
-  if (!sub) {
-    ctx.stderr("Usage: voyant vaults <list>\n")
-    return 1
+  if (!sub || sub === "help") {
+    ctx.stdout("Usage: voyant vaults <list>\n")
+    return sub ? 0 : 1
   }
 
   if (sub === "list") {
@@ -31,44 +28,17 @@ export async function vaultsCommand(ctx: CommandContext): Promise<CommandResult>
 
 async function vaultsListCommand(ctx: CommandContext): Promise<CommandResult> {
   const args = parseArgs(ctx.argv)
-  const json = args.flags.json === true
+  const client = clientFromFlags(ctx, args)
+  if (!client) return 1
 
-  let client: ReturnType<typeof createCloudClient>
-  try {
-    client = createCloudClient({
-      token: getStringFlag(args, "token"),
-      apiUrl: getStringFlag(args, "api-url"),
-    })
-  } catch (err) {
-    if (err instanceof CloudAuthError) {
-      ctx.stderr(`${err.message}\n`)
-      return 1
+  return runCloud(ctx, args, async () => {
+    const vaults = await client.vault.listVaults()
+    if (wantsJson(args)) return printJson(ctx, vaults)
+    if (vaults.length === 0) return out(ctx, "No vaults found.\n")
+    for (const v of vaults) {
+      const noun = v.secretCount === 1 ? "secret" : "secrets"
+      ctx.stdout(`${v.slug} — ${v.name} (${v.secretCount} ${noun})\n`)
     }
-    throw err
-  }
-
-  let vaults: VaultSummary[]
-  try {
-    vaults = await client.vault.listVaults()
-  } catch (err) {
-    const reason = err instanceof Error ? err.message : String(err)
-    ctx.stderr(`Failed to list vaults: ${reason}\n`)
-    return 1
-  }
-
-  if (json) {
-    ctx.stdout(`${JSON.stringify(vaults, null, 2)}\n`)
     return 0
-  }
-
-  if (vaults.length === 0) {
-    ctx.stdout("No vaults found.\n")
-    return 0
-  }
-
-  for (const v of vaults) {
-    const noun = v.secretCount === 1 ? "secret" : "secrets"
-    ctx.stdout(`${v.slug} — ${v.name} (${v.secretCount} ${noun})\n`)
-  }
-  return 0
+  })
 }

@@ -70,6 +70,7 @@ export async function logsCommand(ctx: CommandContext): Promise<CommandResult> {
     client = createCloudClient({
       token: getStringFlag(args, "token"),
       apiUrl: getStringFlag(args, "api-url"),
+      org: getStringFlag(args, "org"),
     })
   } catch (err) {
     if (err instanceof CloudAuthError) {

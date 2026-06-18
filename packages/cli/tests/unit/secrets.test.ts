@@ -32,13 +32,6 @@ const SAMPLE_SECRETS = [
   },
 ]
 
-const SAMPLE_VALUE = {
-  key: "DATABASE_URL",
-  value: "postgres://example",
-  version: 3,
-  updatedAt: "2026-02-01T00:00:00Z",
-}
-
 describe("secretsCommand", () => {
   let prevFetch: typeof globalThis.fetch | undefined
 
@@ -54,11 +47,11 @@ describe("secretsCommand", () => {
     }
   })
 
-  it("errors without a subcommand", async () => {
-    const { ctx, stderr } = makeCtx([])
+  it("prints usage without a subcommand", async () => {
+    const { ctx, stdout } = makeCtx([])
     const code = await secretsCommand(ctx)
     expect(code).toBe(1)
-    expect(stderr.join("")).toContain("Usage: voyant secrets <list|get|set|rm>")
+    expect(stdout.join("")).toContain("Usage: voyant secrets <list|set|rm>")
   })
 
   it("errors on unknown subcommand", async () => {
@@ -119,74 +112,29 @@ describe("secretsCommand", () => {
       expect(stdout.join("")).toContain("No secrets in production.")
     })
 
-    it("surfaces transport failures with the vault slug in the message", async () => {
+    it("surfaces transport failures", async () => {
       globalThis.fetch = async () =>
         new Response("Forbidden", { status: 403, statusText: "Forbidden" })
 
       const { ctx, stderr } = makeCtx(["list", "production", "--token", "tok"])
       const code = await secretsCommand(ctx)
       expect(code).toBe(1)
-      expect(stderr.join("")).toContain("Failed to list secrets in production")
+      expect(stderr.join("")).toContain("Forbidden")
     })
   })
 
-  describe("get", () => {
-    it("errors without vault and key", async () => {
-      const { ctx, stderr } = makeCtx(["get", "production", "--token", "tok"])
-      const code = await secretsCommand(ctx)
-      expect(code).toBe(1)
-      expect(stderr.join("")).toContain("Usage: voyant secrets get <vault> <key>")
-    })
-
-    it("prints just the value in plain mode (pipe-friendly)", async () => {
-      let calledUrl: string | undefined
-      globalThis.fetch = async (input) => {
-        calledUrl = String(input)
-        return new Response(JSON.stringify(SAMPLE_VALUE), {
-          status: 200,
-          headers: { "content-type": "application/json" },
-        })
+  describe("get (removed — the CLI cannot decrypt)", () => {
+    it("refuses with a clear message and never calls the network", async () => {
+      let called = false
+      globalThis.fetch = async () => {
+        called = true
+        return new Response("{}", { status: 200 })
       }
-
-      const { ctx, stdout } = makeCtx(["get", "production", "DATABASE_URL", "--token", "tok"])
-      const code = await secretsCommand(ctx)
-      expect(code).toBe(0)
-      expect(calledUrl).toContain("/vault/v1/production/secrets/DATABASE_URL")
-      // No trailing newline — preserves bytes for `voyant secrets get | xargs` etc.
-      expect(stdout.join("")).toBe("postgres://example")
-    })
-
-    it("--json prints the full envelope", async () => {
-      globalThis.fetch = async () =>
-        new Response(JSON.stringify(SAMPLE_VALUE), {
-          status: 200,
-          headers: { "content-type": "application/json" },
-        })
-
-      const { ctx, stdout } = makeCtx([
-        "get",
-        "production",
-        "DATABASE_URL",
-        "--token",
-        "tok",
-        "--json",
-      ])
-      const code = await secretsCommand(ctx)
-      expect(code).toBe(0)
-      const parsed = JSON.parse(stdout.join("")) as { key: string; value: string; version: number }
-      expect(parsed.key).toBe("DATABASE_URL")
-      expect(parsed.value).toBe("postgres://example")
-      expect(parsed.version).toBe(3)
-    })
-
-    it("surfaces 404 with vault/key in the message", async () => {
-      globalThis.fetch = async () =>
-        new Response("Not Found", { status: 404, statusText: "Not Found" })
-
-      const { ctx, stderr } = makeCtx(["get", "production", "MISSING_KEY", "--token", "tok"])
+      const { ctx, stderr } = makeCtx(["get", "production", "DATABASE_URL", "--token", "tok"])
       const code = await secretsCommand(ctx)
       expect(code).toBe(1)
-      expect(stderr.join("")).toContain("Failed to fetch production/MISSING_KEY")
+      expect(stderr.join("")).toContain("cannot decrypt secrets")
+      expect(called).toBe(false)
     })
   })
 
@@ -271,7 +219,7 @@ describe("secretsCommand", () => {
       const { ctx, stderr } = makeCtx(["set", "production", "K", "value", "--token", "tok"])
       const code = await secretsCommand(ctx)
       expect(code).toBe(1)
-      expect(stderr.join("")).toContain("Failed to set production/K")
+      expect(stderr.join("")).toContain("Forbidden")
     })
   })
 
@@ -307,7 +255,7 @@ describe("secretsCommand", () => {
       const { ctx, stderr } = makeCtx(["rm", "production", "MISSING", "--token", "tok"])
       const code = await secretsCommand(ctx)
       expect(code).toBe(1)
-      expect(stderr.join("")).toContain("Failed to delete production/MISSING")
+      expect(stderr.join("")).toContain("Not Found")
     })
   })
 })

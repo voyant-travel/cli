@@ -9,7 +9,17 @@ import {
   DEFAULT_CLOUD_API_URL,
   resolveCloudAuth,
 } from "../../src/lib/cloud-client.js"
-import { setCredential } from "../../src/lib/credentials.js"
+import { setOrgCredential } from "../../src/lib/credentials.js"
+
+// Test shim: the credentials store is now multi-org. Default a synthetic org id
+// so the existing single-credential assertions keep working unchanged.
+function setCredential(
+  apiUrl: string,
+  cred: { accessToken: string; organizationId?: string; userId?: string; createdAt: string },
+  path?: string,
+) {
+  setOrgCredential(apiUrl, { organizationId: "org_x", ...cred }, {}, path)
+}
 
 describe("resolveCloudAuth", () => {
   let tmp: string

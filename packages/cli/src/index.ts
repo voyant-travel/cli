@@ -3,10 +3,14 @@ import { dirname, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 
 import { adminCommand } from "./commands/admin.js"
+import { appsCommand } from "./commands/apps.js"
 import { configCommand } from "./commands/config.js"
+import { databasesCommand } from "./commands/databases.js"
 import { dbCommand } from "./commands/db.js"
+import { deployCommand } from "./commands/deploy.js"
 import { devCommand } from "./commands/dev-command.js"
 import { doctorCommand } from "./commands/doctor.js"
+import { envCommand } from "./commands/env.js"
 import { execCommand } from "./commands/exec.js"
 import { generateLinkCommand } from "./commands/generate-link.js"
 import { generateModuleCommand } from "./commands/generate-module.js"
@@ -15,7 +19,9 @@ import { loginCommand } from "./commands/login.js"
 import { logoutCommand } from "./commands/logout.js"
 import { logsCommand } from "./commands/logs.js"
 import { newCommand } from "./commands/new.js"
+import { orgCommand } from "./commands/org.js"
 import { secretsCommand } from "./commands/secrets.js"
+import { storageCommand } from "./commands/storage.js"
 import { upgradeCommand } from "./commands/upgrade.js"
 import { vaultsCommand } from "./commands/vaults.js"
 import { whoamiCommand } from "./commands/whoami.js"
@@ -103,6 +109,9 @@ export async function main(
     case "whoami": {
       return whoamiCommand({ ...ctx, argv: rest })
     }
+    case "org": {
+      return orgCommand({ ...ctx, argv: rest })
+    }
     case "vaults": {
       return vaultsCommand({ ...ctx, argv: rest })
     }
@@ -112,15 +121,24 @@ export async function main(
     case "logs": {
       return logsCommand({ ...ctx, argv: rest })
     }
+    case "apps": {
+      return appsCommand({ ...ctx, argv: rest })
+    }
+    case "env": {
+      return envCommand({ ...ctx, argv: rest })
+    }
+    case "deploy": {
+      return deployCommand({ ...ctx, argv: rest })
+    }
+    case "databases": {
+      return databasesCommand({ ...ctx, argv: rest })
+    }
+    case "storage": {
+      return storageCommand({ ...ctx, argv: rest })
+    }
     case "build": {
       ctx.stderr(
         "voyant: use `voyant workflows build`. The top-level `voyant build` entry will wrap multiple build targets once the app/runtime layer is merged.\n",
-      )
-      return 1
-    }
-    case "deploy": {
-      ctx.stderr(
-        "voyant: use `voyant workflows deploy --target docker|cloudflare` for self-host targets. The top-level `voyant deploy` entry still belongs to the cloud control plane.\n",
       )
       return 1
     }

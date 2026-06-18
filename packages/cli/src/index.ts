@@ -13,6 +13,7 @@ import { generateModuleCommand } from "./commands/generate-module.js"
 import { helpCommand } from "./commands/help.js"
 import { loginCommand } from "./commands/login.js"
 import { logoutCommand } from "./commands/logout.js"
+import { logsCommand } from "./commands/logs.js"
 import { newCommand } from "./commands/new.js"
 import { secretsCommand } from "./commands/secrets.js"
 import { upgradeCommand } from "./commands/upgrade.js"
@@ -107,6 +108,9 @@ export async function main(
     }
     case "secrets": {
       return secretsCommand({ ...ctx, argv: rest })
+    }
+    case "logs": {
+      return logsCommand({ ...ctx, argv: rest })
     }
     case "build": {
       ctx.stderr(

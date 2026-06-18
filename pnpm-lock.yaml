@@ -24,8 +24,8 @@ importers:
   packages/cli:
     dependencies:
       '@voyant-travel/cloud-sdk':
-        specifier: ^0.9.0
-        version: 0.9.0
+        specifier: ^0.10.1
+        version: 0.10.1
       '@voyant-travel/core':
         specifier: ^0.109.0
         version: 0.109.0
@@ -554,8 +554,8 @@ packages:
   '@vitest/utils@4.1.5':
     resolution: {integrity: sha512-76wdkrmfXfqGjueGgnb45ITPyUi1ycZ4IHgC2bhPDUfWHklY/q3MdLOAB+TF1e6xfl8NxNY0ZYaPCFNWSsw3Ug==}
 
-  '@voyant-travel/cloud-sdk@0.9.0':
-    resolution: {integrity: sha512-pMaoOYSHbPW3V2KncU6PuzTyAphPx3q7HrNXADSiUpPWQxqq+trXnVqVyYRJBicuThfj7FLKe2RGx5+EN9Sdng==}
+  '@voyant-travel/cloud-sdk@0.10.1':
+    resolution: {integrity: sha512-xqDk1ZNt1a1LR+aZ3W3u9xSnWKNpd2S3JP+G3QRRVeAecMohUq1jxG7hSSzKAjD0aH2gBfCQfXJqGlEzorKAig==}
     peerDependencies:
       typesense: '>=2.0.0 <4.0.0'
     peerDependenciesMeta:
@@ -1764,7 +1764,7 @@ snapshots:
       convert-source-map: 2.0.0
       tinyrainbow: 3.1.0
 
-  '@voyant-travel/cloud-sdk@0.9.0': {}
+  '@voyant-travel/cloud-sdk@0.10.1': {}
 
   '@voyant-travel/core@0.109.0': {}
 

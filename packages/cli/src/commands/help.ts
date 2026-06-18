@@ -30,20 +30,38 @@ OPEN-SOURCE COMMANDS
   exec <script.ts> [args...]         Run a TS/JS script with the voyant loader hook
   workflows <subcommand>             Build, serve, inspect, and self-host workflows
 
-CLOUD COMMANDS  (need a Voyant Cloud token)
+CLOUD COMMANDS  (need a Voyant Cloud token; add --json for machine output)
   login [--token <value>]            Authorize via browser device flow (or paste a token)
-  logout                             Remove the stored credential
-  whoami                             Show the resolved API URL and token source
-  vaults list                        List vaults visible to the current credential
-  secrets list <vault>               List secret keys + versions in a vault
-  secrets get <vault> <key>          Fetch a single secret value
+  logout [--org <slug>]              Remove a stored credential (one org or all)
+  whoami                             Show the API URL, token source, and active org
+  org <list|use|current>             Pick which org to target when you're in several
+  apps <list|get|create|delete>      Manage apps
+  env <list|set|rm> <app> [--env]    Manage an app environment's variables
+  deploy <app> [--env]               Trigger a deployment
+  deploy <list|get|logs|cancel|rollback> <app> [id]
+                                     Inspect and control deployments
+  databases <list|get|create|delete|branches|connection>
+                                     Manage Neon / D1 databases
+  storage buckets <list|create|delete>  Manage R2 buckets
+  vaults list                        List vaults in the active org
+  secrets list <vault>               List secret keys + versions (no values)
   secrets set <vault> <key> [value]  Upsert a secret (stdin if value omitted)
   secrets rm <vault> <key>           Delete a secret
   logs <app> [--level] [--since]     Read a deployed app's runtime logs
   logs <app> --follow                Stream new runtime logs live (tail -f)
 
+GLOBAL CLOUD FLAGS
+  --org <slug|id>                    Target organization (when logged in to several)
+  --token <token>                    Voyant Cloud API token
+  --api-url <url>                    Voyant Cloud API base URL
+  --json                             Machine-readable output
+  --yes, -y                          Approve destructive actions non-interactively
+
   --help, -h                         Show this help
   --version, -v                      Show CLI version
+
+The CLI cannot decrypt secrets (no 'secrets get'): CLI tokens lack the
+vault:read scope. Reveal values in the dashboard or with a server token.
 
 EXAMPLES
   voyant new my-app --template operator
@@ -58,12 +76,19 @@ EXAMPLES
   voyant exec ./scripts/backfill.ts --dry-run
   voyant login                                # browser device flow
   voyant login --token tok_live_abc123        # paste-token mode (CI/headless)
-  voyant whoami
+  voyant whoami --json
+  voyant org list
+  voyant org use acme
+  voyant apps list --json
+  voyant env list my-app --env production --json
+  voyant env set my-app STRIPE_KEY sk_live_xyz --secret
+  voyant deploy my-app
+  voyant databases list --json
+  voyant storage buckets list
   voyant vaults list --json
   voyant secrets list production
-  voyant secrets get production DATABASE_URL
   voyant secrets set production STRIPE_KEY sk_live_xyz
-  voyant secrets rm production OLD_KEY
+  voyant secrets rm production OLD_KEY --yes
   voyant logs my-app --level error --since 1h
   voyant logs my-app --follow --json
 `

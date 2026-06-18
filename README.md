@@ -37,14 +37,33 @@ Authenticate once, then drive Voyant Cloud from your terminal.
 voyant login                               # browser device flow
 voyant login --token tok_live_…            # CI / headless mode
 voyant whoami
+voyant org list                            # pick an org if you're in several
+voyant org use acme
 voyant logout
 
+voyant apps list
+voyant env list my-app --env production
+voyant env set my-app STRIPE_KEY sk_live_xyz --secret
+voyant deploy my-app                       # trigger; then deploy list/logs/rollback
+voyant logs my-app --level error --since 1h
+voyant databases list
+voyant storage buckets list
+
 voyant vaults list
-voyant secrets list production
-voyant secrets get production DATABASE_URL
+voyant secrets list production             # keys + versions, never values
 voyant secrets set production STRIPE_KEY sk_live_xyz
-voyant secrets rm production OLD_KEY
+voyant secrets rm production OLD_KEY --yes
 ```
+
+Every cloud command takes `--json` for machine output (and emits a stable
+`{ "error": { code, message } }` envelope on failure), `--org <slug|id>` to
+target an organization, and `--yes` to approve destructive actions
+non-interactively — so an agent can drive the whole platform unattended.
+
+> The CLI **cannot decrypt secrets**: there is no `secrets get`, and
+> `voyant login` mints tokens without the `vault:read` scope the decrypt
+> endpoints require. Reveal a value in the dashboard, or use a server-side app
+> token with `vault:read`.
 
 ## Login flows
 
@@ -52,8 +71,11 @@ voyant secrets rm production OLD_KEY
 against `https://api.voyant.travel/cli/v1/device/*`. It prints a verification
 URL, opens it in your browser (suppress with `--no-browser`), and polls
 until you approve. The minted token is stored in
-`~/.voyant/credentials.json` (mode 0600), keyed by API URL — so you can be
-logged into multiple environments at once (prod, staging, self-hosted).
+`~/.voyant/credentials.json` (mode 0600), keyed by API URL **and organization** —
+so you can be logged into multiple environments (prod, staging, self-hosted)
+and multiple organizations at once. API tokens are organization-bound, so each
+org you log in to is a separate token; `voyant org use <slug>` switches the
+active one.
 
 For CI or headless use, mint an API token in the dashboard tokens UI and
 run `voyant login --token tok_live_xyz`. Same outcome, no browser hop.
@@ -62,7 +84,11 @@ Token resolution order on every cloud command:
 
 1. `--token <value>` flag
 2. `VOYANT_CLOUD_API_KEY` env var
-3. `~/.voyant/credentials.json` for the resolved API URL
+3. `~/.voyant/credentials.json` for the resolved API URL + active org
+
+The active org is chosen by `--org <slug|id>` → `VOYANT_CLOUD_ORG` → the org set
+with `voyant org use` → the sole logged-in org. If you're in several orgs and
+haven't picked one, commands fail with a clear message rather than guessing.
 
 ## Status
 

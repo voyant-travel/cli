@@ -52,14 +52,26 @@ forward. CLI version decoupled from framework version (scaffolds still
 track `@voyant-travel/core@^0.18.0` regardless of how often we ship CLI
 patches).
 
+### Phase 6 — full control plane + multi-org ✓
+
+Exposed the whole cloud control plane to API tokens (new `/cloud/v1` routes in
+`voyant-cloud`) and wrapped them as typed namespaces in `cloud-sdk@0.10.0`. The
+CLI gained `apps`, `env`, `deploy`, `databases`, and `storage` command groups,
+all with `--json` machine output, a stable error envelope, and non-interactive
+`--yes` confirmations. Credentials are now per-organization with `voyant org
+list|use|current` + a global `--org`. Vault decryption was removed from the CLI
+(no `secrets get`) and enforced server-side — `voyant login` tokens carry no
+`vault:read` scope. `secrets set/rm` now use the typed `vault.setSecret` /
+`vault.deleteSecret`.
+
 ## Upcoming
 
-- **Refactor `secrets set/rm` to `client.vault.setSecret/deleteSecret`** once
-  cloud-sdk@0.7.0 publishes — currently uses `client.transport.request`
-  directly because typed methods only land in 0.7.0.
 - **`voyant runs list` + `voyant runs logs <id>`** — needs cloud-sdk to add a
   `developer` namespace exposing the existing
   `/dashboard/v1/organizations/:id/developers/runs(*)` routes (or new
   `/cli/v1/runs` routes if we want them under API-token auth).
+- **`voyant org list --remote`** — list every org the signed-in user can access
+  (not just the ones already logged in), so org switching can offer choices the
+  local credential file doesn't yet know about.
 - **Garbage-collect expired `cli_device_codes` rows** — the lazy expiry
   works fine, but a cron sweep keeps the table tidy.

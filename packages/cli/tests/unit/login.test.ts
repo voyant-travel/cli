@@ -4,7 +4,10 @@ import { join } from "node:path"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 
 import { loginCommand } from "../../src/commands/login.js"
-import { getCredential } from "../../src/lib/credentials.js"
+import { resolveOrgCredential } from "../../src/lib/credentials.js"
+
+// Test shim: read back whichever org credential was just stored.
+const getCredential = (apiUrl: string) => resolveOrgCredential(apiUrl, undefined)
 
 function makeCtx(argv: string[]) {
   const stdout: string[] = []

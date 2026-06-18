@@ -4,7 +4,7 @@ import {
   VoyantCloudConfigError,
 } from "@voyant-travel/cloud-sdk"
 
-import { getCredential } from "./credentials.js"
+import { listOrgCredentials, resolveOrgCredential } from "./credentials.js"
 
 /**
  * Default Voyant Cloud production base URL. Matches the default baked into
@@ -18,6 +18,11 @@ export interface ResolveCloudAuthOptions {
   token?: string
   /** From `--api-url <value>` flag. Used as both client base URL and credentials key. */
   apiUrl?: string
+  /**
+   * From `--org <slug|id>` flag (or `VOYANT_CLOUD_ORG`). Selects which stored
+   * org token to use when the user is logged in to more than one.
+   */
+  org?: string
   /** Override the env source — defaults to `process.env`. Tests pass a literal map. */
   env?: Record<string, string | undefined>
   /** Override the credentials file path — tests pass a tmpdir path. */
@@ -29,6 +34,10 @@ export interface ResolvedCloudAuth {
   accessToken: string
   /** Where the token came from. Useful for logging and `voyant whoami`. */
   source: "flag" | "env" | "credentials"
+  /** Resolved organization id, when known (credentials source). */
+  organizationId?: string
+  /** Resolved organization slug, when known. */
+  organizationSlug?: string
 }
 
 /**
@@ -57,20 +66,43 @@ export function resolveCloudAuth(opts: ResolveCloudAuthOptions = {}): ResolvedCl
   const env = opts.env ?? (process.env as Record<string, string | undefined>)
   const apiUrl =
     nonEmpty(opts.apiUrl) ?? nonEmpty(env.VOYANT_CLOUD_API_URL) ?? DEFAULT_CLOUD_API_URL
+  const org = nonEmpty(opts.org) ?? nonEmpty(env.VOYANT_CLOUD_ORG)
 
   const flagToken = nonEmpty(opts.token)
-  if (flagToken) return { apiUrl, accessToken: flagToken, source: "flag" }
+  if (flagToken) return { apiUrl, accessToken: flagToken, source: "flag", organizationId: org }
 
   const envToken = nonEmpty(env.VOYANT_CLOUD_API_KEY)
-  if (envToken) return { apiUrl, accessToken: envToken, source: "env" }
+  if (envToken) return { apiUrl, accessToken: envToken, source: "env", organizationId: org }
 
-  const cred = getCredential(apiUrl, opts.credentialsPath)
-  const credToken = nonEmpty(cred?.accessToken)
-  if (credToken) return { apiUrl, accessToken: credToken, source: "credentials" }
+  const cred = resolveOrgCredential(apiUrl, org, opts.credentialsPath)
+  if (cred) {
+    return {
+      apiUrl,
+      accessToken: cred.accessToken,
+      source: "credentials",
+      organizationId: cred.organizationId,
+      organizationSlug: cred.organizationSlug,
+    }
+  }
 
+  // No single credential could be resolved — explain precisely why.
+  const stored = listOrgCredentials(apiUrl, opts.credentialsPath)
+  if (stored.length === 0) {
+    throw new CloudAuthError(
+      `No Voyant Cloud credentials found for ${apiUrl}. ` +
+        "Run `voyant login`, set VOYANT_CLOUD_API_KEY, or pass --token.",
+    )
+  }
+  if (org) {
+    throw new CloudAuthError(
+      `No credentials for org "${org}" at ${apiUrl}. ` +
+        "Run `voyant org list` to see logged-in orgs, or `voyant login` to add one.",
+    )
+  }
+  const names = stored.map((c) => c.organizationSlug ?? c.organizationId).join(", ")
   throw new CloudAuthError(
-    `No Voyant Cloud credentials found for ${apiUrl}. ` +
-      "Run `voyant login`, set VOYANT_CLOUD_API_KEY, or pass --token.",
+    `You are logged in to multiple orgs at ${apiUrl} (${names}). ` +
+      "Select one with `voyant org use <slug>`, or pass --org <slug>.",
   )
 }
 

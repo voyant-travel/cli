@@ -5,12 +5,23 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest"
 
 import {
   clearCredential,
-  getCredential,
+  getApiUrlCredentials,
   getCredentialsPath,
+  listOrgCredentials,
   loadCredentials,
+  type OrgCredential,
+  resolveOrgCredential,
   saveCredentials,
-  setCredential,
+  setActiveOrg,
+  setOrgCredential,
 } from "../../src/lib/credentials.js"
+
+const cred = (overrides: Partial<OrgCredential> = {}): OrgCredential => ({
+  accessToken: "tok",
+  organizationId: "org_x",
+  createdAt: "2026-01-01T00:00:00Z",
+  ...overrides,
+})
 
 describe("credentials", () => {
   let tmp: string
@@ -29,91 +40,99 @@ describe("credentials", () => {
     expect(loadCredentials(path)).toEqual({})
   })
 
-  it("round-trips a credential keyed by apiUrl", () => {
-    setCredential(
+  it("round-trips an org credential and sets it active", () => {
+    setOrgCredential(
       "https://api.voyant.travel",
-      {
-        accessToken: "tok_abc",
-        organizationId: "org_x",
-        userId: "user_x",
-        createdAt: "2026-01-01T00:00:00Z",
-      },
+      cred({ accessToken: "tok_abc", organizationId: "org_x", organizationSlug: "acme" }),
+      {},
       path,
     )
-    const got = getCredential("https://api.voyant.travel", path)
+    const got = resolveOrgCredential("https://api.voyant.travel", undefined, path)
     expect(got?.accessToken).toBe("tok_abc")
-    expect(got?.organizationId).toBe("org_x")
+    expect(getApiUrlCredentials("https://api.voyant.travel", path)?.activeOrg).toBe("org_x")
+  })
+
+  it("resolves the sole org without an explicit selection", () => {
+    setOrgCredential("https://a", cred({ organizationId: "only" }), { setActive: false }, path)
+    expect(resolveOrgCredential("https://a", undefined, path)?.organizationId).toBe("only")
+  })
+
+  it("refuses to guess when multiple orgs exist and none is active", () => {
+    setOrgCredential("https://a", cred({ organizationId: "o1" }), { setActive: false }, path)
+    setOrgCredential("https://a", cred({ organizationId: "o2" }), { setActive: false }, path)
+    expect(resolveOrgCredential("https://a", undefined, path)).toBeUndefined()
+    // ...but an explicit selection (by id or slug) resolves.
+    expect(resolveOrgCredential("https://a", "o2", path)?.organizationId).toBe("o2")
+  })
+
+  it("setActiveOrg switches which org resolves by default", () => {
+    setOrgCredential("https://a", cred({ organizationId: "o1", organizationSlug: "one" }), {}, path)
+    setOrgCredential("https://a", cred({ organizationId: "o2", organizationSlug: "two" }), {}, path)
+    setActiveOrg("https://a", "one", path)
+    expect(resolveOrgCredential("https://a", undefined, path)?.organizationId).toBe("o1")
+  })
+
+  it("migrates a legacy flat credential into the multi-org shape", () => {
+    writeFileSync(
+      path,
+      JSON.stringify({
+        "https://api.voyant.travel": {
+          accessToken: "legacy",
+          organizationId: "org_legacy",
+          createdAt: "2026-01-01T00:00:00Z",
+        },
+      }),
+      "utf8",
+    )
+    const got = resolveOrgCredential("https://api.voyant.travel", undefined, path)
+    expect(got?.accessToken).toBe("legacy")
+    expect(got?.organizationId).toBe("org_legacy")
   })
 
   it("normalizes trailing slashes on the apiUrl key", () => {
-    setCredential(
-      "https://api.voyant.travel/",
-      { accessToken: "tok", createdAt: "2026-01-01T00:00:00Z" },
-      path,
+    setOrgCredential("https://api.voyant.travel/", cred(), {}, path)
+    expect(resolveOrgCredential("https://api.voyant.travel", undefined, path)?.accessToken).toBe(
+      "tok",
     )
-    expect(getCredential("https://api.voyant.travel", path)?.accessToken).toBe("tok")
-    expect(getCredential("https://api.voyant.travel//", path)?.accessToken).toBe("tok")
+    expect(resolveOrgCredential("https://api.voyant.travel//", undefined, path)?.accessToken).toBe(
+      "tok",
+    )
   })
 
-  it("supports multiple apiUrls in one file", () => {
-    setCredential("https://a", { accessToken: "1", createdAt: "x" }, path)
-    setCredential("https://b", { accessToken: "2", createdAt: "x" }, path)
-    expect(getCredential("https://a", path)?.accessToken).toBe("1")
-    expect(getCredential("https://b", path)?.accessToken).toBe("2")
-  })
-
-  it("writes the file with mode 0600", () => {
+  it("writes the file with mode 0600 (and re-applies on overwrite)", () => {
     if (process.platform === "win32") return
-    setCredential(
-      "https://api.voyant.travel",
-      { accessToken: "tok", createdAt: "2026-01-01T00:00:00Z" },
-      path,
-    )
+    setOrgCredential("https://a", cred({ accessToken: "1" }), {}, path)
     expect(statSync(path).mode & 0o777).toBe(0o600)
-  })
-
-  it("re-applies mode 0600 on overwrite", () => {
-    if (process.platform === "win32") return
-    setCredential("https://a", { accessToken: "1", createdAt: "x" }, path)
-    // Simulate an externally-loosened mode.
     chmodSync(path, 0o644)
-    setCredential("https://a", { accessToken: "2", createdAt: "x" }, path)
+    setOrgCredential("https://a", cred({ accessToken: "2" }), {}, path)
     expect(statSync(path).mode & 0o777).toBe(0o600)
   })
 
-  it("clearCredential removes a single key", () => {
-    setCredential("https://a", { accessToken: "1", createdAt: "x" }, path)
-    setCredential("https://b", { accessToken: "2", createdAt: "x" }, path)
-    clearCredential("https://a", path)
-    expect(getCredential("https://a", path)).toBeUndefined()
-    expect(getCredential("https://b", path)?.accessToken).toBe("2")
-  })
-
-  it("clearCredential deletes the file when the last key is removed", () => {
-    setCredential("https://a", { accessToken: "1", createdAt: "x" }, path)
-    clearCredential("https://a", path)
+  it("clearCredential removes a single org, then the apiUrl, then the file", () => {
+    setOrgCredential("https://a", cred({ organizationId: "o1" }), {}, path)
+    setOrgCredential("https://a", cred({ organizationId: "o2" }), {}, path)
+    clearCredential("https://a", "o1", path)
+    expect(listOrgCredentials("https://a", path).map((c) => c.organizationId)).toEqual(["o2"])
+    clearCredential("https://a", undefined, path)
     expect(loadCredentials(path)).toEqual({})
   })
 
-  it("ignores unparseable JSON", () => {
+  it("ignores unparseable / empty / array files", () => {
     writeFileSync(path, "{not-json", "utf8")
     expect(loadCredentials(path)).toEqual({})
-  })
-
-  it("ignores empty files", () => {
     writeFileSync(path, "", "utf8")
     expect(loadCredentials(path)).toEqual({})
-  })
-
-  it("ignores arrays at the top level", () => {
     writeFileSync(path, "[1,2,3]", "utf8")
     expect(loadCredentials(path)).toEqual({})
   })
 
   it("saveCredentials creates the parent directory", () => {
     const nested = join(tmp, "nested", "deep", "credentials.json")
-    saveCredentials({ "https://a": { accessToken: "1", createdAt: "x" } }, nested)
-    expect(loadCredentials(nested)["https://a"]?.accessToken).toBe("1")
+    saveCredentials(
+      { "https://a": { activeOrg: "o1", orgs: { o1: cred({ organizationId: "o1" }) } } },
+      nested,
+    )
+    expect(resolveOrgCredential("https://a", undefined, nested)?.organizationId).toBe("o1")
   })
 
   it("getCredentialsPath honors VOYANT_CREDENTIALS_FILE", () => {
@@ -122,11 +141,8 @@ describe("credentials", () => {
     try {
       expect(getCredentialsPath()).toBe("/custom/voyant.json")
     } finally {
-      if (prev === undefined) {
-        delete process.env.VOYANT_CREDENTIALS_FILE
-      } else {
-        process.env.VOYANT_CREDENTIALS_FILE = prev
-      }
+      if (prev === undefined) delete process.env.VOYANT_CREDENTIALS_FILE
+      else process.env.VOYANT_CREDENTIALS_FILE = prev
     }
   })
 
@@ -136,11 +152,8 @@ describe("credentials", () => {
     try {
       expect(getCredentialsPath()).toMatch(/voyant.+credentials\.json$/)
     } finally {
-      if (prev === undefined) {
-        delete process.env.VOYANT_CREDENTIALS_FILE
-      } else {
-        process.env.VOYANT_CREDENTIALS_FILE = prev
-      }
+      if (prev === undefined) delete process.env.VOYANT_CREDENTIALS_FILE
+      else process.env.VOYANT_CREDENTIALS_FILE = prev
     }
   })
 })

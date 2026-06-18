@@ -57,11 +57,11 @@ describe("vaultsCommand", () => {
     else process.env.VOYANT_CLOUD_API_KEY = prevApiKey
   })
 
-  it("errors without a subcommand", async () => {
-    const { ctx, stderr } = makeCtx([])
+  it("prints usage without a subcommand", async () => {
+    const { ctx, stdout } = makeCtx([])
     const code = await vaultsCommand(ctx)
     expect(code).toBe(1)
-    expect(stderr.join("")).toContain("Usage: voyant vaults")
+    expect(stdout.join("")).toContain("Usage: voyant vaults")
   })
 
   it("errors on unknown subcommand", async () => {
@@ -117,7 +117,7 @@ describe("vaultsCommand", () => {
     const { ctx, stderr } = makeCtx(["list", "--token", "tok_bad"])
     const code = await vaultsCommand(ctx)
     expect(code).toBe(1)
-    expect(stderr.join("")).toContain("Failed to list vaults")
+    expect(stderr.join("")).toContain("Unauthorized")
   })
 
   it("surfaces missing-credentials as a clean error", async () => {

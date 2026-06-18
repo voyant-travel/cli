@@ -4,7 +4,12 @@ import { join } from "node:path"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 
 import { logoutCommand } from "../../src/commands/logout.js"
-import { getCredential, setCredential } from "../../src/lib/credentials.js"
+import { resolveOrgCredential, setOrgCredential } from "../../src/lib/credentials.js"
+
+// Test shims bridging the old single-credential API onto the multi-org store.
+const getCredential = (apiUrl: string) => resolveOrgCredential(apiUrl, undefined)
+const setCredential = (apiUrl: string, cred: { accessToken: string; createdAt: string }) =>
+  setOrgCredential(apiUrl, { organizationId: "org_x", ...cred }, {})
 
 function makeCtx(argv: string[]) {
   const stdout: string[] = []

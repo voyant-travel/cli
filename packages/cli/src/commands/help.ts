@@ -39,6 +39,8 @@ CLOUD COMMANDS  (need a Voyant Cloud token)
   secrets get <vault> <key>          Fetch a single secret value
   secrets set <vault> <key> [value]  Upsert a secret (stdin if value omitted)
   secrets rm <vault> <key>           Delete a secret
+  logs <app> [--level] [--since]     Read a deployed app's runtime logs
+  logs <app> --follow                Stream new runtime logs live (tail -f)
 
   --help, -h                         Show this help
   --version, -v                      Show CLI version
@@ -62,6 +64,8 @@ EXAMPLES
   voyant secrets get production DATABASE_URL
   voyant secrets set production STRIPE_KEY sk_live_xyz
   voyant secrets rm production OLD_KEY
+  voyant logs my-app --level error --since 1h
+  voyant logs my-app --follow --json
 `
 
 export function helpCommand(ctx: CommandContext): CommandResult {

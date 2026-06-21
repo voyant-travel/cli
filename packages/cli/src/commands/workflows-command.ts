@@ -337,10 +337,11 @@ usage:
   voyant workflows serve [--port <n>] [--host <h>] [--file <path>] [--dashboard <path>]
   voyant workflows manifest --file <path> [--out <path>]
   voyant workflows build --file <path> [--out <dir>] [--platform neutral|node|browser] [--minify] [--no-sourcemap]
-  voyant workflows deploy --target docker|cloudflare --file <path> [--out <dir>] [--apply]
+  voyant workflows deploy --target docker --file <path> [--out <dir>] [--apply]
                           [--host-port <n>] [--bind-port <n>] [--database-url <url>]
                           [--database-wait-seconds <n>] [--skip-migrations] [--env-out <path>]
-  voyant workflows doctor --target docker|cloudflare [--env-file <path>] [--bundle <path>] [--check-docker] [--check-cloudflare]
+  voyant workflows doctor --target docker [--env-file <path>] [--bundle <path>] [--check-docker]
+  voyant workflows doctor --target entry --file <path>
   voyant workflows trigger <id> [--input <json>] [--input-file <path>] [--url <url>]
   voyant workflows prune [--older-than <duration>] [--keep <N>] [--workflow <id>] [--status <s>] [--dry-run] [--json]
   voyant workflows tail <run-id> [--url <url>] [--stream <streamId>] [--json]

@@ -4,7 +4,11 @@ import { dirname, resolve as resolvePath } from "node:path"
 import { getBooleanFlag, getStringFlag, type ParsedArgs, parseArgs } from "../../lib/args.js"
 import { type BuildCmdDeps, defaultBuildDeps, runWorkflowsBuild } from "./build-cmd.js"
 
-export type DeployTarget = "docker" | "cloudflare"
+// Workflows are Node-only (docs/architecture/workflows-runtime-architecture.md).
+// The Cloudflare Worker/Durable Object workflow adapter has been removed from
+// the workspace, so `docker` (the Node self-host server) is the only deploy
+// target. `--target` is retained for forward-compatibility and explicitness.
+export type DeployTarget = "docker"
 
 export interface DeployOutcome {
   target: DeployTarget
@@ -28,7 +32,6 @@ export interface DeployDeps extends BuildCmdDeps {
 
 const DOCKER_STAGE_PATH = "apps/selfhost-node-server/dist/bundle.mjs"
 const DOCKER_ENV_STAGE_PATH = "apps/selfhost-node-server/dist/selfhost.env"
-const CLOUDFLARE_STAGE_PATH = "apps/selfhost-cloudflare-worker/src/bundle.mjs"
 const DEFAULT_DOCKER_DATABASE_URL = ["postgresql://voyant:voyant", "postgres:5432/voyant"].join("@")
 
 export async function runWorkflowsDeploy(
@@ -39,7 +42,7 @@ export async function runWorkflowsDeploy(
   if (!target) {
     return {
       ok: false,
-      message: "voyant workflows deploy: missing required --target <docker|cloudflare>",
+      message: "voyant workflows deploy: missing required --target <docker>",
       exitCode: 2,
     }
   }
@@ -54,14 +57,7 @@ export async function runWorkflowsDeploy(
   }
 
   const buildOutDir = getStringFlag(args, "out") ?? `.voyant/deploy/${target}`
-  const buildArgv = [
-    "--file",
-    file,
-    "--out",
-    buildOutDir,
-    "--platform",
-    target === "docker" ? "node" : "neutral",
-  ]
+  const buildArgv = ["--file", file, "--out", buildOutDir, "--platform", "node"]
   if (getBooleanFlag(args, "minify")) buildArgv.push("--minify")
   if (getBooleanFlag(args, "no-sourcemap")) {
     buildArgv.push("--no-sourcemap")
@@ -70,23 +66,15 @@ export async function runWorkflowsDeploy(
   const built = await runWorkflowsBuild(parseArgs(buildArgv), deps)
   if (!built.ok) return built
 
-  const stagedBundlePath = resolvePath(
-    target === "docker" ? DOCKER_STAGE_PATH : CLOUDFLARE_STAGE_PATH,
-  )
+  const stagedBundlePath = resolvePath(DOCKER_STAGE_PATH)
   await deps.copyFile(built.bundlePath, stagedBundlePath)
 
-  let stagedConfigPath: string | undefined
-  let applyConfig: { command: readonly string[]; cwd?: string }
-  if (target === "docker") {
-    const dockerConfig = parseDockerDeployConfig(args)
-    if (!dockerConfig.ok) return dockerConfig
-    stagedConfigPath = resolvePath(dockerConfig.envOutPath)
-    await deps.mkdir(dirname(stagedConfigPath))
-    await deps.writeOut(stagedConfigPath, renderDockerEnvFile(dockerConfig.config))
-    applyConfig = getApplyConfig(target, stagedConfigPath)
-  } else {
-    applyConfig = getApplyConfig(target)
-  }
+  const dockerConfig = parseDockerDeployConfig(args)
+  if (!dockerConfig.ok) return dockerConfig
+  const stagedConfigPath = resolvePath(dockerConfig.envOutPath)
+  await deps.mkdir(dirname(stagedConfigPath))
+  await deps.writeOut(stagedConfigPath, renderDockerEnvFile(dockerConfig.config))
+  const applyConfig = getApplyConfig(stagedConfigPath)
 
   const apply = getBooleanFlag(args, "apply")
   if (apply) {
@@ -111,7 +99,7 @@ export async function runWorkflowsDeploy(
       applied: apply,
       applyCommand: apply ? applyConfig.command : undefined,
       applyCwd: apply ? applyConfig.cwd : undefined,
-      nextStep: formatNextStep(target, apply, stagedConfigPath),
+      nextStep: formatNextStep(apply, stagedConfigPath),
     },
   }
 }
@@ -162,57 +150,33 @@ function parseDockerDeployConfig(args: ParsedArgs):
 
 function getDeployTarget(args: ParsedArgs): DeployTarget | undefined {
   const raw = getStringFlag(args, "target")
-  if (raw === "docker" || raw === "cloudflare") return raw
+  if (raw === "docker") return raw
   return undefined
 }
 
-function getApplyConfig(target: DeployTarget): {
-  command: readonly string[]
-  cwd?: string
-}
-function getApplyConfig(
-  target: "docker",
-  dockerEnvPath: string,
-): {
-  command: readonly string[]
-  cwd?: string
-}
-function getApplyConfig(
-  target: DeployTarget,
-  dockerEnvPath?: string,
-): {
+function getApplyConfig(dockerEnvPath: string): {
   command: readonly string[]
   cwd?: string
 } {
-  if (target === "docker") {
-    return {
-      command: [
-        "docker",
-        "compose",
-        "--env-file",
-        dockerEnvPath ?? DOCKER_ENV_STAGE_PATH,
-        "-f",
-        "apps/selfhost-node-server/docker-compose.yml",
-        "up",
-        "--build",
-        "-d",
-      ],
-    }
-  }
   return {
-    command: ["pnpm", "--filter", "@voyant-travel/workflows-selfhost-cloudflare-worker", "deploy"],
+    command: [
+      "docker",
+      "compose",
+      "--env-file",
+      dockerEnvPath,
+      "-f",
+      "apps/selfhost-node-server/docker-compose.yml",
+      "up",
+      "--build",
+      "-d",
+    ],
   }
 }
 
-function formatNextStep(target: DeployTarget, applied: boolean, stagedConfigPath?: string): string {
-  if (target === "docker") {
-    return applied
-      ? "docker target applied via docker compose"
-      : `run \`docker compose --env-file ${stagedConfigPath ?? DOCKER_ENV_STAGE_PATH} -f apps/selfhost-node-server/docker-compose.yml up --build -d\``
-  }
+function formatNextStep(applied: boolean, stagedConfigPath: string): string {
   return applied
-    ? "cloudflare target applied via wrangler deploy"
-    : "run `pnpm --filter @voyant-travel/workflows-selfhost-cloudflare-worker deploy`"
+    ? "docker target applied via docker compose"
+    : `run \`docker compose --env-file ${stagedConfigPath} -f apps/selfhost-node-server/docker-compose.yml up --build -d\``
 }
 
 function renderDockerEnvFile(config: DockerDeployConfig): string {

@@ -92,24 +92,16 @@ describe("runWorkflowsDeploy", () => {
     }
   })
 
-  it("builds a neutral bundle and stages it for cloudflare", async () => {
-    const copyFile = vi.fn(async () => {})
-    const bundle = vi.fn(async () => ({ ok: true as const }))
-
+  it("rejects the removed cloudflare target", async () => {
     const outcome = await runWorkflowsDeploy(
       parseArgs(["--target", "cloudflare", "--file", "src/app.ts"]),
-      makeDeps({
-        bundler: { bundle } as unknown as Bundler,
-        copyFile,
-      }),
+      makeDeps(),
     )
-
-    expect(outcome.ok).toBe(true)
-    const buildCall = bundle.mock.calls[0]![0] as Parameters<Bundler["bundle"]>[0]
-    expect(buildCall.platform).toBe("neutral")
-    expect(copyFile.mock.calls[0]![1]).toMatch(
-      /apps\/selfhost-cloudflare-worker\/src\/bundle\.mjs$/,
-    )
+    expect(outcome.ok).toBe(false)
+    if (!outcome.ok) {
+      expect(outcome.message).toMatch(/missing required --target <docker>/)
+      expect(outcome.exitCode).toBe(2)
+    }
   })
 
   it("runs the target apply command when --apply is set", async () => {
@@ -181,11 +173,11 @@ describe("runWorkflowsDeploy", () => {
 
   it("surfaces target apply failures", async () => {
     const outcome = await runWorkflowsDeploy(
-      parseArgs(["--target", "cloudflare", "--file", "src/app.ts", "--apply"]),
+      parseArgs(["--target", "docker", "--file", "src/app.ts", "--apply"]),
       makeDeps({
         runCommand: vi.fn(async () => ({
           ok: false as const,
-          message: "wrangler failed",
+          message: "compose failed",
           exitCode: 1,
         })),
       }),
@@ -193,7 +185,7 @@ describe("runWorkflowsDeploy", () => {
 
     expect(outcome.ok).toBe(false)
     if (!outcome.ok) {
-      expect(outcome.message).toMatch(/cloudflare apply failed: wrangler failed/)
+      expect(outcome.message).toMatch(/docker apply failed: compose failed/)
       expect(outcome.exitCode).toBe(1)
     }
   })

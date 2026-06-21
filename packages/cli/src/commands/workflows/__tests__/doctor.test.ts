@@ -24,6 +24,10 @@ function makeDeps(overrides: Partial<DoctorDeps> = {}): DoctorDeps {
     })),
     importModule: vi.fn(async () => ({})),
     runCommand: vi.fn(async () => ({ ok: true as const })),
+    resetRegistry: vi.fn(),
+    loadWorkflowEntry: vi.fn(async () => ({ warnings: [] })),
+    getRegisteredWorkflows: vi.fn(() => [{ id: "wf-a" }] as { id: string }[]),
+    scanDeclaredWorkflowIds: vi.fn(async () => [{ id: "wf-a", file: "wf-a.ts" }]),
     ...overrides,
   }
 }
@@ -97,92 +101,105 @@ describe("runWorkflowsDoctor", () => {
     }
   })
 
-  it("validates the cloudflare target staging files", async () => {
-    const outcome = await runWorkflowsDoctor(
-      parseArgs(["--target", "cloudflare"]),
-      makeDeps({
-        readFile: vi.fn(async () =>
-          JSON.stringify({
-            kv_namespaces: [{ binding: "BUNDLE_HASHES", id: "abc123" }],
-            vars: { R2_ACCOUNT_ID: "acct_123" },
-          }),
-        ),
-      }),
-    )
-    expect(outcome.ok).toBe(true)
-    if (outcome.ok) {
-      expect(outcome.result.target).toBe("cloudflare")
-      expect(outcome.result.ok).toBe(true)
-      expect(
-        outcome.result.checks.some((check) => check.id === "cloudflare.bundle.import" && check.ok),
-      ).toBe(true)
+  it("rejects the removed cloudflare target", async () => {
+    const outcome = await runWorkflowsDoctor(parseArgs(["--target", "cloudflare"]), makeDeps())
+    expect(outcome.ok).toBe(false)
+    if (!outcome.ok) {
+      expect(outcome.message).toMatch(/missing required --target <docker\|entry>/)
+      expect(outcome.exitCode).toBe(2)
     }
   })
 
-  it("reports unresolved wrangler placeholders for cloudflare self-host", async () => {
-    const outcome = await runWorkflowsDoctor(
-      parseArgs(["--target", "cloudflare"]),
-      makeDeps({
-        readFile: vi.fn(async () =>
-          [
-            'id = "replace-me-after-wrangler-kv-namespace-create"',
-            'R2_ACCOUNT_ID = "replace-with-your-cf-account-id"',
-          ].join("\n"),
-        ),
-      }),
-    )
-    expect(outcome.ok).toBe(true)
-    if (outcome.ok) {
-      expect(outcome.result.ok).toBe(false)
-      expect(
-        outcome.result.checks.some(
-          (check) =>
-            check.id.includes("replace-me-after-wrangler-kv-namespace-create") && !check.ok,
-        ),
-      ).toBe(true)
-      expect(
-        outcome.result.checks.some(
-          (check) => check.id.includes("replace-with-your-cf-account-id") && !check.ok,
-        ),
-      ).toBe(true)
-    }
-  })
-
-  it("runs a wrangler dry-run when requested", async () => {
-    const runCommand = vi.fn(async () => ({ ok: true as const }))
-    const outcome = await runWorkflowsDoctor(
-      parseArgs(["--target", "cloudflare", "--check-cloudflare"]),
-      makeDeps({
-        readFile: vi.fn(async () =>
-          JSON.stringify({
-            kv_namespaces: [{ binding: "BUNDLE_HASHES", id: "abc123" }],
-            vars: { R2_ACCOUNT_ID: "acct_123" },
-          }),
-        ),
-        runCommand,
-      }),
-    )
-    expect(outcome.ok).toBe(true)
-    expect(runCommand).toHaveBeenCalledWith({
-      command: [
-        "pnpm",
-        "--filter",
-        "@voyant-travel/workflows-selfhost-cloudflare-worker",
-        "run",
-        "deploy",
-        "--dry-run",
-      ],
-      cwd: undefined,
-      env: expect.objectContaining({
-        WRANGLER_LOG_PATH: "/tmp/voyant-workflows-selfhost-cloudflare.log",
-      }),
+  describe("entry target", () => {
+    it("requires --file", async () => {
+      const outcome = await runWorkflowsDoctor(parseArgs(["--target", "entry"]), makeDeps())
+      expect(outcome.ok).toBe(false)
+      if (!outcome.ok) expect(outcome.message).toMatch(/missing required --file/)
     })
-    if (outcome.ok) {
-      expect(
-        outcome.result.checks.some(
-          (check) => check.id === "cloudflare.wrangler.dry-run" && check.ok,
-        ),
-      ).toBe(true)
-    }
+
+    it("passes for a healthy entry", async () => {
+      const outcome = await runWorkflowsDoctor(
+        parseArgs(["--target", "entry", "--file", "src/workflows.ts"]),
+        makeDeps(),
+      )
+      expect(outcome.ok).toBe(true)
+      if (outcome.ok) {
+        expect(outcome.result.target).toBe("entry")
+        expect(outcome.result.ok).toBe(true)
+        expect(outcome.result.checks.find((c) => c.id === "entry.registered")?.ok).toBe(true)
+      }
+    })
+
+    it("reports a failed entry import", async () => {
+      const outcome = await runWorkflowsDoctor(
+        parseArgs(["--target", "entry", "--file", "src/workflows.ts"]),
+        makeDeps({
+          loadWorkflowEntry: vi.fn(async () => {
+            throw new Error("boom")
+          }),
+        }),
+      )
+      expect(outcome.ok).toBe(true)
+      if (outcome.ok) {
+        expect(outcome.result.ok).toBe(false)
+        expect(outcome.result.checks.find((c) => c.id === "entry.load")?.ok).toBe(false)
+      }
+    })
+
+    it("flags duplicate (upstream-owned) workflow ids from registry warnings", async () => {
+      const outcome = await runWorkflowsDoctor(
+        parseArgs(["--target", "entry", "--file", "src/workflows.ts"]),
+        makeDeps({
+          loadWorkflowEntry: vi.fn(async () => ({
+            warnings: [
+              '[workflows] workflow id "channel.booking.push" re-registered — assuming HMR re-import.',
+            ],
+          })),
+        }),
+      )
+      expect(outcome.ok).toBe(true)
+      if (outcome.ok) {
+        expect(outcome.result.ok).toBe(false)
+        const dup = outcome.result.checks.find((c) => c.id === "entry.duplicate-ids")
+        expect(dup?.ok).toBe(false)
+        expect(dup?.message).toContain("channel.booking.push")
+      }
+    })
+
+    it("flags workflows declared in source but never registered from the entry", async () => {
+      const outcome = await runWorkflowsDoctor(
+        parseArgs(["--target", "entry", "--file", "src/workflows.ts"]),
+        makeDeps({
+          getRegisteredWorkflows: vi.fn(() => [{ id: "wf-a" }] as { id: string }[]),
+          scanDeclaredWorkflowIds: vi.fn(async () => [
+            { id: "wf-a", file: "wf-a.ts" },
+            { id: "wf-orphan", file: "extra/orphan.ts" },
+          ]),
+        }),
+      )
+      expect(outcome.ok).toBe(true)
+      if (outcome.ok) {
+        expect(outcome.result.ok).toBe(false)
+        const unreg = outcome.result.checks.find((c) => c.id === "entry.unregistered")
+        expect(unreg?.ok).toBe(false)
+        expect(unreg?.message).toContain("wf-orphan")
+        expect(unreg?.message).toContain("extra/orphan.ts")
+      }
+    })
+
+    it("warns when the entry registers no workflows", async () => {
+      const outcome = await runWorkflowsDoctor(
+        parseArgs(["--target", "entry", "--file", "src/workflows.ts"]),
+        makeDeps({
+          getRegisteredWorkflows: vi.fn(() => [] as { id: string }[]),
+          scanDeclaredWorkflowIds: vi.fn(async () => []),
+        }),
+      )
+      expect(outcome.ok).toBe(true)
+      if (outcome.ok) {
+        expect(outcome.result.ok).toBe(false)
+        expect(outcome.result.checks.find((c) => c.id === "entry.registered")?.ok).toBe(false)
+      }
+    })
   })
 })

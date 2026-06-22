@@ -6,7 +6,7 @@ USAGE
   voyant <command> [...args]
 
 OPEN-SOURCE COMMANDS
-  new <name> [--template <name|path>] Scaffold a new project from a template
+  new <name> [--starter <name|path>]  Scaffold a new project (defaults to the operator starter)
   generate module <name>             Scaffold a new module package under packages/<name>
   generate extension <name> --module <target>
                                      Scaffold a deployment extension under src/extensions/<name>
@@ -67,7 +67,8 @@ The CLI cannot decrypt secrets (no 'secrets get'): CLI tokens lack the
 vault:read scope. Reveal values in the dashboard or with a server token.
 
 EXAMPLES
-  voyant new my-app --template operator
+  voyant new my-app                           # scaffolds from the operator starter
+  voyant new my-app --starter operator        # explicit starter (same as the default)
   voyant generate module invoices
   voyant generate extension booking-notes --module bookings
   voyant generate extension loyalty-offers --module bookings --public --with-schema

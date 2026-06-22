@@ -25,8 +25,8 @@ function makeCtx(argv: string[], cwd: string) {
   }
 }
 
-/** Build a minimal fake template directory under `root`. */
-function seedTemplate(root: string) {
+/** Build a minimal fake starter directory under `root`. */
+function seedStarter(root: string) {
   mkdirSync(root, { recursive: true })
   writeFileSync(
     join(root, "package.json"),
@@ -105,22 +105,22 @@ describe("newCommand", () => {
     expect(stderr.join("")).toContain("Invalid project name")
   })
 
-  it("fails when the requested template cannot be found", async () => {
-    const { ctx, stderr } = makeCtx(["my-app", "--template", "missing-template"], tmp)
+  it("fails when the requested starter cannot be found", async () => {
+    const { ctx, stderr } = makeCtx(["my-app", "--starter", "missing-starter"], tmp)
     const code = await newCommand(ctx)
     expect(code).toBe(1)
-    expect(stderr.join("")).toContain("Could not find a template")
+    expect(stderr.join("")).toContain("Could not find a starter")
   })
 
-  it("rejects the retired dmc template alias", async () => {
-    const { ctx, stderr } = makeCtx(["my-app", "--template", "dmc"], tmp)
+  it("rejects the retired dmc starter alias", async () => {
+    const { ctx, stderr } = makeCtx(["my-app", "--starter", "dmc"], tmp)
     const code = await newCommand(ctx)
     expect(code).toBe(1)
-    expect(stderr.join("")).toContain("Could not find a template")
+    expect(stderr.join("")).toContain("Could not find a starter")
   })
 
   it("fails when target already exists without --force", async () => {
-    seedTemplate(join(tmp, "templates", "operator"))
+    seedStarter(join(tmp, "starters", "operator"))
     mkdirSync(join(tmp, "my-app"))
     const { ctx, stderr } = makeCtx(["my-app"], tmp)
     const code = await newCommand(ctx)
@@ -129,7 +129,7 @@ describe("newCommand", () => {
   })
 
   it("overwrites the target when --force is set", async () => {
-    seedTemplate(join(tmp, "templates", "operator"))
+    seedStarter(join(tmp, "starters", "operator"))
     mkdirSync(join(tmp, "my-app"))
     writeFileSync(join(tmp, "my-app", "stale.txt"), "old\n")
     const { ctx, stdout } = makeCtx(["my-app", "--force"], tmp)
@@ -140,8 +140,8 @@ describe("newCommand", () => {
     expect(existsSync(join(tmp, "my-app", "src", "entry.ts"))).toBe(true)
   })
 
-  it("scaffolds a new project from templates/operator", async () => {
-    seedTemplate(join(tmp, "templates", "operator"))
+  it("defaults to the operator starter when no --starter is given", async () => {
+    seedStarter(join(tmp, "starters", "operator"))
     const { ctx, stdout } = makeCtx(["my-app"], tmp)
     const code = await newCommand(ctx)
     expect(code).toBe(0)
@@ -153,7 +153,7 @@ describe("newCommand", () => {
   })
 
   it("rewrites package.json name + version + private", async () => {
-    seedTemplate(join(tmp, "templates", "operator"))
+    seedStarter(join(tmp, "starters", "operator"))
     const { ctx } = makeCtx(["my-app"], tmp)
     await newCommand(ctx)
     const pkg = JSON.parse(readFileSync(join(tmp, "my-app", "package.json"), "utf8"))
@@ -169,7 +169,7 @@ describe("newCommand", () => {
   })
 
   it("skips node_modules, dist, .turbo, and secret env files when copying", async () => {
-    seedTemplate(join(tmp, "templates", "operator"))
+    seedStarter(join(tmp, "starters", "operator"))
     const { ctx } = makeCtx(["my-app"], tmp)
     await newCommand(ctx)
     expect(existsSync(join(tmp, "my-app", "node_modules"))).toBe(false)
@@ -179,8 +179,8 @@ describe("newCommand", () => {
     expect(existsSync(join(tmp, "my-app", ".dev.vars"))).toBe(false)
   })
 
-  it("writes a default voyant.config.ts when the template lacks one", async () => {
-    seedTemplate(join(tmp, "templates", "operator"))
+  it("writes a default voyant.config.ts when the starter lacks one", async () => {
+    seedStarter(join(tmp, "starters", "operator"))
     const { ctx } = makeCtx(["my-app"], tmp)
     await newCommand(ctx)
     const cfg = readFileSync(join(tmp, "my-app", "voyant.config.ts"), "utf8")
@@ -188,27 +188,35 @@ describe("newCommand", () => {
     expect(cfg).toContain('deployment: "cloudflare-worker"')
   })
 
-  it("preserves an existing voyant.config.ts from the template", async () => {
-    const templateRoot = join(tmp, "templates", "operator")
-    seedTemplate(templateRoot)
-    writeFileSync(join(templateRoot, "voyant.config.ts"), "// pre-existing config\n")
+  it("preserves an existing voyant.config.ts from the starter", async () => {
+    const starterRoot = join(tmp, "starters", "operator")
+    seedStarter(starterRoot)
+    writeFileSync(join(starterRoot, "voyant.config.ts"), "// pre-existing config\n")
     const { ctx } = makeCtx(["my-app"], tmp)
     await newCommand(ctx)
     const cfg = readFileSync(join(tmp, "my-app", "voyant.config.ts"), "utf8")
     expect(cfg).toBe("// pre-existing config\n")
   })
 
-  it("honors --template with an explicit path", async () => {
-    const customTemplate = join(tmp, "my-template")
-    seedTemplate(customTemplate)
-    const { ctx } = makeCtx(["my-app", "--template", customTemplate], tmp)
+  it("honors --starter with an explicit path", async () => {
+    const customStarter = join(tmp, "my-starter")
+    seedStarter(customStarter)
+    const { ctx } = makeCtx(["my-app", "--starter", customStarter], tmp)
     const code = await newCommand(ctx)
     expect(code).toBe(0)
     expect(existsSync(join(tmp, "my-app", "src", "entry.ts"))).toBe(true)
   })
 
-  it("honors --template with a starter alias", async () => {
-    seedTemplate(join(tmp, "templates", "operator"))
+  it("honors --starter with a built-in starter alias", async () => {
+    seedStarter(join(tmp, "starters", "operator"))
+    const { ctx } = makeCtx(["my-app", "--starter", "operator"], tmp)
+    const code = await newCommand(ctx)
+    expect(code).toBe(0)
+    expect(existsSync(join(tmp, "my-app", "src", "entry.ts"))).toBe(true)
+  })
+
+  it("accepts --template as a deprecated alias for --starter", async () => {
+    seedStarter(join(tmp, "starters", "operator"))
     const { ctx } = makeCtx(["my-app", "--template", "operator"], tmp)
     const code = await newCommand(ctx)
     expect(code).toBe(0)
@@ -216,7 +224,7 @@ describe("newCommand", () => {
   })
 
   it("rewrites monorepo drizzle config into a standalone schema entrypoint", async () => {
-    seedTemplate(join(tmp, "templates", "operator"))
+    seedStarter(join(tmp, "starters", "operator"))
     const { ctx } = makeCtx(["my-app"], tmp)
     await newCommand(ctx)
     const drizzle = readFileSync(join(tmp, "my-app", "drizzle.config.ts"), "utf8")
@@ -229,7 +237,7 @@ describe("newCommand", () => {
 
   it("downloads a built-in starter from a versioned release tarball", async () => {
     const starterRoot = join(tmp, "remote-starter")
-    seedTemplate(starterRoot)
+    seedStarter(starterRoot)
 
     const archivePath = join(tmp, `voyant-starter-operator-${VOYANT_FRAMEWORK_VERSION}.tar.gz`)
     await c(
@@ -254,17 +262,17 @@ describe("newCommand", () => {
 
     const workspace = join(tmp, "workspace")
     mkdirSync(workspace, { recursive: true })
-    const { ctx } = makeCtx(["my-app", "--template", "operator"], workspace)
+    const { ctx } = makeCtx(["my-app", "--starter", "operator"], workspace)
     const code = await newCommand(ctx)
     expect(code).toBe(0)
     expect(existsSync(join(workspace, "my-app", "src", "entry.ts"))).toBe(true)
     expect(existsSync(join(workspace, "my-app", ".env"))).toBe(false)
   })
 
-  it("fails when --template points at a missing directory", async () => {
-    const { ctx, stderr } = makeCtx(["my-app", "--template", join(tmp, "nope")], tmp)
+  it("fails when --starter points at a missing directory", async () => {
+    const { ctx, stderr } = makeCtx(["my-app", "--starter", join(tmp, "nope")], tmp)
     const code = await newCommand(ctx)
     expect(code).toBe(1)
-    expect(stderr.join("")).toContain("Could not find a template")
+    expect(stderr.join("")).toContain("Could not find a starter")
   })
 })

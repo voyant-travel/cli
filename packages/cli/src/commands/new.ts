@@ -17,7 +17,7 @@ import type { CommandContext, CommandResult } from "../types.js"
 
 /**
  * Directory / file names that should never be copied from a source
- * template (they're either ephemeral or deployment-local).
+ * starter (they're either ephemeral or deployment-local).
  */
 const SKIP_PATHS = new Set([
   "node_modules",
@@ -38,32 +38,36 @@ const SKIP_PATHS = new Set([
   ".DS_Store",
 ])
 
-const BUILT_IN_TEMPLATES = new Set(["operator"])
+const BUILT_IN_STARTERS = new Set(["operator"])
 const STARTER_RELEASE_BASE_URL =
   process.env.VOYANT_STARTER_BASE_URL ?? "https://github.com/voyant-travel/voyant/releases/download"
 
-const TEMPLATE_ALIAS_FALLBACK = "operator"
+/** The starter used when `voyant new <name>` is run without `--starter`. */
+const DEFAULT_STARTER = "operator"
 
 /**
- * `voyant new <name> [--template <name|path>] [--force]`
+ * `voyant new <name> [--starter <name|path>] [--force]`
  *
- * Scaffold a new Voyant project by cloning a template directory into
+ * Scaffold a new Voyant project by cloning a starter directory into
  * `<cwd>/<name>` and rewriting the package.json name. A minimal
- * `voyant.config.ts` is generated if the template doesn't already
+ * `voyant.config.ts` is generated if the starter doesn't already
  * provide one.
  *
- * The template source is resolved (in priority order):
- *   1. `--template <path>` — absolute or cwd-relative path
- *   2. `--template <name>` — built-in / discoverable template alias
- *   3. repo-local `templates/<name>` when invoked from a Voyant checkout
+ * Run without `--starter`, it scaffolds from the `operator` starter.
+ * The starter source is resolved (in priority order):
+ *   1. `--starter <path>` — absolute or cwd-relative path
+ *   2. `--starter <name>` — built-in / discoverable starter alias
+ *   3. repo-local `starters/<name>` when invoked from a Voyant checkout
  *   4. version-matched starter tarball from GitHub Releases
- *   5. `operator` as the default fallback starter
+ *   5. `operator` as the default starter when none is given
+ *
+ * `--template` is accepted as a deprecated alias for `--starter`.
  */
 export async function newCommand(ctx: CommandContext): Promise<CommandResult> {
   const { positionals, flags } = parseArgs(ctx.argv)
   const [name] = positionals
   if (!name) {
-    ctx.stderr("Usage: voyant new <name> [--template <name|path>] [--force]\n")
+    ctx.stderr("Usage: voyant new <name> [--starter <name|path>] [--force]\n")
     return 1
   }
 
@@ -80,32 +84,35 @@ export async function newCommand(ctx: CommandContext): Promise<CommandResult> {
     return 1
   }
 
-  let templateSource: TemplateSource | null
+  // `--starter` is canonical; `--template` is kept as a deprecated alias.
+  const starterFlag = flags.starter ?? flags.template
+
+  let starterSource: StarterSource | null
   try {
-    templateSource = await resolveTemplate(ctx.cwd, flags.template)
+    starterSource = await resolveStarter(ctx.cwd, starterFlag)
   } catch (err) {
     const reason = err instanceof Error ? err.message : String(err)
-    ctx.stderr(`Failed to resolve template: ${reason}\n`)
+    ctx.stderr(`Failed to resolve starter: ${reason}\n`)
     return 1
   }
 
-  if (!templateSource) {
-    ctx.stderr("Could not find a template. Pass --template <name|path>.\n")
+  if (!starterSource) {
+    ctx.stderr("Could not find a starter. Pass --starter <name|path>.\n")
     return 1
   }
 
   try {
-    cpSync(templateSource.path, target, {
+    cpSync(starterSource.path, target, {
       recursive: true,
       force: true,
-      filter: (src) => !shouldSkip(src, templateSource.path),
+      filter: (src) => !shouldSkip(src, starterSource.path),
     })
   } catch (err) {
     const reason = err instanceof Error ? err.message : String(err)
-    ctx.stderr(`Failed to copy template: ${reason}\n`)
+    ctx.stderr(`Failed to copy starter: ${reason}\n`)
     return 1
   } finally {
-    templateSource.cleanup?.()
+    starterSource.cleanup?.()
   }
 
   const voyantVersion = resolveVoyantVersion()
@@ -127,7 +134,7 @@ export async function newCommand(ctx: CommandContext): Promise<CommandResult> {
       writeFileSync(pkgPath, `${JSON.stringify(pkg, null, 2)}\n`)
     } catch (err) {
       const reason = err instanceof Error ? err.message : String(err)
-      ctx.stderr(`Copied template, but failed to update package.json: ${reason}\n`)
+      ctx.stderr(`Copied starter, but failed to update package.json: ${reason}\n`)
       return 1
     }
   }
@@ -138,12 +145,12 @@ export async function newCommand(ctx: CommandContext): Promise<CommandResult> {
       writeFileSync(drizzleConfigPath, standaloneDrizzleConfigSource())
     } catch (err) {
       const reason = err instanceof Error ? err.message : String(err)
-      ctx.stderr(`Copied template, but failed to rewrite drizzle config: ${reason}\n`)
+      ctx.stderr(`Copied starter, but failed to rewrite drizzle config: ${reason}\n`)
       return 1
     }
   }
 
-  // Write a minimal voyant.config.ts if the template didn't ship one.
+  // Write a minimal voyant.config.ts if the starter didn't ship one.
   const configPath = join(target, "voyant.config.ts")
   if (!existsSync(configPath)) {
     writeFileSync(configPath, defaultConfigSource())
@@ -157,46 +164,48 @@ export async function newCommand(ctx: CommandContext): Promise<CommandResult> {
   return 0
 }
 
-type TemplateSource = {
+type StarterSource = {
   path: string
   cleanup?: () => void
 }
 
-async function resolveTemplate(
+async function resolveStarter(
   cwd: string,
   override: string | boolean | undefined,
-): Promise<TemplateSource | null> {
+): Promise<StarterSource | null> {
   if (typeof override === "string") {
     const abs = isAbsolute(override) ? override : resolve(cwd, override)
     if (existsSync(abs)) return { path: abs }
   }
 
-  const requested = typeof override === "string" ? override : TEMPLATE_ALIAS_FALLBACK
-  const localCandidate = join(cwd, "templates", requested)
-  if (existsSync(localCandidate)) return { path: localCandidate }
+  const requested = typeof override === "string" ? override : DEFAULT_STARTER
 
-  if (!BUILT_IN_TEMPLATES.has(requested)) {
+  // Repo-local checkout: Voyant ships starters under `starters/<name>`.
+  // `templates/<name>` is honored as a legacy fallback.
+  for (const dir of ["starters", "templates"]) {
+    const localCandidate = join(cwd, dir, requested)
+    if (existsSync(localCandidate)) return { path: localCandidate }
+  }
+
+  if (!BUILT_IN_STARTERS.has(requested)) {
     return null
   }
 
-  return downloadStarterTemplate(requested, resolveVoyantVersion())
+  return downloadStarter(requested, resolveVoyantVersion())
 }
 
-function shouldSkip(srcPath: string, templateRoot: string): boolean {
-  const rel = srcPath.slice(templateRoot.length).replace(/^[\\/]+/, "")
+function shouldSkip(srcPath: string, starterRoot: string): boolean {
+  const rel = srcPath.slice(starterRoot.length).replace(/^[\\/]+/, "")
   if (!rel) return false
   const first = rel.split(/[\\/]/)[0]
   if (!first) return false
   return SKIP_PATHS.has(first)
 }
 
-async function downloadStarterTemplate(
-  starter: string,
-  voyantVersion: string,
-): Promise<TemplateSource> {
+async function downloadStarter(starter: string, voyantVersion: string): Promise<StarterSource> {
   const root = mkdtempSync(join(tmpdir(), `voyant-starter-${starter}-`))
   const archivePath = join(root, `${starter}.tar.gz`)
-  const extractDir = join(root, "template")
+  const extractDir = join(root, "starter")
   mkdirSync(extractDir, { recursive: true })
 
   try {

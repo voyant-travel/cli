@@ -64,6 +64,23 @@ export async function generateExtensionCommand(ctx: CommandContext): Promise<Com
     surface: flags.public === true ? "public" : "admin",
   }
 
+  // The generated files use these as TypeScript identifiers (const/type names,
+  // FK columns). A leading digit (e.g. "123-notes" → "123Notes") would produce
+  // a scaffold that cannot compile, so reject it before writing anything.
+  const isValidIdentifier = (value: string) => /^[A-Za-z_$][\w$]*$/.test(value)
+  if (!isValidIdentifier(names.camel) || !isValidIdentifier(names.pascal)) {
+    ctx.stderr(
+      `Extension name "${rawName}" produces an invalid TypeScript identifier ("${names.camel}"). Start the name with a letter.\n`,
+    )
+    return 1
+  }
+  if (!isValidIdentifier(names.moduleCamel)) {
+    ctx.stderr(
+      `Target module "${moduleFlag}" produces an invalid TypeScript identifier ("${names.moduleCamel}"). Start the module name with a letter.\n`,
+    )
+    return 1
+  }
+
   const dirFlag = flags.dir
   const baseDir = typeof dirFlag === "string" ? dirFlag : join(ctx.cwd, "src", "extensions")
   const extensionDir = join(baseDir, kebab)

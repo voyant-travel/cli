@@ -52,6 +52,10 @@ describe("generateExtensionCommand", () => {
     expect(routes).toContain("export const bookingNotesRoutes")
     expect(routes).toContain('.get("/booking-notes"')
     expect(routes).toContain("createBookingNotesSchema")
+    // requireActor is a middleware factory, not a per-request assertion — the
+    // scaffold must use requireUserId(c) so it actually compiles.
+    expect(routes).toContain("requireUserId")
+    expect(routes).not.toContain("requireActor")
 
     const validation = readFileSync(join(dir, "validation.ts"), "utf8")
     expect(validation).toContain("createBookingNotesSchema")
@@ -113,6 +117,25 @@ describe("generateExtensionCommand", () => {
     const { ctx, stderr } = makeCtx(["booking-notes"], tmp)
     expect(await generateExtensionCommand(ctx)).toBe(1)
     expect(stderr.join("")).toContain("Missing target module")
+  })
+
+  it("rejects names that produce an invalid TypeScript identifier", async () => {
+    const { ctx, stderr } = makeCtx(
+      ["123-notes", "--module", "bookings", "--dir", join(tmp, "src/extensions")],
+      tmp,
+    )
+    expect(await generateExtensionCommand(ctx)).toBe(1)
+    expect(stderr.join("")).toContain("invalid TypeScript identifier")
+    expect(existsSync(join(tmp, "src/extensions", "123-notes"))).toBe(false)
+  })
+
+  it("rejects a target module that produces an invalid identifier", async () => {
+    const { ctx, stderr } = makeCtx(
+      ["booking-notes", "--module", "9module", "--dir", join(tmp, "src/extensions")],
+      tmp,
+    )
+    expect(await generateExtensionCommand(ctx)).toBe(1)
+    expect(stderr.join("")).toContain("invalid TypeScript identifier")
   })
 
   it("refuses to overwrite existing files without --force", async () => {

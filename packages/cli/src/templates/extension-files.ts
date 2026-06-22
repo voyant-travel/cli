@@ -38,7 +38,7 @@ export default defineDeploymentExtension({
 export function routesTs(names: ExtensionNames): string {
   return `import { Hono } from "hono"
 
-import { parseJsonBody, requireActor } from "@voyant-travel/hono"
+import { parseJsonBody, requireUserId } from "@voyant-travel/hono"
 
 import { create${names.pascal}Schema } from "./validation.js"
 
@@ -47,16 +47,21 @@ import { create${names.pascal}Schema } from "./validation.js"
  * the \`${names.module}\` module's surface, so these paths are relative to
  * \`/v1/${names.surface}/${names.module}\`. Keep them on their own sub-path so they
  * sit alongside the module's own routes instead of colliding with them.
+ *
+ * The surface-level actor guard (\`/v1/${names.surface}/*\`) already ran in the
+ * \`createApp\` middleware chain before these handlers, so they only need finer
+ * checks. \`requireUserId(c)\` asserts a signed-in caller; drop it for routes
+ * that are intentionally anonymous.
  */
 export const ${names.camel}Routes = new Hono()
   // GET /v1/${names.surface}/${names.module}/${names.kebab}
   .get("/${names.kebab}", (c) => {
-    requireActor(c)
+    requireUserId(c)
     return c.json({ data: [] })
   })
   // POST /v1/${names.surface}/${names.module}/${names.kebab}
   .post("/${names.kebab}", async (c) => {
-    requireActor(c)
+    requireUserId(c)
     const body = await parseJsonBody(c, create${names.pascal}Schema)
     return c.json({ data: body }, 201)
   })

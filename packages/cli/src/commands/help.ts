@@ -8,6 +8,9 @@ USAGE
 OPEN-SOURCE COMMANDS
   new <name> [--template <name|path>] Scaffold a new project from a template
   generate module <name>             Scaffold a new module package under packages/<name>
+  generate extension <name> --module <target>
+                                     Scaffold a deployment extension under src/extensions/<name>
+                                     that attaches to an existing module's surface
   generate link <a> <b>              Emit a defineLink snippet (a, b as <module>.<entity>)
   config <show|validate|path>        Inspect the nearest voyant.config.* manifest
   admin generate [--check]           Emit admin.extensions.generated.ts from the manifest
@@ -66,6 +69,8 @@ vault:read scope. Reveal values in the dashboard or with a server token.
 EXAMPLES
   voyant new my-app --template operator
   voyant generate module invoices
+  voyant generate extension booking-notes --module bookings
+  voyant generate extension loyalty-offers --module bookings --public --with-schema
   voyant generate link crm.person products.product --right-list
   voyant config show
   voyant admin generate --check

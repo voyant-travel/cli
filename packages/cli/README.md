@@ -13,6 +13,7 @@ voyant --help
 | --- | --- |
 | `voyant new <name> [--template <name\|path>]` | Clone a starter into `<name>/` |
 | `voyant generate module <name>` | Scaffold a module package under `packages/<name>` |
+| `voyant generate extension <name> --module <target>` | Scaffold a deployment extension under `src/extensions/<name>` that attaches to an existing module (`--public`, `--with-schema`, `--dir`, `--force`) |
 | `voyant generate link <a> <b>` | Print a `defineLink` snippet — `<a>` and `<b>` as `<module>.<entity>` |
 | `voyant config <show\|validate\|path>` | Inspect the nearest `voyant.config.*` |
 | `voyant db <generate\|migrate\|studio\|push\|check>` | Proxy drizzle-kit to the project root |

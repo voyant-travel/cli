@@ -1,5 +1,11 @@
 # @voyant-travel/cli
 
+## 0.32.1
+
+### Patch Changes
+
+- 474e29f: Fix `voyant new` scaffolding so local CLI development resolves the current operator starter, rejects the old `--template` flag, and converts starter workspace dependencies to package-specific `@voyant-travel/*` release ranges instead of falling back to stale `@voyantjs/*` starter output.
+
 ## 0.32.0
 
 ### Minor Changes

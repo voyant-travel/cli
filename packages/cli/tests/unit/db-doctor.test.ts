@@ -32,7 +32,10 @@ interface FixtureOpts {
 function fixture(tmp: string, opts: FixtureOpts): void {
   writeFileSync(join(tmp, "package.json"), JSON.stringify({ name: "consumer", version: "0.0.0" }))
   // Plain object default export — no @voyant-travel/core import needed to load it.
-  writeFileSync(join(tmp, "voyant.config.ts"), `export default { modules: ["@voyant-travel/db"] }\n`)
+  writeFileSync(
+    join(tmp, "voyant.config.ts"),
+    `export default { modules: ["@voyant-travel/db"] }\n`,
+  )
 
   const dbDir = join(tmp, "packages", "db")
   mkdirSync(join(dbDir, "src"), { recursive: true })

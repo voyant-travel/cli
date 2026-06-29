@@ -73,6 +73,17 @@ function seedStarter(root: string) {
   writeFileSync(join(root, ".turbo", "log.txt"), "skip\n")
 }
 
+function seedWorkspacePackage(
+  workspaceRoot: string,
+  relDir: string,
+  name: string,
+  version: string,
+) {
+  const dir = join(workspaceRoot, relDir)
+  mkdirSync(dir, { recursive: true })
+  writeFileSync(join(dir, "package.json"), JSON.stringify({ name, version }, null, 2))
+}
+
 describe("newCommand", () => {
   let tmp: string
   let previousFetch: typeof globalThis.fetch | undefined
@@ -152,6 +163,39 @@ describe("newCommand", () => {
     expect(existsSync(join(tmp, "my-app", "src", "entry.ts"))).toBe(true)
   })
 
+  it("resolves the operator starter from a sibling Voyant checkout and composes local package versions", async () => {
+    const workspaceRoot = join(tmp, "voyant-all", "voyant")
+    const cliRoot = join(tmp, "voyant-all", "cli")
+    mkdirSync(workspaceRoot, { recursive: true })
+    mkdirSync(cliRoot, { recursive: true })
+    writeFileSync(join(workspaceRoot, "pnpm-workspace.yaml"), 'packages:\n  - "packages/*"\n')
+    seedStarter(join(workspaceRoot, "starters", "operator"))
+    seedWorkspacePackage(workspaceRoot, "packages/core", "@voyant-travel/core", "1.1.0")
+    seedWorkspacePackage(workspaceRoot, "packages/db", "@voyant-travel/db", "1.2.0")
+    seedWorkspacePackage(workspaceRoot, "packages/crm", "@voyant-travel/crm", "1.3.0")
+    seedWorkspacePackage(workspaceRoot, "packages/bookings", "@voyant-travel/bookings", "1.4.0")
+    seedWorkspacePackage(workspaceRoot, "packages/legal", "@voyant-travel/legal", "1.5.0")
+    seedWorkspacePackage(
+      workspaceRoot,
+      "packages/typescript-config",
+      "@voyant-travel/voyant-typescript-config",
+      "1.6.0",
+    )
+
+    const { ctx } = makeCtx(["my-app"], cliRoot)
+    const code = await newCommand(ctx)
+
+    expect(code).toBe(0)
+    expect(existsSync(join(cliRoot, "my-app", "src", "entry.ts"))).toBe(true)
+    const pkg = JSON.parse(readFileSync(join(cliRoot, "my-app", "package.json"), "utf8"))
+    expect(pkg.dependencies["@voyant-travel/core"]).toBe("^1.1.0")
+    expect(pkg.dependencies["@voyant-travel/db"]).toBe("^1.2.0")
+    expect(pkg.dependencies["@voyant-travel/crm"]).toBe("^1.3.0")
+    expect(pkg.dependencies["@voyant-travel/bookings"]).toBe("^1.4.0")
+    expect(pkg.dependencies["@voyant-travel/legal"]).toBe("^1.5.0")
+    expect(pkg.devDependencies["@voyant-travel/voyant-typescript-config"]).toBe("^1.6.0")
+  })
+
   it("rewrites package.json name + version + private", async () => {
     seedStarter(join(tmp, "starters", "operator"))
     const { ctx } = makeCtx(["my-app"], tmp)
@@ -215,12 +259,12 @@ describe("newCommand", () => {
     expect(existsSync(join(tmp, "my-app", "src", "entry.ts"))).toBe(true)
   })
 
-  it("accepts --template as a deprecated alias for --starter", async () => {
+  it("rejects --template for new projects", async () => {
     seedStarter(join(tmp, "starters", "operator"))
-    const { ctx } = makeCtx(["my-app", "--template", "operator"], tmp)
+    const { ctx, stderr } = makeCtx(["my-app", "--template", "operator"], tmp)
     const code = await newCommand(ctx)
-    expect(code).toBe(0)
-    expect(existsSync(join(tmp, "my-app", "src", "entry.ts"))).toBe(true)
+    expect(code).toBe(1)
+    expect(stderr.join("")).toContain("Unknown option for voyant new: --template")
   })
 
   it("rewrites monorepo drizzle config into a standalone schema entrypoint", async () => {

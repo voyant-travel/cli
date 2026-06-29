@@ -81,7 +81,9 @@ export async function runWorkflowsList(
 export async function defaultListDeps(): Promise<ListDeps> {
   const [entryMod, wfMod] = await Promise.all([
     import("../../lib/load-entry.js"),
-    import("@voyant-travel/workflows") as Promise<{ __listRegisteredWorkflows: () => WorkflowDef[] }>,
+    import("@voyant-travel/workflows") as Promise<{
+      __listRegisteredWorkflows: () => WorkflowDef[]
+    }>,
   ])
   return {
     loadEntry: (path) => entryMod.loadEntryFile(path),

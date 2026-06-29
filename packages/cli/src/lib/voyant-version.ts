@@ -8,7 +8,7 @@
  * version bump. Bump this constant when a new framework release lands
  * and we want fresh scaffolds to track it.
  *
- * It also drives the URL for `voyant new --template <built-in>`, which
+ * It also drives the URL for `voyant new --starter <built-in>`, which
  * resolves to `https://github.com/voyant-travel/voyant/releases/download/v<X>/voyant-starter-<name>-<X>.tar.gz`.
  * That release tag must exist with the matching starter assets attached.
  */

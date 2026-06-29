@@ -45,7 +45,10 @@ export function createFooAdminExtension(options = {}) {
 `
 
 function writeFixture(root: string) {
-  writeFileSync(join(root, "voyant.config.ts"), `export default { modules: ["@voyant-travel/foo"] }\n`)
+  writeFileSync(
+    join(root, "voyant.config.ts"),
+    `export default { modules: ["@voyant-travel/foo"] }\n`,
+  )
   writePackage(root, "@voyant-travel/foo", { exports: { ".": "./src/index.ts" } })
   writePackage(
     root,
@@ -359,7 +362,10 @@ export function createFooAdminExtension(options = {}) {
 `
 
   function writeNestedFixture(root: string) {
-    writeFileSync(join(root, "voyant.config.ts"), `export default { modules: ["@voyant-travel/foo"] }\n`)
+    writeFileSync(
+      join(root, "voyant.config.ts"),
+      `export default { modules: ["@voyant-travel/foo"] }\n`,
+    )
     writePackage(root, "@voyant-travel/foo", { exports: { ".": "./src/index.ts" } })
     writePackage(
       root,
@@ -488,7 +494,10 @@ export function createFooAdminExtension(options = {}) {
 `
 
   function writeGateFixture(root: string, source = ANNOTATED_SOURCE) {
-    writeFileSync(join(root, "voyant.config.ts"), `export default { modules: ["@voyant-travel/foo"] }\n`)
+    writeFileSync(
+      join(root, "voyant.config.ts"),
+      `export default { modules: ["@voyant-travel/foo"] }\n`,
+    )
     writePackage(root, "@voyant-travel/foo", { exports: { ".": "./src/index.ts" } })
     writePackage(
       root,

@@ -39,14 +39,21 @@ describe("schema-manifest", () => {
 
   it("appends template-local `schemas` after the package-derived closure", () => {
     seedPackage(tmp, "@voyant-travel/db", { schema: "./schema", requiresSchemas: [] })
-    seedPackage(tmp, "@voyant-travel/crm", { schema: "./schema", requiresSchemas: ["@voyant-travel/db"] })
+    seedPackage(tmp, "@voyant-travel/crm", {
+      schema: "./schema",
+      requiresSchemas: ["@voyant-travel/db"],
+    })
 
     const result = resolveSchemaManifest(
       { modules: ["@voyant-travel/crm"], schemas: ["./src/db/schema.ts"] },
       { cwd: tmp, style: "specifier" },
     )
 
-    expect(result).toEqual(["@voyant-travel/db/schema", "@voyant-travel/crm/schema", "./src/db/schema.ts"])
+    expect(result).toEqual([
+      "@voyant-travel/db/schema",
+      "@voyant-travel/crm/schema",
+      "./src/db/schema.ts",
+    ])
   })
 
   it("renders a portable, relative, diff-friendly generated manifest", () => {

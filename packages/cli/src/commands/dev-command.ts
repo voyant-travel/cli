@@ -1,9 +1,23 @@
 import { parseArgs } from "../lib/args.js"
+import { waitForShutdownSignal } from "../lib/shutdown.js"
 import type { CommandContext, CommandResult } from "../types.js"
-import { defaultDevDeps, parseServeOptions, runDev } from "./dev.js"
+import { type DevDeps, defaultDevDeps, parseServeOptions, runDev } from "./dev.js"
 
-export async function devCommand(ctx: CommandContext): Promise<CommandResult> {
+export interface DevCommandDeps {
+  devDeps?: DevDeps
+  waitForShutdown?: (cleanup: () => Promise<void>) => Promise<void>
+}
+
+export async function devCommand(
+  ctx: CommandContext,
+  deps: DevCommandDeps = {},
+): Promise<CommandResult> {
   const args = parseArgs(ctx.argv)
+  if (args.flags.help === true || args.flags.h === true) {
+    ctx.stdout(`${DEV_USAGE}\n`)
+    return 0
+  }
+
   const parsed = parseServeOptions(args)
   if (!parsed.ok) {
     ctx.stderr(`${parsed.message}\n`)
@@ -20,7 +34,10 @@ export async function devCommand(ctx: CommandContext): Promise<CommandResult> {
 
   let handle: { close: () => Promise<void>; url: string } | undefined
   try {
-    handle = await runDev({ entryFile, outDir, options: parsed.options }, await defaultDevDeps())
+    handle = await runDev(
+      { entryFile, outDir, options: parsed.options },
+      deps.devDeps ?? (await defaultDevDeps()),
+    )
   } catch (err) {
     ctx.stderr(`voyant dev: failed to start: ${err instanceof Error ? err.message : String(err)}\n`)
     return 1
@@ -31,16 +48,20 @@ export async function devCommand(ctx: CommandContext): Promise<CommandResult> {
   ctx.stderr(`  output   ${outDir}\n`)
   ctx.stderr("Press Ctrl+C to stop.\n")
 
-  const shutdown = async (): Promise<void> => {
-    if (handle) await handle.close()
-    process.exit(0)
+  try {
+    await (deps.waitForShutdown ?? waitForShutdownSignal)(async () => {
+      if (handle) await handle.close()
+    })
+  } catch (err) {
+    ctx.stderr(`voyant dev: failed to stop: ${err instanceof Error ? err.message : String(err)}\n`)
+    return 1
   }
-  process.once("SIGINT", () => {
-    void shutdown()
-  })
-  process.once("SIGTERM", () => {
-    void shutdown()
-  })
 
-  return undefined
+  return 0
 }
+
+const DEV_USAGE = `voyant dev - watch and serve workflows locally
+
+usage:
+  voyant dev --file <path> [--port <n>] [--host <h>] [--out <dir>] [--dashboard <path>]
+`

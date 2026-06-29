@@ -52,7 +52,11 @@ describe("resolveSchemas", () => {
     })
     seedModule(tmp, "@voyant-travel/hospitality", {
       schema: "./schema",
-      requiresSchemas: ["@voyant-travel/db", "@voyant-travel/facilities", "@voyant-travel/bookings"],
+      requiresSchemas: [
+        "@voyant-travel/db",
+        "@voyant-travel/facilities",
+        "@voyant-travel/bookings",
+      ],
     })
 
     const result = resolveSchemas({ modules: ["@voyant-travel/hospitality"] }, { cwd: tmp })
@@ -78,7 +82,11 @@ describe("resolveSchemas", () => {
     })
     seedModule(tmp, "@voyant-travel/ground", {
       schema: "./schema",
-      requiresSchemas: ["@voyant-travel/db", "@voyant-travel/facilities", "@voyant-travel/identity"],
+      requiresSchemas: [
+        "@voyant-travel/db",
+        "@voyant-travel/facilities",
+        "@voyant-travel/identity",
+      ],
     })
 
     const result = resolveSchemas(
@@ -101,8 +109,14 @@ describe("resolveSchemas", () => {
   })
 
   it("throws on circular schema dependencies", () => {
-    seedModule(tmp, "@voyant-travel/a", { schema: "./schema", requiresSchemas: ["@voyant-travel/b"] })
-    seedModule(tmp, "@voyant-travel/b", { schema: "./schema", requiresSchemas: ["@voyant-travel/a"] })
+    seedModule(tmp, "@voyant-travel/a", {
+      schema: "./schema",
+      requiresSchemas: ["@voyant-travel/b"],
+    })
+    seedModule(tmp, "@voyant-travel/b", {
+      schema: "./schema",
+      requiresSchemas: ["@voyant-travel/a"],
+    })
 
     expect(() => resolveSchemas({ modules: ["@voyant-travel/a"] }, { cwd: tmp })).toThrow(
       /Circular schema dependency/,
@@ -126,7 +140,10 @@ describe("resolveSchemas", () => {
 
   it("seeds the closure from additionalSchemas alongside modules", () => {
     seedModule(tmp, "@voyant-travel/db", { schema: "./schema", requiresSchemas: [] })
-    seedModule(tmp, "@voyant-travel/crm", { schema: "./schema", requiresSchemas: ["@voyant-travel/db"] })
+    seedModule(tmp, "@voyant-travel/crm", {
+      schema: "./schema",
+      requiresSchemas: ["@voyant-travel/db"],
+    })
     seedModule(tmp, "@voyant-travel/catalog", {
       schema: "./schema",
       requiresSchemas: ["@voyant-travel/db"],

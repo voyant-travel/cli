@@ -3,12 +3,13 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   rmSync,
   writeFileSync,
 } from "node:fs"
 import { tmpdir } from "node:os"
-import { isAbsolute, join, resolve } from "node:path"
+import { dirname, isAbsolute, join, resolve } from "node:path"
 import { x } from "tar"
 
 import { parseArgs } from "../lib/args.js"
@@ -57,11 +58,9 @@ const DEFAULT_STARTER = "operator"
  * The starter source is resolved (in priority order):
  *   1. `--starter <path>` — absolute or cwd-relative path
  *   2. `--starter <name>` — built-in / discoverable starter alias
- *   3. repo-local `starters/<name>` when invoked from a Voyant checkout
+ *   3. repo-local `starters/<name>` or sibling `voyant/starters/<name>`
  *   4. version-matched starter tarball from GitHub Releases
  *   5. `operator` as the default starter when none is given
- *
- * `--template` is accepted as a deprecated alias for `--starter`.
  */
 export async function newCommand(ctx: CommandContext): Promise<CommandResult> {
   const { positionals, flags } = parseArgs(ctx.argv)
@@ -84,8 +83,12 @@ export async function newCommand(ctx: CommandContext): Promise<CommandResult> {
     return 1
   }
 
-  // `--starter` is canonical; `--template` is kept as a deprecated alias.
-  const starterFlag = flags.starter ?? flags.template
+  if ("template" in flags) {
+    ctx.stderr("Unknown option for voyant new: --template. Use --starter <name|path>.\n")
+    return 1
+  }
+
+  const starterFlag = flags.starter
 
   let starterSource: StarterSource | null
   try {
@@ -130,7 +133,12 @@ export async function newCommand(ctx: CommandContext): Promise<CommandResult> {
       pkg.name = name
       pkg.version = "0.0.1"
       pkg.private = true
-      ensureVoyantDependencyVersions(pkg, voyantVersion, schemaImports)
+      ensureVoyantDependencyVersions(
+        pkg,
+        voyantVersion,
+        schemaImports,
+        readLocalVoyantPackageVersions(starterSource.path),
+      )
       writeFileSync(pkgPath, `${JSON.stringify(pkg, null, 2)}\n`)
     } catch (err) {
       const reason = err instanceof Error ? err.message : String(err)
@@ -180,11 +188,10 @@ async function resolveStarter(
 
   const requested = typeof override === "string" ? override : DEFAULT_STARTER
 
-  // Repo-local checkout: Voyant ships starters under `starters/<name>`.
-  // `templates/<name>` is honored as a legacy fallback.
-  for (const dir of ["starters", "templates"]) {
-    const localCandidate = join(cwd, dir, requested)
-    if (existsSync(localCandidate)) return { path: localCandidate }
+  for (const localCandidate of localStarterCandidates(cwd, requested)) {
+    if (existsSync(localCandidate)) {
+      return { path: localCandidate }
+    }
   }
 
   if (!BUILT_IN_STARTERS.has(requested)) {
@@ -234,6 +241,36 @@ function starterAssetUrl(starter: string, voyantVersion: string): string {
   return `${base}/v${voyantVersion}/voyant-starter-${starter}-${voyantVersion}.tar.gz`
 }
 
+function localStarterCandidates(cwd: string, starter: string): string[] {
+  const candidates: string[] = []
+  const seen = new Set<string>()
+
+  for (const ancestor of ancestorDirs(cwd)) {
+    for (const candidate of [
+      join(ancestor, "starters", starter),
+      join(ancestor, "voyant", "starters", starter),
+    ]) {
+      if (seen.has(candidate)) continue
+      seen.add(candidate)
+      candidates.push(candidate)
+    }
+  }
+
+  return candidates
+}
+
+function ancestorDirs(start: string): string[] {
+  const dirs: string[] = []
+  let current = resolve(start)
+
+  while (true) {
+    dirs.push(current)
+    const parent = dirname(current)
+    if (parent === current) return dirs
+    current = parent
+  }
+}
+
 function defaultConfigSource(): string {
   return `import { defineVoyantConfig } from "@voyant-travel/core/config"
 
@@ -258,28 +295,93 @@ function ensureVoyantDependencyVersions(
   pkg: Record<string, unknown>,
   voyantVersion: string,
   schemaImports: string[],
+  packageVersions: Map<string, string>,
 ): void {
   const dependencies = ensureObjectRecord(pkg, "dependencies")
   const devDependencies = ensureObjectRecord(pkg, "devDependencies")
 
-  normalizeWorkspaceRanges(dependencies, voyantVersion)
-  normalizeWorkspaceRanges(devDependencies, voyantVersion)
+  normalizeWorkspaceRanges(dependencies, voyantVersion, packageVersions)
+  normalizeWorkspaceRanges(devDependencies, voyantVersion, packageVersions)
 
   for (const pkgName of schemaImports.map(getPackageNameFromImport)) {
     if (!dependencies[pkgName] && !devDependencies[pkgName]) {
-      dependencies[pkgName] = `^${voyantVersion}`
+      dependencies[pkgName] = voyantPackageRange(pkgName, voyantVersion, packageVersions)
     }
   }
 }
 
-function normalizeWorkspaceRanges(deps: Record<string, unknown>, voyantVersion: string): void {
+function normalizeWorkspaceRanges(
+  deps: Record<string, unknown>,
+  voyantVersion: string,
+  packageVersions: Map<string, string>,
+): void {
   for (const [name, value] of Object.entries(deps)) {
     if (
       name.startsWith("@voyant-travel/") &&
       typeof value === "string" &&
       value.startsWith("workspace:")
     ) {
-      deps[name] = `^${voyantVersion}`
+      deps[name] = voyantPackageRange(name, voyantVersion, packageVersions)
+    }
+  }
+}
+
+function voyantPackageRange(
+  packageName: string,
+  fallbackVersion: string,
+  packageVersions: Map<string, string>,
+): string {
+  return `^${packageVersions.get(packageName) ?? fallbackVersion}`
+}
+
+function readLocalVoyantPackageVersions(starterRoot: string): Map<string, string> {
+  const workspaceRoot = findWorkspaceRoot(starterRoot)
+  if (!workspaceRoot) return new Map()
+
+  const versions = new Map<string, string>()
+  for (const parent of [
+    join(workspaceRoot, "packages"),
+    join(workspaceRoot, "packages", "plugins"),
+    join(workspaceRoot, "apps"),
+    join(workspaceRoot, "examples"),
+    join(workspaceRoot, "starters"),
+  ]) {
+    readPackageVersionsFrom(parent, versions)
+  }
+
+  return versions
+}
+
+function findWorkspaceRoot(start: string): string | null {
+  for (const dir of ancestorDirs(start)) {
+    if (existsSync(join(dir, "pnpm-workspace.yaml"))) return dir
+  }
+  return null
+}
+
+function readPackageVersionsFrom(parent: string, versions: Map<string, string>): void {
+  if (!existsSync(parent)) return
+
+  for (const entry of readdirSync(parent, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue
+
+    const pkgPath = join(parent, entry.name, "package.json")
+    if (!existsSync(pkgPath)) continue
+
+    try {
+      const pkg = JSON.parse(readFileSync(pkgPath, "utf8")) as {
+        name?: unknown
+        version?: unknown
+      }
+      if (
+        typeof pkg.name === "string" &&
+        pkg.name.startsWith("@voyant-travel/") &&
+        typeof pkg.version === "string"
+      ) {
+        versions.set(pkg.name, pkg.version)
+      }
+    } catch {
+      // Ignore malformed package files outside the selected starter.
     }
   }
 }

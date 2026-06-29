@@ -662,7 +662,9 @@ describe("renderAdminRoutesModule", () => {
     expect(isGeneratedRouteFile(content)).toBe(true)
     expect(content).toContain(`${GENERATED_ROUTE_HEADER} — do not edit.`)
     expect(content).toContain(`import { createRoute } from "@tanstack/react-router"`)
-    expect(content).toContain(`import { adminExtensionRouteOptions } from "@voyant-travel/admin-app"`)
+    expect(content).toContain(
+      `import { adminExtensionRouteOptions } from "@voyant-travel/admin-app"`,
+    )
     expect(content).toContain(`import { adminExtensions } from "@/lib/admin-extensions"`)
     expect(content).toContain(`import { Route as WorkspaceRoute } from "@/routes/_workspace/route"`)
     expect(content).toContain(
@@ -1135,7 +1137,9 @@ describe("renderAdminDestinationsModule", () => {
     )
     expect(otherIndex).toBeGreaterThan(-1)
     expect(suppliersIndex).toBeGreaterThan(otherIndex)
-    expect(content).toContain(`import type { AdminDestinationResolvers } from "@voyant-travel/admin"`)
+    expect(content).toContain(
+      `import type { AdminDestinationResolvers } from "@voyant-travel/admin"`,
+    )
   })
 
   it("emits param-less resolvers as plain string returns", () => {
@@ -1168,7 +1172,10 @@ describe("renderAdminDestinationsModule", () => {
     expect(
       renderAdminDestinationsModule({
         bindings,
-        importSpecs: ["@voyant-travel/other-react/admin", "@voyant-travel/suppliersish-react/admin"],
+        importSpecs: [
+          "@voyant-travel/other-react/admin",
+          "@voyant-travel/suppliersish-react/admin",
+        ],
       }),
     ).toBe(content)
   })

@@ -1,5 +1,11 @@
 # @voyant-travel/cli
 
+## 0.32.2
+
+### Patch Changes
+
+- f426b85: Keep local workflow servers alive until shutdown and show `voyant dev --help` without requiring `--file`.
+
 ## 0.32.1
 
 ### Patch Changes

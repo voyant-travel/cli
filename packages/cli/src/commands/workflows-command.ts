@@ -1,5 +1,6 @@
 import { parseArgs } from "../lib/args.js"
 import type { StoredRun } from "../lib/run-store.js"
+import { waitForShutdownSignal } from "../lib/shutdown.js"
 import type { CommandContext, CommandResult } from "../types.js"
 import { defaultBuildDeps, runWorkflowsBuild } from "./workflows/build-cmd.js"
 import { defaultDeployDeps, runWorkflowsDeploy } from "./workflows/deploy.js"
@@ -15,12 +16,22 @@ import {
   defaultServeDeps,
   parseServeOptions,
   type ServeDeps,
+  type ServeHandle,
   startServer,
 } from "./workflows/serve.js"
 import { defaultTailDeps, runWorkflowsTail } from "./workflows/tail.js"
 import { defaultTriggerDeps, runWorkflowsTrigger } from "./workflows/trigger.js"
 
-export async function workflowsCommand(ctx: CommandContext): Promise<CommandResult> {
+export interface WorkflowsCommandDeps {
+  defaultServeDeps?: typeof defaultServeDeps
+  startServer?: typeof startServer
+  waitForShutdown?: (cleanup: () => Promise<void>) => Promise<void>
+}
+
+export async function workflowsCommand(
+  ctx: CommandContext,
+  commandDeps: WorkflowsCommandDeps = {},
+): Promise<CommandResult> {
   const [subcommand, ...rest] = ctx.argv
   if (!subcommand || subcommand === "--help" || subcommand === "-h") {
     ctx.stdout(`${WORKFLOWS_USAGE}\n`)
@@ -79,6 +90,11 @@ export async function workflowsCommand(ctx: CommandContext): Promise<CommandResu
       return 0
     }
     case "serve": {
+      if (args.flags.help === true || args.flags.h === true) {
+        ctx.stdout(`${WORKFLOWS_SERVE_USAGE}\n`)
+        return 0
+      }
+
       const parsed = parseServeOptions(args)
       if (!parsed.ok) {
         ctx.stderr(`${parsed.message}\n`)
@@ -88,9 +104,9 @@ export async function workflowsCommand(ctx: CommandContext): Promise<CommandResu
         typeof args.flags.dashboard === "string" ? args.flags.dashboard : undefined
       const entryFile = typeof args.flags.file === "string" ? args.flags.file : undefined
 
-      let deps: ServeDeps
+      let serveDeps: ServeDeps
       try {
-        deps = await defaultServeDeps({
+        serveDeps = await (commandDeps.defaultServeDeps ?? defaultServeDeps)({
           staticDir: dashboardOverride,
           entryFile,
         })
@@ -103,26 +119,27 @@ export async function workflowsCommand(ctx: CommandContext): Promise<CommandResu
         return 1
       }
 
+      let handle: ServeHandle
       try {
-        const handle = await startServer(parsed.options, deps)
+        handle = await (commandDeps.startServer ?? startServer)(parsed.options, serveDeps)
         ctx.stderr(`voyant workflows serve: listening at ${handle.url}\n`)
-        if (deps.staticDir) {
-          ctx.stderr(`  dashboard served from ${deps.staticDir}\n`)
+        if (serveDeps.staticDir) {
+          ctx.stderr(`  dashboard served from ${serveDeps.staticDir}\n`)
         } else {
           ctx.stderr("  (dashboard bundle not found — serving JSON only)\n")
         }
-        if (deps.listWorkflows) {
-          const count = deps.listWorkflows().length
+        if (serveDeps.listWorkflows) {
+          const count = serveDeps.listWorkflows().length
           ctx.stderr(`  ${count} workflow${count === 1 ? "" : "s"} registered from ${entryFile}\n`)
         }
         ctx.stderr(`  GET ${handle.url}/api/runs\n`)
         ctx.stderr(`  GET ${handle.url}/api/runs/:id\n`)
-        if (deps.triggerRun) {
+        if (serveDeps.triggerRun) {
           ctx.stderr(`  POST ${handle.url}/api/runs\n`)
           ctx.stderr(`  GET ${handle.url}/api/workflows\n`)
         }
-        if (deps.listSchedules) {
-          const count = deps.listSchedules().length
+        if (serveDeps.listSchedules) {
+          const count = serveDeps.listSchedules().length
           if (count > 0) {
             ctx.stderr(
               `  ${count} schedule${count === 1 ? "" : "s"} loaded (${handle.url}/api/schedules)\n`,
@@ -130,16 +147,6 @@ export async function workflowsCommand(ctx: CommandContext): Promise<CommandResu
           }
         }
         ctx.stderr("Press Ctrl+C to stop.\n")
-        const shutdown = async (): Promise<void> => {
-          await handle.close()
-          process.exit(0)
-        }
-        process.once("SIGINT", () => {
-          void shutdown()
-        })
-        process.once("SIGTERM", () => {
-          void shutdown()
-        })
       } catch (err) {
         ctx.stderr(
           `voyant workflows serve: failed to start: ${
@@ -148,7 +155,20 @@ export async function workflowsCommand(ctx: CommandContext): Promise<CommandResu
         )
         return 1
       }
-      return undefined
+
+      try {
+        await (commandDeps.waitForShutdown ?? waitForShutdownSignal)(async () => {
+          await handle.close()
+        })
+      } catch (err) {
+        ctx.stderr(
+          `voyant workflows serve: failed to stop: ${
+            err instanceof Error ? err.message : String(err)
+          }\n`,
+        )
+        return 1
+      }
+      return 0
     }
     case "replay": {
       const outcome = await runWorkflowsReplay(args, await defaultReplayDeps())
@@ -345,4 +365,10 @@ usage:
   voyant workflows trigger <id> [--input <json>] [--input-file <path>] [--url <url>]
   voyant workflows prune [--older-than <duration>] [--keep <N>] [--workflow <id>] [--status <s>] [--dry-run] [--json]
   voyant workflows tail <run-id> [--url <url>] [--stream <streamId>] [--json]
+`
+
+const WORKFLOWS_SERVE_USAGE = `voyant workflows serve - serve workflows locally
+
+usage:
+  voyant workflows serve [--port <n>] [--host <h>] [--file <path>] [--dashboard <path>]
 `

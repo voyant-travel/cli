@@ -1,10 +1,18 @@
-import { describe, expect, it } from "vitest"
+import { createHash } from "node:crypto"
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+import { afterEach, beforeEach, describe, expect, it } from "vitest"
 
 import {
   collectWranglerInfo,
+  doctorCommand,
   parseRequiredBindings,
+  runDeploymentGraphPreflight,
   runEnvPreflight,
 } from "../../src/commands/doctor.js"
+
+const VALID_GRAPH_HASH = `sha256:${"a".repeat(64)}`
 
 describe("parseRequiredBindings", () => {
   const source = `
@@ -95,3 +103,283 @@ describe("runEnvPreflight", () => {
     expect(out.join("")).toContain("skipped")
   })
 })
+
+describe("runDeploymentGraphPreflight", () => {
+  let tmp: string
+
+  beforeEach(() => {
+    tmp = mkdtempSync(join(tmpdir(), "voyant-deployment-graph-doctor-"))
+  })
+
+  afterEach(() => {
+    rmSync(tmp, { recursive: true, force: true })
+  })
+
+  function ctx(cwd = tmp) {
+    const out: string[] = []
+    const err: string[] = []
+    return {
+      ctx: {
+        argv: [],
+        cwd,
+        stdout: (c: string) => out.push(c),
+        stderr: (c: string) => err.push(c),
+      },
+      out,
+      err,
+    }
+  }
+
+  it("skips cleanly when no deployment artifacts exist", () => {
+    const { ctx: c, out } = ctx()
+
+    const code = runDeploymentGraphPreflight(c)
+
+    expect(code).toBe(0)
+    expect(out.join("")).toContain("deployment graph preflight: skipped")
+  })
+
+  it("passes for valid generated deployment graph artifacts", () => {
+    writeDeploymentGraphFixture(tmp)
+    const { ctx: c, out, err } = ctx()
+
+    const code = runDeploymentGraphPreflight(c)
+
+    expect(code).toBe(0)
+    expect(err.join("")).toBe("")
+    expect(out.join("")).toContain("deployment graph preflight: OK")
+    expect(out.join("")).toContain("1 modules; 1 plugins; 2 packages")
+  })
+
+  it("fails when the graph body does not match its content hash", () => {
+    const { graph } = writeDeploymentGraphFixture(tmp)
+    writeJson(join(tmp, "deployment-graph.generated.json"), {
+      ...graph,
+      modules: [
+        ...graph.modules,
+        {
+          id: "@voyant-travel/finance",
+          packageName: "@voyant-travel/finance",
+        },
+      ],
+    })
+    const { ctx: c, err } = ctx()
+
+    const code = runDeploymentGraphPreflight(c)
+
+    expect(code).toBe(1)
+    expect(err.join("")).toContain("does not match canonical graph hash")
+  })
+
+  it("honors an explicit manifest path", () => {
+    const root = join(tmp, "nested")
+    writeDeploymentGraphFixture(root)
+    const { ctx: c, out } = ctx(tmp)
+
+    const code = runDeploymentGraphPreflight(c, {
+      manifestPath: "nested/deployment-artifacts.generated.json",
+    })
+
+    expect(code).toBe(0)
+    expect(out.join("")).toContain("deployment graph preflight: OK")
+  })
+})
+
+describe("doctorCommand --json", () => {
+  let tmp: string
+
+  beforeEach(() => {
+    tmp = mkdtempSync(join(tmpdir(), "voyant-doctor-json-"))
+  })
+
+  afterEach(() => {
+    rmSync(tmp, { recursive: true, force: true })
+  })
+
+  function ctx(argv: string[]) {
+    const out: string[] = []
+    const err: string[] = []
+    return {
+      ctx: {
+        argv,
+        cwd: tmp,
+        stdout: (c: string) => out.push(c),
+        stderr: (c: string) => err.push(c),
+      },
+      out,
+      err,
+    }
+  }
+
+  it("emits one machine-readable report and captures skipped checks", async () => {
+    const { ctx: c, out, err } = ctx(["--json", "--skip-db", "--skip-admin"])
+
+    const code = await doctorCommand(c)
+    const report = JSON.parse(out.join("")) as {
+      schemaVersion: string
+      ok: boolean
+      checks: Array<{ id: string; status: string; stdout: string; stderr: string }>
+    }
+
+    expect(code).toBe(0)
+    expect(err.join("")).toBe("")
+    expect(report.schemaVersion).toBe("voyant.doctor.v1")
+    expect(report.ok).toBe(true)
+    expect(report.checks.map((check) => [check.id, check.status])).toEqual([
+      ["env", "skipped"],
+      ["deployment-graph", "skipped"],
+      ["db", "skipped"],
+      ["admin", "skipped"],
+    ])
+    expect(report.checks[0]?.stdout).toContain("env preflight: skipped")
+  })
+
+  it("captures failing check output in JSON and exits non-zero", async () => {
+    writeFileSync(
+      join(tmp, "env.d.ts"),
+      "interface CloudflareBindings {\n  CACHE: KVNamespace\n  DATABASE_URL: string\n}\n",
+    )
+    writeFileSync(join(tmp, "wrangler.jsonc"), JSON.stringify({ kv_namespaces: [] }))
+    const { ctx: c, out, err } = ctx(["--json", "--strict", "--skip-db", "--skip-admin"])
+
+    const code = await doctorCommand(c)
+    const report = JSON.parse(out.join("")) as {
+      ok: boolean
+      checks: Array<{ id: string; status: string; exitCode: number; stderr: string }>
+    }
+
+    expect(code).toBe(1)
+    expect(err.join("")).toBe("")
+    expect(report.ok).toBe(false)
+    expect(report.checks).toMatchObject([
+      {
+        id: "env",
+        status: "failed",
+        exitCode: 1,
+      },
+      {
+        id: "deployment-graph",
+        status: "skipped",
+      },
+      {
+        id: "db",
+        status: "skipped",
+      },
+      {
+        id: "admin",
+        status: "skipped",
+      },
+    ])
+    expect(report.checks[0]?.stderr).toContain("env preflight: FAILED")
+  })
+
+  it("includes deployment graph artifact failures in JSON output", async () => {
+    writeDeploymentGraphFixture(tmp, { manifestGraphHash: VALID_GRAPH_HASH })
+    const { ctx: c, out } = ctx(["--json", "--skip-env", "--skip-db", "--skip-admin"])
+
+    const code = await doctorCommand(c)
+    const report = JSON.parse(out.join("")) as {
+      ok: boolean
+      checks: Array<{ id: string; status: string; exitCode: number; stderr: string }>
+    }
+
+    expect(code).toBe(1)
+    expect(report.ok).toBe(false)
+    expect(report.checks).toMatchObject([
+      { id: "env", status: "skipped" },
+      {
+        id: "deployment-graph",
+        status: "failed",
+        exitCode: 1,
+      },
+      { id: "db", status: "skipped" },
+      { id: "admin", status: "skipped" },
+    ])
+    expect(report.checks[1]?.stderr).toContain("does not match graph contentHash")
+  })
+})
+
+function writeDeploymentGraphFixture(
+  root: string,
+  options: { manifestGraphHash?: string } = {},
+): {
+  graph: Record<string, unknown> & {
+    modules: Array<Record<string, unknown>>
+  }
+} {
+  mkdirSync(root, { recursive: true })
+  const graphWithoutHash = {
+    schemaVersion: "voyant.resolved-graph.v1",
+    project: {},
+    deployment: { target: "node", mode: "self-hosted", providers: {} },
+    modules: [
+      {
+        id: "@voyant-travel/bookings",
+        packageName: "@voyant-travel/bookings",
+      },
+    ],
+    plugins: [
+      {
+        id: "@voyant-travel/plugin-smartbill",
+        packageName: "@voyant-travel/plugin-smartbill",
+      },
+    ],
+    capabilities: { provided: [], required: [] },
+    packageRecords: [
+      {
+        packageName: "@voyant-travel/bookings",
+        version: "0.0.0",
+        source: { kind: "workspace" },
+      },
+      {
+        packageName: "@voyant-travel/plugin-smartbill",
+        version: "0.0.0",
+        source: { kind: "workspace" },
+      },
+    ],
+    diagnostics: [],
+  }
+  const graphHash = `sha256:${createHash("sha256")
+    .update(canonicalJson(graphWithoutHash))
+    .digest("hex")}`
+  const graph = { ...graphWithoutHash, contentHash: graphHash }
+
+  writeFileSync(join(root, "managed-profile.json"), "{}\n")
+  writeJson(join(root, "deployment-graph.generated.json"), graph)
+  writeJson(join(root, "deployment-artifacts.generated.json"), {
+    schemaVersion: "voyant.deployment-artifacts.v1",
+    graphHash: options.manifestGraphHash ?? graphHash,
+    graph: "deployment-graph.generated.json",
+    runtimeEntries: [
+      {
+        id: "@voyant-travel/framework#runtime.node",
+        target: "node",
+        file: "src/runtime-entry.generated.ts",
+        graphHash,
+        kind: "managed-profile-node",
+        profileSnapshot: "managed-profile.json",
+      },
+    ],
+  })
+  return { graph }
+}
+
+function writeJson(path: string, value: unknown): void {
+  writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`)
+}
+
+function canonicalJson(value: unknown): string {
+  return JSON.stringify(canonicalize(value))
+}
+
+function canonicalize(value: unknown): unknown {
+  if (value === undefined) return null
+  if (value === null || typeof value !== "object") return value
+  if (Array.isArray(value)) return value.map(canonicalize)
+
+  const sorted: Record<string, unknown> = {}
+  for (const key of Object.keys(value as Record<string, unknown>).sort()) {
+    sorted[key] = canonicalize((value as Record<string, unknown>)[key])
+  }
+  return sorted
+}

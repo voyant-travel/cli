@@ -133,7 +133,7 @@ describe("runDeploymentGraphPreflight", () => {
   it("skips cleanly when no deployment artifacts exist", () => {
     const { ctx: c, out } = ctx()
 
-    const code = runDeploymentGraphPreflight(c)
+    const code = withDatabaseUrlSync(undefined, () => runDeploymentGraphPreflight(c))
 
     expect(code).toBe(0)
     expect(out.join("")).toContain("deployment graph preflight: skipped")
@@ -141,14 +141,40 @@ describe("runDeploymentGraphPreflight", () => {
 
   it("passes for valid generated deployment graph artifacts", () => {
     writeDeploymentGraphFixture(tmp)
+    writeFileSync(join(tmp, ".env"), "DATABASE_URL=postgres://user:pass@example.test:5432/voyant\n")
     const { ctx: c, out, err } = ctx()
 
-    const code = runDeploymentGraphPreflight(c)
+    const code = withDatabaseUrlSync(undefined, () => runDeploymentGraphPreflight(c))
 
     expect(code).toBe(0)
     expect(err.join("")).toBe("")
     expect(out.join("")).toContain("deployment graph preflight: OK")
     expect(out.join("")).toContain("1 modules; 1 plugins; 2 packages")
+    expect(out.join("")).toContain("1 required resource env")
+  })
+
+  it("fails when graph resource env is missing", () => {
+    writeDeploymentGraphFixture(tmp)
+    const { ctx: c, err } = ctx()
+
+    const code = withDatabaseUrlSync(undefined, () => runDeploymentGraphPreflight(c))
+
+    expect(code).toBe(1)
+    expect(err.join("")).toContain("deployment graph preflight: FAILED")
+    expect(err.join("")).toContain("secret DATABASE_URL is required for database:postgres")
+  })
+
+  it("accepts required graph resource env from process env", () => {
+    writeDeploymentGraphFixture(tmp)
+    const { ctx: c, out, err } = ctx()
+
+    const code = withDatabaseUrlSync("postgres://user:pass@example.test:5432/voyant", () =>
+      runDeploymentGraphPreflight(c),
+    )
+
+    expect(code).toBe(0)
+    expect(err.join("")).toBe("")
+    expect(out.join("")).toContain("deployment graph preflight: OK")
   })
 
   it("fails when the graph body does not match its content hash", () => {
@@ -174,11 +200,17 @@ describe("runDeploymentGraphPreflight", () => {
   it("honors an explicit manifest path", () => {
     const root = join(tmp, "nested")
     writeDeploymentGraphFixture(root)
+    writeFileSync(
+      join(root, ".env"),
+      "DATABASE_URL=postgres://user:pass@example.test:5432/voyant\n",
+    )
     const { ctx: c, out } = ctx(tmp)
 
-    const code = runDeploymentGraphPreflight(c, {
-      manifestPath: "nested/deployment-artifacts.generated.json",
-    })
+    const code = withDatabaseUrlSync(undefined, () =>
+      runDeploymentGraphPreflight(c, {
+        manifestPath: "nested/deployment-artifacts.generated.json",
+      }),
+    )
 
     expect(code).toBe(0)
     expect(out.join("")).toContain("deployment graph preflight: OK")
@@ -214,7 +246,7 @@ describe("doctorCommand --json", () => {
   it("emits one machine-readable report and captures skipped checks", async () => {
     const { ctx: c, out, err } = ctx(["--json", "--skip-db", "--skip-admin"])
 
-    const code = await doctorCommand(c)
+    const code = await withDatabaseUrlAsync(undefined, () => doctorCommand(c))
     const report = JSON.parse(out.join("")) as {
       schemaVersion: string
       ok: boolean
@@ -242,7 +274,7 @@ describe("doctorCommand --json", () => {
     writeFileSync(join(tmp, "wrangler.jsonc"), JSON.stringify({ kv_namespaces: [] }))
     const { ctx: c, out, err } = ctx(["--json", "--strict", "--skip-db", "--skip-admin"])
 
-    const code = await doctorCommand(c)
+    const code = await withDatabaseUrlAsync(undefined, () => doctorCommand(c))
     const report = JSON.parse(out.join("")) as {
       ok: boolean
       checks: Array<{ id: string; status: string; exitCode: number; stderr: string }>
@@ -277,7 +309,7 @@ describe("doctorCommand --json", () => {
     writeDeploymentGraphFixture(tmp, { manifestGraphHash: VALID_GRAPH_HASH })
     const { ctx: c, out } = ctx(["--json", "--skip-env", "--skip-db", "--skip-admin"])
 
-    const code = await doctorCommand(c)
+    const code = await withDatabaseUrlAsync(undefined, () => doctorCommand(c))
     const report = JSON.parse(out.join("")) as {
       ok: boolean
       checks: Array<{ id: string; status: string; exitCode: number; stderr: string }>
@@ -297,7 +329,61 @@ describe("doctorCommand --json", () => {
     ])
     expect(report.checks[1]?.stderr).toContain("does not match graph contentHash")
   })
+
+  it("includes deployment graph resource env failures in JSON output", async () => {
+    writeDeploymentGraphFixture(tmp)
+    const { ctx: c, out } = ctx(["--json", "--skip-env", "--skip-db", "--skip-admin"])
+
+    const code = await withDatabaseUrlAsync(undefined, () => doctorCommand(c))
+    const report = JSON.parse(out.join("")) as {
+      ok: boolean
+      checks: Array<{ id: string; status: string; exitCode: number; stderr: string }>
+    }
+
+    expect(code).toBe(1)
+    expect(report.ok).toBe(false)
+    expect(report.checks).toMatchObject([
+      { id: "env", status: "skipped" },
+      {
+        id: "deployment-graph",
+        status: "failed",
+        exitCode: 1,
+      },
+      { id: "db", status: "skipped" },
+      { id: "admin", status: "skipped" },
+    ])
+    expect(report.checks[1]?.stderr).toContain(
+      "secret DATABASE_URL is required for database:postgres",
+    )
+  })
 })
+
+function withDatabaseUrlSync<T>(value: string | undefined, fn: () => T): T {
+  const previous = process.env.DATABASE_URL
+  if (value === undefined) delete process.env.DATABASE_URL
+  else process.env.DATABASE_URL = value
+  try {
+    return fn()
+  } finally {
+    if (previous === undefined) delete process.env.DATABASE_URL
+    else process.env.DATABASE_URL = previous
+  }
+}
+
+async function withDatabaseUrlAsync<T>(
+  value: string | undefined,
+  fn: () => Promise<T>,
+): Promise<T> {
+  const previous = process.env.DATABASE_URL
+  if (value === undefined) delete process.env.DATABASE_URL
+  else process.env.DATABASE_URL = value
+  try {
+    return await fn()
+  } finally {
+    if (previous === undefined) delete process.env.DATABASE_URL
+    else process.env.DATABASE_URL = previous
+  }
+}
 
 function writeDeploymentGraphFixture(
   root: string,
@@ -338,6 +424,30 @@ function writeDeploymentGraphFixture(
       },
     ],
     diagnostics: [],
+    requirements: {
+      resources: [
+        {
+          resourceKey: "database:postgres",
+          roles: ["database"],
+          provider: "postgres",
+          required: true,
+          env: [
+            {
+              name: "DATABASE_URL",
+              kind: "secret",
+              required: true,
+              description: "Primary Postgres connection URL.",
+            },
+            {
+              name: "DATABASE_URL_DIRECT",
+              kind: "secret",
+              required: false,
+              description: "Direct Postgres URL.",
+            },
+          ],
+        },
+      ],
+    },
   }
   const graphHash = `sha256:${createHash("sha256")
     .update(canonicalJson(graphWithoutHash))

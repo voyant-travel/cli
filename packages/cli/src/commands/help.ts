@@ -23,8 +23,8 @@ OPEN-SOURCE COMMANDS
                                      (generated-destination drift gates: exit 1; the rest reports)
   doctor [--strict] [--skip-*] [--json] [--deployment-artifacts <file>]
                                      Preflight: env/bindings (env.d.ts <-> wrangler.jsonc +
-                                     placeholders) + deployment graph artifacts + db doctor +
-                                     admin doctor (exit 1 on any gate)
+                                     placeholders) + deployment graph artifacts/resource env +
+                                     db doctor + admin doctor (exit 1 on any gate)
   upgrade [--to <version>] [--dry-run]  Bump the @voyant-travel/framework BOM + install
                                      (then run: voyant db migrate && voyant doctor)
   dev --file <path>                  Watch and serve workflows locally with hot reload

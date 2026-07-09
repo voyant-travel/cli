@@ -237,9 +237,26 @@ interface ResolvedDeploymentGraph {
   contentHash?: unknown
   diagnostics?: unknown
   deployment?: unknown
+  requirements?: unknown
   modules?: unknown
   plugins?: unknown
   packageRecords?: unknown
+}
+
+interface DeploymentGraphResourceRequirement {
+  resourceKey: string
+  roles: readonly string[]
+  provider: string
+  required: boolean
+  env: readonly DeploymentGraphEnvRequirement[]
+  notes?: string
+}
+
+interface DeploymentGraphEnvRequirement {
+  name: string
+  kind: string
+  required: boolean
+  description: string
 }
 
 const ARTIFACT_MANIFEST_SCHEMA_VERSION = "voyant.deployment-artifacts.v1"
@@ -265,8 +282,17 @@ export function runDeploymentGraphPreflight(
 
   try {
     const summary = loadDeploymentGraphArtifacts(manifestPath)
+    const envIssues = deploymentGraphResourceEnvIssues(
+      summary.resourceRequirements,
+      dirname(manifestPath),
+    )
+    if (envIssues.length > 0) {
+      ctx.stderr("deployment graph preflight: FAILED\n")
+      for (const issue of envIssues) ctx.stderr(`  - ${issue}\n`)
+      return 1
+    }
     ctx.stdout(
-      `deployment graph preflight: OK (${summary.graphHash}; ${summary.moduleCount} modules; ${summary.pluginCount} plugins; ${summary.packageCount} packages)\n`,
+      `deployment graph preflight: OK (${summary.graphHash}; ${summary.moduleCount} modules; ${summary.pluginCount} plugins; ${summary.packageCount} packages; ${summary.requiredEnvCount} required resource env)\n`,
     )
     return 0
   } catch (error) {
@@ -296,6 +322,8 @@ function loadDeploymentGraphArtifacts(manifestPath: string): {
   moduleCount: number
   pluginCount: number
   packageCount: number
+  requiredEnvCount: number
+  resourceRequirements: readonly DeploymentGraphResourceRequirement[]
 } {
   const manifest = readJsonFile<DeploymentArtifactManifest>(manifestPath, "deployment artifacts")
   if (manifest.schemaVersion !== ARTIFACT_MANIFEST_SCHEMA_VERSION) {
@@ -418,12 +446,128 @@ function loadDeploymentGraphArtifacts(manifestPath: string): {
     )
   }
 
+  const resourceRequirements = collectResourceRequirements(graph.requirements)
   return {
     graphHash,
     moduleCount: arrayOfRecords(graph.modules, "deployment graph modules").length,
     pluginCount: arrayOfRecords(graph.plugins, "deployment graph plugins").length,
     packageCount: arrayOfRecords(graph.packageRecords, "deployment graph packageRecords").length,
+    requiredEnvCount: resourceRequirements.reduce(
+      (count, resource) => count + resource.env.filter((entry) => entry.required).length,
+      0,
+    ),
+    resourceRequirements,
   }
+}
+
+function collectResourceRequirements(value: unknown): DeploymentGraphResourceRequirement[] {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("deployment graph requirements must be an object")
+  }
+  const resources = arrayOfRecords(
+    (value as Record<string, unknown>).resources,
+    "deployment graph requirements.resources",
+  )
+  return resources.map((resource, index) => {
+    const env = arrayOfRecords(
+      resource.env,
+      `deployment graph requirements.resources[${index}].env`,
+    ).map((entry, envIndex) => ({
+      name: requireString(
+        entry.name,
+        `deployment graph requirements.resources[${index}].env[${envIndex}].name`,
+      ),
+      kind: requireString(
+        entry.kind,
+        `deployment graph requirements.resources[${index}].env[${envIndex}].kind`,
+      ),
+      required: requireBoolean(
+        entry.required,
+        `deployment graph requirements.resources[${index}].env[${envIndex}].required`,
+      ),
+      description: requireString(
+        entry.description,
+        `deployment graph requirements.resources[${index}].env[${envIndex}].description`,
+      ),
+    }))
+    const notes = stringField(resource, "notes")
+    return {
+      resourceKey: requireString(
+        resource.resourceKey,
+        `deployment graph requirements.resources[${index}].resourceKey`,
+      ),
+      roles: collectStringArray(
+        resource.roles,
+        `deployment graph requirements.resources[${index}].roles`,
+      ),
+      provider: requireString(
+        resource.provider,
+        `deployment graph requirements.resources[${index}].provider`,
+      ),
+      required: requireBoolean(
+        resource.required,
+        `deployment graph requirements.resources[${index}].required`,
+      ),
+      env,
+      ...(notes ? { notes } : {}),
+    }
+  })
+}
+
+function deploymentGraphResourceEnvIssues(
+  resources: readonly DeploymentGraphResourceRequirement[],
+  cwd: string,
+): string[] {
+  const env = collectDeploymentEnv(cwd)
+  const issues: string[] = []
+  for (const resource of resources) {
+    for (const requirement of resource.env) {
+      if (!requirement.required) continue
+      const value = env.get(requirement.name)
+      if (!value || value.trim().length === 0) {
+        issues.push(
+          `${requirement.kind} ${requirement.name} is required for ${resource.resourceKey}`,
+        )
+      }
+    }
+  }
+  return [...new Set(issues)]
+}
+
+function collectDeploymentEnv(cwd: string): Map<string, string> {
+  const env = new Map<string, string>()
+  readEnvFileInto(env, join(cwd, ".env"))
+  readEnvFileInto(env, join(cwd, ".dev.vars"))
+  for (const [key, value] of Object.entries(process.env)) {
+    if (typeof value === "string") env.set(key, value)
+  }
+  return env
+}
+
+function readEnvFileInto(env: Map<string, string>, path: string): void {
+  if (!existsSync(path)) return
+  for (const line of readFileSync(path, "utf-8").split("\n")) {
+    const parsed = parseEnvLine(line)
+    if (parsed) env.set(parsed.key, parsed.value)
+  }
+}
+
+function parseEnvLine(line: string): { key: string; value: string } | null {
+  const match = line.match(/^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)\s*$/)
+  if (!match?.[1]) return null
+  const rawValue = match[2] ?? ""
+  return { key: match[1], value: unquoteEnvValue(rawValue.trim()) }
+}
+
+function unquoteEnvValue(value: string): string {
+  if (
+    value.length >= 2 &&
+    ((value.startsWith('"') && value.endsWith('"')) ||
+      (value.startsWith("'") && value.endsWith("'")))
+  ) {
+    return value.slice(1, -1)
+  }
+  return value
 }
 
 function readJsonFile<T>(path: string, label: string): T {
@@ -453,6 +597,11 @@ function requireString(value: unknown, label: string): string {
   throw new Error(`${label} must be a non-empty string`)
 }
 
+function requireBoolean(value: unknown, label: string): boolean {
+  if (typeof value === "boolean") return value
+  throw new Error(`${label} must be a boolean`)
+}
+
 function requireSha256ContentHash(value: unknown, label: string): string {
   const hash = requireString(value, label)
   if (SHA256_CONTENT_HASH_PATTERN.test(hash)) return hash
@@ -465,6 +614,11 @@ function arrayOfRecords(value: unknown, label: string): Record<string, unknown>[
     if (entry && typeof entry === "object") return entry as Record<string, unknown>
     throw new Error(`${label}[${index}] must be an object`)
   })
+}
+
+function collectStringArray(value: unknown, label: string): string[] {
+  if (!Array.isArray(value)) throw new Error(`${label} must be an array`)
+  return value.map((entry, index) => requireString(entry, `${label}[${index}]`))
 }
 
 function stringField(record: Record<string, unknown>, field: string): string | undefined {

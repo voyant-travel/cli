@@ -25,7 +25,20 @@ function makeCtx(cwd: string, argv: string[]) {
 }
 
 /** A stand-in for the deployment's framework/profile API (dynamically loaded in prod). */
-function fakeFramework(version: string | null = FRAMEWORK_VERSION): LoadedFramework {
+function fakeFramework(
+  version: string | null = FRAMEWORK_VERSION,
+  options: {
+    graphApi?: boolean
+    graphApiLoadError?: string
+    graphDiagnostics?: ReadonlyArray<{
+      code: string
+      severity?: string
+      source?: string
+      message: string
+      hint?: string
+    }>
+  } = {},
+): LoadedFramework {
   return {
     version,
     api: {
@@ -44,6 +57,22 @@ function fakeFramework(version: string | null = FRAMEWORK_VERSION): LoadedFramew
       },
       resolveActiveModuleIds: () => ["bookings", "catalog"],
     },
+    ...(options.graphApiLoadError
+      ? { graphApiLoadError: options.graphApiLoadError }
+      : options.graphApi === false
+        ? {}
+        : {
+            graphApi: {
+              resolveManagedProfileDeploymentGraph: async () => ({
+                schemaVersion: "voyant.resolved-graph.v1",
+                contentHash:
+                  "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+                modules: [{ id: "@voyant-travel/bookings" }, { id: "@voyant-travel/catalog" }],
+                plugins: [],
+                diagnostics: options.graphDiagnostics ?? [],
+              }),
+            },
+          }),
   }
 }
 
@@ -133,6 +162,8 @@ describe("managedDbDoctorCommand", () => {
     expect(out()).toContain("No drift detected.")
     expect(out()).toMatch(/@acme\/loyalty.*ships 1 migration/)
     expect(out()).toMatch(/matches the snapshot/)
+    expect(out()).toMatch(/Graph: resolved voyant\.resolved-graph\.v1 sha256:/)
+    expect(out()).toMatch(/Graph: no diagnostics/)
     expect(code).toBe(0)
   })
 
@@ -189,6 +220,59 @@ describe("managedDbDoctorCommand", () => {
     })
 
     expect(out()).toMatch(/@voyant-travel\/framework is not installed/)
+    expect(code).toBe(1)
+  })
+
+  it("reports deployment graph diagnostics when the installed framework exposes the graph API", async () => {
+    const snapshotPath = writeSnapshot(dir, snapshot())
+    const { ctx, out } = makeCtx(dir, ["--fail-on-drift"])
+    const code = await managedDbDoctorCommand(ctx, {
+      snapshotPath,
+      loadFramework: async () =>
+        fakeFramework(FRAMEWORK_VERSION, {
+          graphDiagnostics: [
+            {
+              code: "VOYANT_GRAPH_MISSING_CAPABILITY",
+              severity: "error",
+              source: "@acme/voyant-loyalty",
+              message: "Required capability acme.crm.people is not provided.",
+              hint: "Select a CRM provider.",
+            },
+          ],
+        }),
+    })
+
+    expect(out()).toMatch(/Deployment graph reported diagnostics/)
+    expect(out()).toMatch(/VOYANT_GRAPH_MISSING_CAPABILITY/)
+    expect(code).toBe(1)
+  })
+
+  it("keeps older framework installs compatible when the graph API is absent", async () => {
+    const snapshotPath = writeSnapshot(dir, snapshot())
+    const { ctx, out } = makeCtx(dir, ["--fail-on-drift"])
+    const code = await managedDbDoctorCommand(ctx, {
+      snapshotPath,
+      loadFramework: async () => fakeFramework(FRAMEWORK_VERSION, { graphApi: false }),
+    })
+
+    expect(out()).toMatch(/does not expose @voyant-travel\/framework\/deployment-graph yet/)
+    expect(out()).toContain("No drift detected.")
+    expect(code).toBe(0)
+  })
+
+  it("reports a broken deployment graph export as drift", async () => {
+    const snapshotPath = writeSnapshot(dir, snapshot())
+    const { ctx, out } = makeCtx(dir, ["--fail-on-drift"])
+    const code = await managedDbDoctorCommand(ctx, {
+      snapshotPath,
+      loadFramework: async () =>
+        fakeFramework(FRAMEWORK_VERSION, {
+          graphApiLoadError: "Cannot find module './deployment-graph.js'",
+        }),
+    })
+
+    expect(out()).toMatch(/Could not load deployment graph API/)
+    expect(out()).toMatch(/Cannot find module/)
     expect(code).toBe(1)
   })
 })

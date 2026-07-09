@@ -30,9 +30,28 @@ export interface FrameworkProfileApi {
   resolveActiveModuleIds(project: unknown): string[]
 }
 
+export interface FrameworkDeploymentGraphApi {
+  resolveManagedProfileDeploymentGraph(project: unknown): Promise<{
+    schemaVersion: string
+    contentHash: string
+    modules: ReadonlyArray<unknown>
+    plugins: ReadonlyArray<unknown>
+    diagnostics: ReadonlyArray<{
+      code: string
+      severity?: string
+      source?: string
+      facet?: string
+      message: string
+      hint?: string
+    }>
+  }>
+}
+
 /** The framework loaded from the deployment, with its installed version. */
 export interface LoadedFramework {
   api: FrameworkProfileApi
+  graphApi?: FrameworkDeploymentGraphApi
+  graphApiLoadError?: string
   version: string | null
 }
 
@@ -61,16 +80,36 @@ export async function loadDeploymentFramework(
   } catch {
     return null
   }
-  const profileExport = pkg.exports?.["./profile"]
-  const entryRel =
-    typeof profileExport === "string"
-      ? profileExport
-      : ((profileExport as { import?: string } | undefined)?.import ?? null)
-  if (!entryRel) return null
-  const entryPath = join(dirname(pkgJsonPath), entryRel)
+
+  const profileEntryPath = resolvePackageExportPath(pkgJsonPath, pkg.exports, "./profile")
+  if (!profileEntryPath) return null
   try {
-    const api = (await import(pathToFileURL(entryPath).href)) as unknown as FrameworkProfileApi
-    return { api, version: typeof pkg.version === "string" ? pkg.version : null }
+    const api = (await import(
+      pathToFileURL(profileEntryPath).href
+    )) as unknown as FrameworkProfileApi
+    const graphEntryPath = resolvePackageExportPath(pkgJsonPath, pkg.exports, "./deployment-graph")
+    let graphApi: FrameworkDeploymentGraphApi | undefined
+    let graphApiLoadError: string | undefined
+    if (graphEntryPath) {
+      try {
+        graphApi = (await import(
+          pathToFileURL(graphEntryPath).href
+        )) as unknown as FrameworkDeploymentGraphApi
+        if (!graphApi?.resolveManagedProfileDeploymentGraph) {
+          graphApi = undefined
+          graphApiLoadError =
+            "export does not provide resolveManagedProfileDeploymentGraph(project)."
+        }
+      } catch (err) {
+        graphApiLoadError = reason(err)
+      }
+    }
+    return {
+      api,
+      ...(graphApi?.resolveManagedProfileDeploymentGraph ? { graphApi } : {}),
+      ...(graphApiLoadError ? { graphApiLoadError } : {}),
+      version: typeof pkg.version === "string" ? pkg.version : null,
+    }
   } catch {
     return null
   }
@@ -200,6 +239,46 @@ export async function managedDbDoctorCommand(
     // resolveActiveModuleIds throws only on an invalid project, already reported above.
   }
 
+  // 5. unified deployment graph, when supported by the installed framework.
+  if (framework.graphApi?.resolveManagedProfileDeploymentGraph) {
+    try {
+      const graph = await framework.graphApi.resolveManagedProfileDeploymentGraph(snapshot)
+      notes.push(
+        `Graph: resolved ${graph.schemaVersion} ${graph.contentHash} (${graph.modules.length} modules, ${graph.plugins.length} plugins).`,
+      )
+      const graphDiagnostics = graph.diagnostics ?? []
+      if (graphDiagnostics.length === 0) {
+        notes.push("Graph: no diagnostics.")
+      } else {
+        issues.push({
+          message: "Deployment graph reported diagnostics:",
+          details: graphDiagnostics.map((diagnostic) =>
+            [
+              diagnostic.code,
+              diagnostic.severity ? `[${diagnostic.severity}]` : "",
+              diagnostic.source ? `${diagnostic.source}:` : "",
+              diagnostic.message,
+              diagnostic.hint ? `Hint: ${diagnostic.hint}` : "",
+            ]
+              .filter(Boolean)
+              .join(" "),
+          ),
+        })
+      }
+    } catch (err) {
+      issues.push({ message: `Could not resolve deployment graph: ${reason(err)}` })
+    }
+  } else if (framework.graphApiLoadError) {
+    issues.push({
+      message: "Could not load deployment graph API from the installed framework:",
+      details: [framework.graphApiLoadError],
+    })
+  } else {
+    notes.push(
+      "Graph: installed framework does not expose @voyant-travel/framework/deployment-graph yet.",
+    )
+  }
+
   printReport(ctx, { snapshotPath, issues, notes, failOnDrift })
   return failOnDrift && issues.length > 0 ? 1 : 0
 }
@@ -229,6 +308,17 @@ function moduleMigrationStatus(
 
 function reason(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
+}
+
+function resolvePackageExportPath(
+  pkgJsonPath: string,
+  exportsMap: Record<string, unknown> | undefined,
+  key: string,
+): string | null {
+  const entry = exportsMap?.[key]
+  const entryRel =
+    typeof entry === "string" ? entry : ((entry as { import?: string } | undefined)?.import ?? null)
+  return entryRel ? join(dirname(pkgJsonPath), entryRel) : null
 }
 
 function printReport(

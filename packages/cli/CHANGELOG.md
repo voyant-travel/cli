@@ -1,5 +1,11 @@
 # @voyant-travel/cli
 
+## 0.34.0
+
+### Minor Changes
+
+- 1a71e19: Teach managed-profile `voyant db doctor` to consume the installed framework deployment graph, report graph diagnostics, and distinguish absent graph support from broken graph exports.
+
 ## 0.33.0
 
 ### Minor Changes

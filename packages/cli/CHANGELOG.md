@@ -1,5 +1,11 @@
 # @voyant-travel/cli
 
+## 0.34.2
+
+### Patch Changes
+
+- fe5f8c3: Validate deployment graph resource environment requirements in `voyant doctor`.
+
 ## 0.34.1
 
 ### Patch Changes

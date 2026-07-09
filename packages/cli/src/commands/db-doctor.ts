@@ -13,6 +13,7 @@ import {
 } from "../lib/schema-manifest.js"
 import { loadVoyantConfig, type SchemaManifestConfig } from "../lib/voyant-config.js"
 import type { CommandContext, CommandResult } from "../types.js"
+import { managedDbDoctorCommand, resolveManagedSnapshotPath } from "./db-doctor-managed.js"
 import { loadLinks, resolveLinksPath } from "./db-sync-links.js"
 
 const DRIZZLE_CONFIG_NAMES = [
@@ -27,12 +28,18 @@ interface DoctorIssue {
 }
 
 /**
- * `voyant db doctor [--template <path>] [--config <path>] [--fail-on-drift]`
+ * `voyant db doctor [--template <path>] [--config <path>] [--snapshot <path>]
+ *   [--fail-on-drift]`
  *
- * Cross-checks the manifest (`voyant.config.ts`) against the migration setup
- * and reports drift. It is a **report by default** (exit 0) so it can run
- * informationally while existing drift is paid down; pass `--fail-on-drift`
- * to gate CI once the report is clean.
+ * Two modes, auto-detected:
+ *  - **Managed profile** (source-free): when a `managed-profile.json` snapshot is
+ *    present at the cwd (or `--snapshot <path>`), delegates to
+ *    {@link managedDbDoctorCommand} — there is no `drizzle.config`/`voyant.config`.
+ *  - **Source-backed** (below): cross-checks the manifest (`voyant.config.ts`)
+ *    against the migration setup and reports drift.
+ *
+ * It is a **report by default** (exit 0) so it can run informationally while
+ * existing drift is paid down; pass `--fail-on-drift` to gate CI once clean.
  *
  * Checks:
  *  1. every manifest entry (modules + extensions + additionalSchemas) resolves
@@ -47,6 +54,15 @@ interface DoctorIssue {
  */
 export async function dbDoctorCommand(ctx: CommandContext): Promise<CommandResult> {
   const { flags } = parseArgs(ctx.argv)
+
+  // Source-free managed profile: a serialized `managed-profile.json` snapshot
+  // (or `--snapshot <path>`) instead of a drizzle.config template. Falls through
+  // to the source-backed checks below when no snapshot is present.
+  const snapshotPath = resolveManagedSnapshotPath(ctx.cwd, flags.snapshot)
+  if (snapshotPath) {
+    return managedDbDoctorCommand(ctx, { snapshotPath })
+  }
+
   const templateDir = resolveTemplateDir(ctx.cwd, flags.template)
   if (!templateDir) {
     ctx.stderr(

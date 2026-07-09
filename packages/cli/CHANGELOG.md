@@ -1,5 +1,11 @@
 # @voyant-travel/cli
 
+## 0.34.1
+
+### Patch Changes
+
+- 8f10a4d: Add `voyant doctor --json` to emit a machine-readable `voyant.doctor.v1` report while preserving the existing human-readable doctor output. The top-level doctor now also validates generated deployment graph artifacts when present.
+
 ## 0.34.0
 
 ### Minor Changes

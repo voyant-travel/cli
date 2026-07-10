@@ -21,7 +21,7 @@ export async function buildCommand(
     const report = {
       schemaVersion: "voyant.build.v1",
       ok: true,
-      contentHash: built.manifest.contentHash,
+      contentHash: built.manifest.graphHash,
       artifactRoot: built.artifactRoot,
       runtimeEntry: built.manifest.runtimeEntry,
       migrationCount: built.migrationPlan.migrations.length,
@@ -29,7 +29,7 @@ export async function buildCommand(
     }
     if (wantsJson(args)) return printJson(ctx, report)
 
-    ctx.stdout(`voyant build: ${built.manifest.contentHash}\n`)
+    ctx.stdout(`voyant build: ${built.manifest.graphHash}\n`)
     ctx.stdout(`  artifacts  ${built.artifactRoot}\n`)
     ctx.stdout(`  runtime    ${built.manifest.runtimeEntry}\n`)
     ctx.stdout(`  migrations ${built.migrationPlan.migrations.length}\n`)

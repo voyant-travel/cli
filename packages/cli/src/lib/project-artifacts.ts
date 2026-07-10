@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs"
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises"
 import { dirname, join, resolve } from "node:path"
-
+import { DEPLOYMENT_ARTIFACT_SCHEMA_VERSION } from "./deployment-artifact-reader.js"
 import {
   computeGraphContentHash,
   MIGRATION_PLAN_SCHEMA_VERSION,
@@ -15,9 +15,9 @@ import {
   stableJson,
 } from "./project-resolution.js"
 
-export const PROJECT_ARTIFACTS_SCHEMA_VERSION = "voyant.project-artifacts.v1" as const
+export const PROJECT_ARTIFACTS_SCHEMA_VERSION = DEPLOYMENT_ARTIFACT_SCHEMA_VERSION
 export const PROJECT_ARTIFACT_DIRECTORY = ".voyant" as const
-export const PROJECT_ARTIFACT_MANIFEST = "project-artifacts.generated.json" as const
+export const PROJECT_ARTIFACT_MANIFEST = "deployment-artifacts.generated.json" as const
 export const PROJECT_GRAPH_ARTIFACT = "deployment-graph.generated.json" as const
 export const PROJECT_MIGRATION_PLAN_ARTIFACT = "migration-plan.generated.json" as const
 
@@ -31,10 +31,19 @@ const CORE_ARTIFACT_PATHS = new Set<string>([
 
 export interface ProjectArtifactManifest {
   schemaVersion: typeof PROJECT_ARTIFACTS_SCHEMA_VERSION
-  contentHash: string
+  graphHash: string
   config: string
   graph: typeof PROJECT_GRAPH_ARTIFACT
   runtimeEntry: string
+  runtimeEntries: readonly [
+    {
+      id: "project"
+      target: "node"
+      kind: "application"
+      file: string
+      graphHash: string
+    },
+  ]
   migrationPlan: typeof PROJECT_MIGRATION_PLAN_ARTIFACT
   files: readonly string[]
 }
@@ -71,10 +80,10 @@ export async function checkProjectArtifacts(
   const resolution = await resolveProject(cwd, options)
   assertNoGraphErrors(resolution.graph)
   const loaded = await loadProjectArtifacts(resolution.projectRoot)
-  if (loaded.manifest.contentHash !== resolution.graph.contentHash) {
+  if (loaded.manifest.graphHash !== resolution.graph.contentHash) {
     throw new ProjectArtifactError(
       "artifact_stale",
-      `Generated project artifacts are stale: found ${loaded.manifest.contentHash}, resolved ${resolution.graph.contentHash}. Run \`voyant build\` or \`voyant dev\` to refresh .voyant/.`,
+      `Generated project artifacts are stale: found ${loaded.manifest.graphHash}, resolved ${resolution.graph.contentHash}. Run \`voyant build\` or \`voyant dev\` to refresh .voyant/.`,
     )
   }
   return { ...loaded, resolution }
@@ -100,10 +109,19 @@ export async function writeProjectArtifacts(resolution: ResolvedProject): Promis
   ].sort((left, right) => left.localeCompare(right))
   const manifest: ProjectArtifactManifest = {
     schemaVersion: PROJECT_ARTIFACTS_SCHEMA_VERSION,
-    contentHash: resolution.graph.contentHash,
+    graphHash: resolution.graph.contentHash,
     config: projectRelativePath(resolution.projectRoot, resolution.configPath),
     graph: PROJECT_GRAPH_ARTIFACT,
     runtimeEntry: resolution.artifacts.runtimeEntry,
+    runtimeEntries: [
+      {
+        id: "project",
+        target: "node",
+        kind: "application",
+        file: resolution.artifacts.runtimeEntry,
+        graphHash: resolution.graph.contentHash,
+      },
+    ],
     migrationPlan: PROJECT_MIGRATION_PLAN_ARTIFACT,
     files,
   }
@@ -154,12 +172,12 @@ export async function loadProjectArtifacts(projectRoot: string): Promise<LoadedP
       `Generated deployment graph schema must be ${RESOLVED_GRAPH_SCHEMA_VERSION}`,
     )
   }
-  if (graph.contentHash !== manifest.contentHash) {
-    throw hashMismatch("deployment graph", graph.contentHash, manifest.contentHash)
+  if (graph.contentHash !== manifest.graphHash) {
+    throw hashMismatch("deployment graph", graph.contentHash, manifest.graphHash)
   }
   const computedHash = computeGraphContentHash(graph)
-  if (computedHash !== manifest.contentHash) {
-    throw hashMismatch("canonical deployment graph", computedHash, manifest.contentHash)
+  if (computedHash !== manifest.graphHash) {
+    throw hashMismatch("canonical deployment graph", computedHash, manifest.graphHash)
   }
 
   const migrationPlan = (await readJson(
@@ -172,8 +190,8 @@ export async function loadProjectArtifacts(projectRoot: string): Promise<LoadedP
       `Generated migration plan schema must be ${MIGRATION_PLAN_SCHEMA_VERSION}`,
     )
   }
-  if (migrationPlan.contentHash !== manifest.contentHash) {
-    throw hashMismatch("migration plan", migrationPlan.contentHash, manifest.contentHash)
+  if (migrationPlan.contentHash !== manifest.graphHash) {
+    throw hashMismatch("migration plan", migrationPlan.contentHash, manifest.graphHash)
   }
   if (!Array.isArray(migrationPlan.migrations)) {
     throw new ProjectArtifactError(
@@ -184,10 +202,10 @@ export async function loadProjectArtifacts(projectRoot: string): Promise<LoadedP
 
   const runtimeEntryPath = join(artifactRoot, manifest.runtimeEntry)
   const runtimeSource = await readFile(runtimeEntryPath, "utf8")
-  if (!runtimeSource.includes(manifest.contentHash)) {
+  if (!runtimeSource.includes(manifest.graphHash)) {
     throw new ProjectArtifactError(
       "artifact_stale",
-      `Generated runtime entry ${manifest.runtimeEntry} does not reference ${manifest.contentHash}. Run \`voyant build\` or \`voyant dev\` to refresh .voyant/.`,
+      `Generated runtime entry ${manifest.runtimeEntry} does not reference ${manifest.graphHash}. Run \`voyant build\` or \`voyant dev\` to refresh .voyant/.`,
     )
   }
 
@@ -266,13 +284,10 @@ function parseManifest(value: unknown): ProjectArtifactManifest {
       `Project artifact manifest schema must be ${PROJECT_ARTIFACTS_SCHEMA_VERSION}, got ${String(manifest.schemaVersion)}`,
     )
   }
-  if (
-    typeof manifest.contentHash !== "string" ||
-    !CONTENT_HASH_PATTERN.test(manifest.contentHash)
-  ) {
+  if (typeof manifest.graphHash !== "string" || !CONTENT_HASH_PATTERN.test(manifest.graphHash)) {
     throw new ProjectArtifactError(
       "artifact_invalid",
-      "Project artifact contentHash must match sha256:<64 lowercase hex characters>",
+      "Project artifact graphHash must match sha256:<64 lowercase hex characters>",
     )
   }
   if (manifest.graph !== PROJECT_GRAPH_ARTIFACT) {
@@ -291,6 +306,20 @@ function parseManifest(value: unknown): ProjectArtifactManifest {
     throw new ProjectArtifactError(
       "artifact_invalid",
       "Project artifact config and runtimeEntry must be paths",
+    )
+  }
+  if (
+    !Array.isArray(manifest.runtimeEntries) ||
+    manifest.runtimeEntries.length !== 1 ||
+    manifest.runtimeEntries[0]?.id !== "project" ||
+    manifest.runtimeEntries[0]?.target !== "node" ||
+    manifest.runtimeEntries[0]?.kind !== "application" ||
+    manifest.runtimeEntries[0]?.file !== manifest.runtimeEntry ||
+    manifest.runtimeEntries[0]?.graphHash !== manifest.graphHash
+  ) {
+    throw new ProjectArtifactError(
+      "artifact_invalid",
+      "Project artifact runtimeEntries must describe the generated Node application runtime",
     )
   }
   if (!Array.isArray(manifest.files) || !manifest.files.every(isSafeRelativePath)) {

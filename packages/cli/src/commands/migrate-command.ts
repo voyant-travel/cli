@@ -21,13 +21,13 @@ export async function migrateCommand(
     const report = {
       schemaVersion: "voyant.migrate-plan.v1",
       ok: true,
-      contentHash: planned.manifest.contentHash,
+      contentHash: planned.manifest.graphHash,
       migrationCount: planned.migrationPlan.migrations.length,
       plan: planned.migrationPlan,
     }
     if (wantsJson(args)) return printJson(ctx, report)
 
-    ctx.stdout(`voyant migrate: plan ${planned.manifest.contentHash}\n`)
+    ctx.stdout(`voyant migrate: plan ${planned.manifest.graphHash}\n`)
     ctx.stdout(`  migrations ${planned.migrationPlan.migrations.length}\n`)
     return 0
   } catch (error) {

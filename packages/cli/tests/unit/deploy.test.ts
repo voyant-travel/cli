@@ -97,6 +97,46 @@ describe("deploy target adapters", () => {
     expect(readFileSync(manifestPath, "utf8")).toBe(first)
   })
 
+  it("emits a portable Node manifest for the built-in custom target", async () => {
+    const fixture = writeDeploymentFixture({ project: { name: "custom-node-app" } })
+    const run = makeContext(fixture.root, ["--target", "custom", "--emit-manifest", "--json"])
+
+    expect(await deployCommand(run.ctx)).toBe(0)
+    const result = JSON.parse(run.stdout.join(""))
+    expect(result.sourceContentHash).toBe(fixture.contentHash)
+    expect(result.output.applied).toBe(false)
+
+    const manifestPath = join(fixture.root, result.output.manifest)
+    const first = readFileSync(manifestPath, "utf8")
+    const manifest = JSON.parse(first)
+    expect(manifest).toMatchObject({
+      schemaVersion: "voyant.node-deployment.v1",
+      target: "node",
+      source: {
+        contentHash: fixture.contentHash,
+        artifactManifest: "../../deployment-artifacts.generated.json",
+        graph: "../../deployment-graph.generated.json",
+      },
+      application: {
+        project: { name: "custom-node-app" },
+        modules: ["@voyant-travel/bookings", "@voyant-travel/catalog"],
+        plugins: ["@voyant-travel/plugin-smartbill"],
+        requiredEnv: ["DATABASE_URL"],
+      },
+    })
+    expect(manifest.application.runtimeEntries).toEqual([
+      expect.objectContaining({
+        id: "@voyant-travel/framework#runtime.node",
+        target: "node",
+        file: "../../src/runtime-entry.generated.ts",
+        graphHash: fixture.contentHash,
+      }),
+    ])
+
+    expect(await deployCommand(run.ctx)).toBe(0)
+    expect(readFileSync(manifestPath, "utf8")).toBe(first)
+  })
+
   it("deploys an explicit artifact without loading project config or resolving a graph", async () => {
     const fixture = writeDeploymentFixture({
       project: { meta: { deploymentAdapter: "./deployment-adapter.mjs" } },

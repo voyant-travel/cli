@@ -10,6 +10,7 @@ import {
 import {
   createDeploymentPlan,
   createDockerDeploymentTargetAdapter,
+  createNodeManifestDeploymentTargetAdapter,
   type DeploymentPlan,
   type DeploymentTargetAdapter,
   type DeploymentTargetContext,
@@ -52,10 +53,13 @@ Deployment options:
   --dry-run                      Validate the artifact and print the target plan only
   --app <slug>                   Voyant Cloud app slug (alternative to <app>)
   --env <name>                   Cloud environment (default: production)
-  --out <dir>                    Docker manifest output directory
+  --out <dir>                    Target manifest output directory
   --image <ref>                  Use an existing whole-application Docker image
   --dockerfile <path>            Dockerfile for the whole application (default: Dockerfile)
-  --emit-manifest                Emit Docker manifest without running docker compose
+  --port <port>                  Published Docker host port (default: 8080)
+  --health-url <url>             Docker HTTP smoke-test URL (default: http://127.0.0.1:8080/api/health)
+  --health-timeout-ms <ms>       Docker HTTP smoke timeout (default: 30000)
+  --emit-manifest                Emit a Docker or portable Node manifest without deploying
   --adapter <entry>              Override the project custom adapter entry
   --config <path>                Project config used to locate a custom adapter entry
   --org <slug|id> --token <t> --api-url <url>
@@ -65,7 +69,7 @@ Examples:
   voyant deploy web
   voyant deploy web --dry-run --json
   voyant deploy --target docker --emit-manifest
-  voyant deploy --target custom --dry-run
+  voyant deploy --target custom --emit-manifest
   voyant deploy list web --json
 `
 
@@ -184,7 +188,9 @@ async function resolveDeploymentTargetAdapter(
   if (target === "docker") return createDockerDeploymentTargetAdapter()
   if (target === "custom") {
     const entry = await resolveCustomAdapterEntry(ctx.cwd, args, targetContext.artifact)
-    return loadCustomDeploymentTargetAdapter(ctx.cwd, entry)
+    return entry
+      ? loadCustomDeploymentTargetAdapter(ctx.cwd, entry)
+      : createNodeManifestDeploymentTargetAdapter()
   }
 
   const appSlug =
@@ -242,7 +248,7 @@ async function resolveCustomAdapterEntry(
   cwd: string,
   args: ParsedArgs,
   artifact: DeploymentGraphArtifact,
-): Promise<string> {
+): Promise<string | undefined> {
   const override = getStringFlag(args, "adapter")
   if (override) return override
 
@@ -256,9 +262,7 @@ async function resolveCustomAdapterEntry(
     if (configEntry) return configEntry
   }
 
-  throw new Error(
-    "custom deployment target requires project.meta.deploymentAdapter in the resolved graph/project config",
-  )
+  return undefined
 }
 
 function projectAdapterEntry(value: unknown): string | undefined {
@@ -305,6 +309,8 @@ function writeDeploymentResult(
         ? "Docker deployment applied.\n"
         : "Docker manifest emitted.\n",
     )
+  } else if (isRecord(result.output) && typeof result.output.manifest === "string") {
+    ctx.stdout(`Node deployment manifest: ${result.output.manifest}\n`)
   } else {
     ctx.stdout(`Deployment target ${result.target} completed.\n`)
   }

@@ -8,6 +8,7 @@ import type { DeploymentGraphArtifact } from "./deployment-artifact-reader.js"
 export const DEPLOYMENT_PLAN_SCHEMA_VERSION = "voyant.deployment-plan.v1" as const
 export const DEPLOYMENT_RESULT_SCHEMA_VERSION = "voyant.deployment-result.v1" as const
 export const DOCKER_DEPLOYMENT_SCHEMA_VERSION = "voyant.docker-deployment.v1" as const
+export const NODE_DEPLOYMENT_SCHEMA_VERSION = "voyant.node-deployment.v1" as const
 
 export interface DeploymentPlanSource {
   artifactManifest: string
@@ -52,6 +53,11 @@ export interface DeploymentTargetAdapter {
   deploy(context: DeploymentTargetContext, plan: DeploymentPlan): unknown | Promise<unknown>
 }
 
+export interface DeploymentTargetRuntime {
+  execute(command: readonly string[], cwd: string): { stdout: string }
+  waitForHttpHealth(url: string, timeoutMs: number): Promise<void>
+}
+
 export function createDeploymentPlan(
   context: Pick<DeploymentTargetContext, "cwd" | "artifact">,
   target: string,
@@ -77,6 +83,7 @@ export function validateDeploymentPlan(
   context: DeploymentTargetContext,
   target: string,
 ): void {
+  assertNodeDeployment(context.artifact)
   if (plan.schemaVersion !== DEPLOYMENT_PLAN_SCHEMA_VERSION) {
     throw new Error(
       `deployment target plan schema must be ${DEPLOYMENT_PLAN_SCHEMA_VERSION}, got ${String(
@@ -107,7 +114,9 @@ export function deploymentResult(plan: DeploymentPlan, output?: unknown): Deploy
   }
 }
 
-export function createDockerDeploymentTargetAdapter(): DeploymentTargetAdapter {
+export function createDockerDeploymentTargetAdapter(
+  runtime: DeploymentTargetRuntime = defaultDeploymentTargetRuntime,
+): DeploymentTargetAdapter {
   return {
     name: "docker",
     plan(context) {
@@ -115,76 +124,136 @@ export function createDockerDeploymentTargetAdapter(): DeploymentTargetAdapter {
       const manifestPath = resolve(context.cwd, outDir, "compose.generated.json")
       const relativeManifestPath = relativePosix(context.cwd, manifestPath)
       const emitOnly = booleanOption(context.options, "emit-manifest")
-      const command = [
-        "docker",
-        "compose",
-        "--file",
-        relativeManifestPath,
-        "up",
-        "--build",
-        "--detach",
-      ] as const
+      const image = stringOption(context.options, "image")
+      const hostPort = positiveIntegerOption(context.options, "port") ?? 8080
+      const healthUrl =
+        stringOption(context.options, "health-url") ?? `http://127.0.0.1:${hostPort}/api/health`
+      const healthTimeoutMs = positiveIntegerOption(context.options, "health-timeout-ms") ?? 30_000
+      const compose = ["docker", "compose", "--file", relativeManifestPath] as const
+      const deployCommand = [...compose, "up", "--detach", "--no-deps", "app"] as const
+      const migrateCommand = [...compose, "run", "--rm", "migrate"] as const
+      const buildCommand = [...compose, "build", "migrate", "app"] as const
+      const operations: DeploymentPlanOperation[] = [
+        {
+          id: "validate-source-graph",
+          phase: "validate",
+          description: "Use the validated pre-resolved Node deployment graph artifact.",
+        },
+        {
+          id: "emit-compose-manifest",
+          phase: "build",
+          description: `Emit the deterministic whole-application Compose manifest at ${relativeManifestPath}.`,
+        },
+      ]
+      if (!emitOnly && !image) {
+        operations.push({
+          id: "docker-compose-build",
+          phase: "build",
+          description: "Build the whole-application Node image.",
+          command: buildCommand,
+        })
+      }
+      if (!emitOnly) {
+        operations.push(
+          {
+            id: "docker-compose-migrate",
+            phase: "migrate",
+            description: "Run graph-selected migrations before starting the application.",
+            command: migrateCommand,
+          },
+          {
+            id: "docker-compose-up",
+            phase: "deploy",
+            description: "Start the whole Node application after migrations complete.",
+            command: deployCommand,
+          },
+          {
+            id: "http-health-check",
+            phase: "smoke-test",
+            description: `Wait for a successful HTTP health response from ${healthUrl}.`,
+          },
+        )
+      }
+      return createDeploymentPlan(context, "docker", operations, {
+        outputs: { manifest: relativeManifestPath },
+        metadata: { emitOnly, healthUrl, healthTimeoutMs, hostPort },
+      })
+    },
+    async deploy(context, plan) {
+      const manifestPath = resolve(context.cwd, requireOutput(plan, "manifest"))
+      const completed: Array<{ id: string; phase: DeploymentPlanOperation["phase"] }> = []
+      const stdout: string[] = []
+      for (const operation of plan.operations) {
+        if (operation.id === "validate-source-graph") {
+          assertNodeDeployment(context.artifact)
+        } else if (operation.id === "emit-compose-manifest") {
+          const manifest = renderDockerDeploymentManifest(context, plan)
+          mkdirSync(dirname(manifestPath), { recursive: true })
+          writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`)
+        } else if (operation.command) {
+          const result = runtime.execute(operation.command, context.cwd)
+          if (result.stdout) stdout.push(result.stdout)
+        } else if (operation.id === "http-health-check") {
+          await runtime.waitForHttpHealth(
+            requireStringMetadata(plan, "healthUrl"),
+            requireNumberMetadata(plan, "healthTimeoutMs"),
+          )
+        } else {
+          throw new Error(`docker deployment operation ${operation.id} is not executable`)
+        }
+        completed.push({ id: operation.id, phase: operation.phase })
+      }
+
+      const applied = plan.metadata?.emitOnly !== true
+      return {
+        manifest: relativePosix(context.cwd, manifestPath),
+        applied,
+        operations: completed,
+        ...(stdout.length > 0 ? { stdout: stdout.join("\n") } : {}),
+      }
+    },
+  }
+}
+
+export function createNodeManifestDeploymentTargetAdapter(): DeploymentTargetAdapter {
+  return {
+    name: "custom",
+    plan(context) {
+      if (!booleanOption(context.options, "emit-manifest")) {
+        throw new Error(
+          "custom deployment target requires --emit-manifest when no project adapter is configured",
+        )
+      }
+      const outDir = stringOption(context.options, "out") ?? ".voyant/deploy/custom"
+      const manifestPath = resolve(context.cwd, outDir, "node-deployment.generated.json")
+      const relativeManifestPath = relativePosix(context.cwd, manifestPath)
       return createDeploymentPlan(
         context,
-        "docker",
+        "custom",
         [
           {
             id: "validate-source-graph",
             phase: "validate",
-            description: "Use the validated pre-resolved deployment graph artifact.",
+            description: "Use the validated pre-resolved Node deployment graph artifact.",
           },
           {
-            id: "emit-compose-manifest",
+            id: "emit-node-manifest",
             phase: "build",
-            description: `Emit the deterministic whole-application Compose manifest at ${relativeManifestPath}.`,
+            description: `Emit the portable Node deployment manifest at ${relativeManifestPath}.`,
           },
-          ...(!emitOnly
-            ? [
-                {
-                  id: "docker-compose-up",
-                  phase: "deploy" as const,
-                  description: "Build and deploy the whole application with Docker Compose.",
-                  command,
-                },
-              ]
-            : []),
         ],
         {
           outputs: { manifest: relativeManifestPath },
-          metadata: { emitOnly },
+          metadata: { emitOnly: true },
         },
       )
     },
     deploy(context, plan) {
-      const manifest = renderDockerDeploymentManifest(context, plan)
       const manifestPath = resolve(context.cwd, requireOutput(plan, "manifest"))
+      const manifest = renderNodeDeploymentManifest(context, manifestPath)
       mkdirSync(dirname(manifestPath), { recursive: true })
       writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`)
-
-      if (plan.metadata?.emitOnly === true) {
-        return { manifest: relativePosix(context.cwd, manifestPath), applied: false }
-      }
-
-      const operation = plan.operations.find((entry) => entry.id === "docker-compose-up")
-      const command = operation?.command
-      if (!command?.[0]) throw new Error("docker deployment plan is missing its apply command")
-      const result = spawnSync(command[0], command.slice(1), {
-        cwd: context.cwd,
-        encoding: "utf8",
-        stdio: "pipe",
-      })
-      if (result.error) throw result.error
-      if (result.status !== 0) {
-        const details = (result.stderr || result.stdout || "").trim()
-        throw new Error(
-          `docker compose deployment failed with exit code ${String(result.status)}${details ? `: ${details}` : ""}`,
-        )
-      }
-      return {
-        manifest: relativePosix(context.cwd, manifestPath),
-        applied: true,
-        stdout: result.stdout.trim(),
-      }
+      return { manifest: relativePosix(context.cwd, manifestPath), applied: false }
     },
   }
 }
@@ -219,6 +288,7 @@ function renderDockerDeploymentManifest(
   const dockerfile = stringOption(context.options, "dockerfile") ?? "Dockerfile"
   const image = stringOption(context.options, "image")
   const requiredEnv = collectRequiredEnvironment(context.artifact.graph.requirements)
+  const hostPort = requireNumberMetadata(plan, "hostPort")
   const runtimeEntries = context.artifact.manifest.runtimeEntries.map((entry) => ({
     id: entry.id,
     target: entry.target,
@@ -226,28 +296,46 @@ function renderDockerDeploymentManifest(
     file: entry.file,
     graphHash: entry.graphHash,
   }))
+  const environment = {
+    ...Object.fromEntries(
+      requiredEnv.map((name) => [
+        name,
+        `\${${name}:?${name} is required by the Voyant deployment graph}`,
+      ]),
+    ),
+    PORT: "8080",
+  }
+  const imageSource = image
+    ? { image }
+    : {
+        build: {
+          context: buildContext,
+          dockerfile,
+        },
+      }
+  const labels = {
+    "travel.voyant.graph-content-hash": context.artifact.contentHash,
+  }
+  const artifactManifest = relativePosix(context.cwd, context.artifact.manifestPath)
 
   return {
     name: `voyant-${context.artifact.contentHash.slice("sha256:".length, "sha256:".length + 12)}`,
     services: {
       app: {
-        ...(image
-          ? { image }
-          : {
-              build: {
-                context: buildContext,
-                dockerfile,
-              },
-            }),
-        environment: Object.fromEntries(
-          requiredEnv.map((name) => [
-            name,
-            `\${${name}:?${name} is required by the Voyant deployment graph}`,
-          ]),
-        ),
-        labels: {
-          "travel.voyant.graph-content-hash": context.artifact.contentHash,
+        ...imageSource,
+        environment,
+        labels,
+        depends_on: {
+          migrate: { condition: "service_completed_successfully" },
         },
+        ports: [`${hostPort}:8080`],
+      },
+      migrate: {
+        ...imageSource,
+        command: ["pnpm", "exec", "voyant", "migrate", "--deployment-artifacts", artifactManifest],
+        environment,
+        labels,
+        restart: "no",
       },
     },
     "x-voyant": {
@@ -264,6 +352,43 @@ function renderDockerDeploymentManifest(
         requiredEnv,
         provisioning: context.artifact.graph.provisioning ?? {},
       },
+    },
+  }
+}
+
+function renderNodeDeploymentManifest(
+  context: DeploymentTargetContext,
+  manifestPath: string,
+): Record<string, unknown> {
+  const manifestDir = dirname(manifestPath)
+  return {
+    schemaVersion: NODE_DEPLOYMENT_SCHEMA_VERSION,
+    target: "node",
+    source: {
+      contentHash: context.artifact.contentHash,
+      artifactManifest: relativePosix(manifestDir, context.artifact.manifestPath),
+      graph: relativePosix(manifestDir, context.artifact.graphPath),
+    },
+    application: {
+      project: context.artifact.graph.project,
+      deployment: context.artifact.graph.deployment,
+      modules: graphEntityIds(context.artifact.graph.modules),
+      plugins: graphEntityIds(context.artifact.graph.plugins),
+      runtimeEntries: context.artifact.manifest.runtimeEntries.map((entry) => ({
+        ...entry,
+        file: relativePosix(manifestDir, resolve(context.artifact.rootDir, entry.file)),
+        ...(entry.profileSnapshot
+          ? {
+              profileSnapshot: relativePosix(
+                manifestDir,
+                resolve(context.artifact.rootDir, entry.profileSnapshot),
+              ),
+            }
+          : {}),
+      })),
+      requirements: context.artifact.graph.requirements,
+      requiredEnv: collectRequiredEnvironment(context.artifact.graph.requirements),
+      provisioning: context.artifact.graph.provisioning ?? {},
     },
   }
 }
@@ -295,6 +420,59 @@ function isDeploymentTargetAdapter(value: unknown): value is DeploymentTargetAda
   )
 }
 
+const defaultDeploymentTargetRuntime: DeploymentTargetRuntime = {
+  execute(command, cwd) {
+    const executable = command[0]
+    if (!executable) throw new Error("deployment operation command cannot be empty")
+    const result = spawnSync(executable, command.slice(1), {
+      cwd,
+      encoding: "utf8",
+      stdio: "pipe",
+    })
+    if (result.error) throw result.error
+    if (result.status !== 0) {
+      const details = (result.stderr || result.stdout || "").trim()
+      throw new Error(
+        `deployment command ${command.join(" ")} failed with exit code ${String(result.status)}${details ? `: ${details}` : ""}`,
+      )
+    }
+    return { stdout: result.stdout.trim() }
+  },
+  async waitForHttpHealth(url, timeoutMs) {
+    const deadline = Date.now() + timeoutMs
+    let lastFailure = "no response"
+    while (Date.now() <= deadline) {
+      try {
+        const response = await fetch(url, {
+          signal: AbortSignal.timeout(Math.min(2_000, timeoutMs)),
+        })
+        await response.body?.cancel()
+        if (response.ok) return
+        lastFailure = `HTTP ${response.status}`
+      } catch (error) {
+        lastFailure = error instanceof Error ? error.message : String(error)
+      }
+      if (Date.now() >= deadline) break
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 500))
+    }
+    throw new Error(`HTTP health check ${url} failed after ${timeoutMs}ms: ${lastFailure}`)
+  },
+}
+
+function assertNodeDeployment(artifact: DeploymentGraphArtifact): void {
+  const graphTarget = artifact.graph.deployment.target
+  if (graphTarget !== undefined && graphTarget !== "node") {
+    throw new Error(`deployment graph target must be node, got ${String(graphTarget)}`)
+  }
+  for (const entry of artifact.manifest.runtimeEntries) {
+    if (entry.target !== "node") {
+      throw new Error(
+        `deployment runtime entry ${entry.id} target must be node, got ${entry.target}`,
+      )
+    }
+  }
+}
+
 function booleanOption(options: Readonly<Record<string, string | boolean>>, name: string): boolean {
   return options[name] === true
 }
@@ -305,6 +483,31 @@ function stringOption(
 ): string | undefined {
   const value = options[name]
   return typeof value === "string" ? value : undefined
+}
+
+function positiveIntegerOption(
+  options: Readonly<Record<string, string | boolean>>,
+  name: string,
+): number | undefined {
+  const value = stringOption(options, name)
+  if (value === undefined) return undefined
+  const parsed = Number(value)
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    throw new Error(`--${name} must be a positive integer`)
+  }
+  return parsed
+}
+
+function requireStringMetadata(plan: DeploymentPlan, name: string): string {
+  const value = plan.metadata?.[name]
+  if (typeof value !== "string") throw new Error(`deployment plan metadata ${name} is missing`)
+  return value
+}
+
+function requireNumberMetadata(plan: DeploymentPlan, name: string): number {
+  const value = plan.metadata?.[name]
+  if (typeof value !== "number") throw new Error(`deployment plan metadata ${name} is missing`)
+  return value
 }
 
 function requireOutput(plan: DeploymentPlan, name: string): string {

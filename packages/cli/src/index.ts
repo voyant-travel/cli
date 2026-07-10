@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url"
 import { addCommand } from "./commands/add.js"
 import { adminCommand } from "./commands/admin.js"
 import { appsCommand } from "./commands/apps.js"
+import { buildCommand } from "./commands/build-command.js"
 import { configCommand } from "./commands/config.js"
 import { databasesCommand } from "./commands/databases.js"
 import { dbCommand } from "./commands/db.js"
@@ -19,8 +20,10 @@ import { helpCommand } from "./commands/help.js"
 import { loginCommand } from "./commands/login.js"
 import { logoutCommand } from "./commands/logout.js"
 import { logsCommand } from "./commands/logs.js"
+import { migrateCommand } from "./commands/migrate-command.js"
 import { newCommand } from "./commands/new.js"
 import { orgCommand } from "./commands/org.js"
+import { removeCommand } from "./commands/remove.js"
 import { secretsCommand } from "./commands/secrets.js"
 import { storageCommand } from "./commands/storage.js"
 import { upgradeCommand } from "./commands/upgrade.js"
@@ -29,6 +32,23 @@ import { whoamiCommand } from "./commands/whoami.js"
 import { workflowsCommand } from "./commands/workflows-command.js"
 import type { CommandContext, CommandResult } from "./types.js"
 
+export type {
+  DeploymentArtifactManifest,
+  DeploymentGraphArtifact,
+  DeploymentRuntimeEntry,
+  ResolvedDeploymentGraph,
+} from "./lib/deployment-artifact-reader.js"
+export {
+  createDeploymentPlan,
+  DEPLOYMENT_PLAN_SCHEMA_VERSION,
+  DEPLOYMENT_RESULT_SCHEMA_VERSION,
+  type DeploymentPlan,
+  type DeploymentPlanOperation,
+  type DeploymentResult,
+  type DeploymentTargetAdapter,
+  type DeploymentTargetContext,
+  deploymentResult,
+} from "./lib/deployment-target.js"
 export type { CommandContext, CommandResult } from "./types.js"
 
 export interface MainOptions {
@@ -69,6 +89,10 @@ export async function main(
     case "add":
     case "install": {
       return addCommand({ ...ctx, argv: rest })
+    }
+    case "remove":
+    case "uninstall": {
+      return removeCommand({ ...ctx, argv: rest })
     }
     case "generate": {
       const [sub, ...subArgs] = rest
@@ -145,10 +169,10 @@ export async function main(
       return storageCommand({ ...ctx, argv: rest })
     }
     case "build": {
-      ctx.stderr(
-        "voyant: use `voyant workflows build`. The top-level `voyant build` entry will wrap multiple build targets once the app/runtime layer is merged.\n",
-      )
-      return 1
+      return buildCommand({ ...ctx, argv: rest })
+    }
+    case "migrate": {
+      return migrateCommand({ ...ctx, argv: rest })
     }
     case "db:generate":
     case "db:migrate":

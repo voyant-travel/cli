@@ -12,6 +12,7 @@
     "./drizzle": "./src/drizzle.ts",
     "./commands/generate-module": "./src/commands/generate-module.ts",
     "./commands/add": "./src/commands/add.ts",
+    "./commands/remove": "./src/commands/remove.ts",
     "./commands/generate-link": "./src/commands/generate-link.ts",
     "./commands/config": "./src/commands/config.ts",
     "./commands/admin-generate": "./src/commands/admin-generate.ts",
@@ -21,6 +22,8 @@
     "./commands/exec": "./src/commands/exec.ts",
     "./commands/new": "./src/commands/new.ts",
     "./commands/dev": "./src/commands/dev.ts",
+    "./commands/build": "./src/commands/build-command.ts",
+    "./commands/migrate": "./src/commands/migrate-command.ts",
     "./commands/workflows": "./src/commands/workflows-command.ts",
     "./commands/login": "./src/commands/login.ts",
     "./commands/logout": "./src/commands/logout.ts",
@@ -91,6 +94,11 @@
         "import": "./dist/commands/add.js",
         "default": "./dist/commands/add.js"
       },
+      "./commands/remove": {
+        "types": "./dist/commands/remove.d.ts",
+        "import": "./dist/commands/remove.js",
+        "default": "./dist/commands/remove.js"
+      },
       "./commands/generate-link": {
         "types": "./dist/commands/generate-link.d.ts",
         "import": "./dist/commands/generate-link.js",
@@ -135,6 +143,16 @@
         "types": "./dist/commands/dev.d.ts",
         "import": "./dist/commands/dev.js",
         "default": "./dist/commands/dev.js"
+      },
+      "./commands/build": {
+        "types": "./dist/commands/build-command.d.ts",
+        "import": "./dist/commands/build-command.js",
+        "default": "./dist/commands/build-command.js"
+      },
+      "./commands/migrate": {
+        "types": "./dist/commands/migrate-command.d.ts",
+        "import": "./dist/commands/migrate-command.js",
+        "default": "./dist/commands/migrate-command.js"
       },
       "./commands/workflows": {
         "types": "./dist/commands/workflows-command.d.ts",

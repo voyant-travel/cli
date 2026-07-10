@@ -5,6 +5,13 @@ import { VOYANT_FRAMEWORK_VERSION } from "../lib/voyant-version.js"
 
 export const DEFAULT_PROJECT_PRESET = "operator-standard"
 
+export const UNAVAILABLE_PROJECT_PRESETS = {
+  "pms-standard": {
+    code: "VOYANT_PRESET_UNAVAILABLE",
+    reason: "No first-party PMS/property-operations package set is published.",
+  },
+} as const
+
 const OPERATOR_STANDARD_MODULES = [
   "@voyant-travel/action-ledger",
   "@voyant-travel/relationships",

@@ -11,6 +11,7 @@ OPEN-SOURCE COMMANDS
   generate module <name> [--schema] [--admin] [--workflow]
                                      Scaffold a local package under src/modules/<name>
   add|install <package|path>         Install and explicitly select a module or plugin
+  remove|uninstall <package|path>    Remove a selected module or plugin and its dependency
   generate extension <name> --module <target>
                                      Scaffold a deployment extension under src/extensions/<name>
                                      that attaches to an existing module's surface
@@ -25,13 +26,15 @@ OPEN-SOURCE COMMANDS
   admin generate --destinations [--check]  Emit the generated destination resolver map (RFC 4.7)
   admin doctor                       Check manifest <-> admin extension <-> route/destination parity
                                      (generated-destination drift gates: exit 1; the rest reports)
-  doctor [--strict] [--skip-*] [--json] [--deployment-graph-report <file>]
+  doctor [--config <path>] [--strict] [--skip-*] [--json]
                                      Preflight: env/bindings (env.d.ts <-> wrangler.jsonc +
-                                     placeholders) + deployment graph doctor report/artifacts +
+                                     placeholders) + current .voyant graph artifacts +
                                      db doctor + admin doctor (exit 1 on any gate)
-  upgrade [--to <version>] [--dry-run]  Bump the @voyant-travel/framework BOM + install
+  upgrade [package] [--to <version>] [--plan]  Bump a dependency with a graph-aware plan
                                      (then run: voyant db migrate && voyant doctor)
-  dev [--file <path>]                Watch and serve workflows or graph runtime locally
+  dev [--config <path>]              Resolve, generate, watch, and serve the project graph
+  build [--config <path>] [--json]   Write deterministic project outputs beneath .voyant/
+  migrate [--plan|--dry-run] [--json] Execute the current graph's Node migration runner
   db <generate|migrate|studio|push>  Proxy drizzle-kit commands (generate defaults to --prefix timestamp)
   db schemas [--emit]                Print/emit the manifest-derived schema list
   db sync-links [--emit-drizzle]     Emit link-table DDL, or a generated Drizzle schema
@@ -86,6 +89,8 @@ EXAMPLES
   voyant admin generate --routes
   voyant admin generate --destinations
   voyant admin doctor
+  voyant build --json
+  voyant migrate --plan --json
   voyant db generate
   voyant exec ./scripts/backfill.ts --dry-run
   voyant login                                # browser device flow

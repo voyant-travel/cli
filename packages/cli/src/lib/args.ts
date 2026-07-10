@@ -16,9 +16,14 @@ export interface ParsedArgs {
   flags: Record<string, string | boolean>
 }
 
-export function parseArgs(argv: ReadonlyArray<string>): ParsedArgs {
+export interface ParseArgsOptions {
+  booleanFlags?: ReadonlyArray<string>
+}
+
+export function parseArgs(argv: ReadonlyArray<string>, options: ParseArgsOptions = {}): ParsedArgs {
   const positionals: string[] = []
   const flags: Record<string, string | boolean> = {}
+  const booleanFlags = new Set(options.booleanFlags)
 
   for (let i = 0; i < argv.length; i++) {
     const token = argv[i]
@@ -34,6 +39,10 @@ export function parseArgs(argv: ReadonlyArray<string>): ParsedArgs {
       const eq = body.indexOf("=")
       if (eq >= 0) {
         flags[body.slice(0, eq)] = body.slice(eq + 1)
+        continue
+      }
+      if (booleanFlags.has(body)) {
+        flags[body] = true
         continue
       }
       const next = argv[i + 1]

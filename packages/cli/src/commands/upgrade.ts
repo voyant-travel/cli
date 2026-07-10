@@ -17,6 +17,18 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs"
 import { dirname, join, parse as parsePath } from "node:path"
 
 import { getBooleanFlag, getStringFlag, parseArgs } from "../lib/args.js"
+import {
+  authoringGraphSelections,
+  diffGraphSelections,
+  resolvedGraphSelections,
+} from "../lib/graph-diff.js"
+import { detectPackageManager, readProjectManifest } from "../lib/package-lifecycle.js"
+import {
+  createPackageLifecyclePlan,
+  renderPackageLifecyclePlan,
+} from "../lib/package-lifecycle-plan.js"
+import { type AuthoringProjectConfig, parseProjectConfig } from "../lib/project-config.js"
+import { type ResolvedProjectGraph, resolveProject } from "../lib/project-resolution.js"
 import type { CommandContext, CommandResult } from "../types.js"
 
 const BOM_PACKAGE = "@voyant-travel/framework"
@@ -27,16 +39,32 @@ export interface UpgradeDeps {
   resolveLatestVersion?: (pkg: string) => string | null
   /** Run the package manager's install in `cwd`; resolves to its exit code. */
   runInstall?: (cwd: string, manager: string) => Promise<number>
+  /** Resolve graph snapshots around the requested dependency change when supported. */
+  resolveGraphPlan?: (
+    input: UpgradeGraphPlanInput,
+  ) => Promise<UpgradeGraphPlanSnapshots> | UpgradeGraphPlanSnapshots
+}
+
+export interface UpgradeGraphPlanInput {
+  cwd: string
+  packageName: string
+  beforeVersion: string
+  afterVersion: string
+}
+
+export interface UpgradeGraphPlanSnapshots {
+  before: ResolvedProjectGraph | null
+  after: ResolvedProjectGraph | null
 }
 
 export async function upgradeCommand(
   ctx: CommandContext,
   deps: UpgradeDeps = {},
 ): Promise<CommandResult> {
-  const args = parseArgs(ctx.argv)
-  const pkgName = getStringFlag(args, "package") ?? BOM_PACKAGE
+  const args = parseArgs(ctx.argv, { booleanFlags: ["dry-run", "plan"] })
+  const pkgName = getStringFlag(args, "package") ?? args.positionals[0] ?? BOM_PACKAGE
   const explicit = getStringFlag(args, "to")
-  const dryRun = getBooleanFlag(args, "dry-run")
+  const planOnly = getBooleanFlag(args, "dry-run", "plan")
 
   const pkgPath = findNearestPackageJson(ctx.cwd)
   if (!pkgPath) {
@@ -44,7 +72,7 @@ export async function upgradeCommand(
     return 1
   }
 
-  const manifest = JSON.parse(readFileSync(pkgPath, "utf8")) as Manifest
+  const manifest = readProjectManifest(pkgPath)
   const targetDeps =
     (manifest.dependencies?.[pkgName] && manifest.dependencies) ||
     (manifest.devDependencies?.[pkgName] && manifest.devDependencies) ||
@@ -56,6 +84,18 @@ export async function upgradeCommand(
 
   const current = targetDeps[pkgName] as string
   if (current.startsWith("workspace:")) {
+    if (planOnly) {
+      const dir = dirname(pkgPath)
+      ctx.stdout(
+        renderPackageLifecyclePlan(
+          createPackageLifecyclePlan({
+            operation: "upgrade",
+            packageManager: detectPackageManager(dir, manifest),
+          }),
+        ),
+      )
+      return 0
+    }
     ctx.stdout(
       `voyant upgrade: ${pkgName} is a workspace dependency (${current}) — ` +
         "nothing to bump inside the monorepo.\n",
@@ -74,22 +114,76 @@ export async function upgradeCommand(
   }
 
   const nextRange = normalizeRange(target)
-  if (current === nextRange) {
+  if (current === nextRange && !planOnly) {
     ctx.stdout(`Already on ${pkgName}@${current}.\n`)
     return 0
   }
 
-  if (dryRun) {
-    ctx.stdout(`Would update ${pkgName}: ${current} → ${nextRange} in ${pkgPath}\n`)
-    return 0
+  const dir = dirname(pkgPath)
+  const manager = detectPackageManager(dir, manifest)
+  if (planOnly) {
+    const configPath = findNearestManagedProjectConfig(dir)
+    let config: AuthoringProjectConfig | undefined
+    let blockedBy: { code: string; message: string } | undefined
+    if (!configPath) {
+      blockedBy = {
+        code: "project_config_missing",
+        message: "graph-aware upgrade planning requires a voyant.config.ts file",
+      }
+    } else {
+      try {
+        config = parseProjectConfig(readFileSync(configPath, "utf8"))
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : String(error)
+        blockedBy = {
+          code: "project_config_not_editable",
+          message: `graph-aware upgrade planning cannot structurally edit voyant.config.ts: ${reason}`,
+        }
+      }
+    }
+
+    let snapshots: UpgradeGraphPlanSnapshots = { before: null, after: null }
+    if (!blockedBy && config) {
+      snapshots = await resolveUpgradeGraphPlan(
+        dir,
+        pkgName,
+        current,
+        nextRange,
+        deps.resolveGraphPlan,
+      )
+    }
+    const beforeSelections = snapshots.before
+      ? resolvedGraphSelections(snapshots.before)
+      : config
+        ? authoringGraphSelections(config)
+        : { modules: [], plugins: [] }
+    const afterSelections = snapshots.after
+      ? resolvedGraphSelections(snapshots.after)
+      : beforeSelections
+    const plan = createPackageLifecyclePlan({
+      operation: "upgrade",
+      packageManager: manager,
+      dependencyChanges: [
+        {
+          packageName: pkgName,
+          section: manifest.dependencies?.[pkgName] ? "dependencies" : "devDependencies",
+          before: current,
+          after: nextRange,
+        },
+      ],
+      selections: diffGraphSelections(beforeSelections, afterSelections),
+      beforeContentHash: snapshots.before?.contentHash ?? null,
+      afterContentHash: snapshots.after?.contentHash ?? null,
+      ...(blockedBy ? { blockedBy } : {}),
+    })
+    ctx.stdout(renderPackageLifecyclePlan(plan))
+    return plan.status === "blocked" ? 1 : 0
   }
 
   targetDeps[pkgName] = nextRange
   writeFileSync(pkgPath, `${JSON.stringify(manifest, null, 2)}\n`)
   ctx.stdout(`Updated ${pkgName}: ${current} → ${nextRange}\n`)
 
-  const dir = dirname(pkgPath)
-  const manager = detectPackageManager(dir)
   const runInstall = deps.runInstall ?? defaultRunInstall
   ctx.stdout(`Installing with ${manager}…\n`)
   const code = await runInstall(dir, manager)
@@ -104,11 +198,6 @@ export async function upgradeCommand(
       "  voyant doctor       # verify env, schema, and admin composition\n",
   )
   return 0
-}
-
-interface Manifest {
-  dependencies?: Record<string, string>
-  devDependencies?: Record<string, string>
 }
 
 /** Walk up from `cwd` to the nearest `package.json`. */
@@ -132,14 +221,6 @@ function normalizeRange(version: string): string {
   return /^[\^~><=*]|\s|x/.test(version) ? version : `^${version}`
 }
 
-/** pnpm-lock.yaml → pnpm, yarn.lock → yarn, bun.lockb → bun, else npm. */
-function detectPackageManager(dir: string): string {
-  if (existsSync(join(dir, "pnpm-lock.yaml"))) return "pnpm"
-  if (existsSync(join(dir, "yarn.lock"))) return "yarn"
-  if (existsSync(join(dir, "bun.lockb"))) return "bun"
-  return "npm"
-}
-
 function defaultResolveLatestVersion(pkg: string): string | null {
   try {
     return execFileSync("npm", ["view", pkg, "version"], { encoding: "utf8" }).trim() || null
@@ -154,4 +235,38 @@ function defaultRunInstall(cwd: string, manager: string): Promise<number> {
     child.on("exit", (code) => resolve(code ?? 0))
     child.on("error", () => resolve(1))
   })
+}
+
+async function resolveUpgradeGraphPlan(
+  cwd: string,
+  packageName: string,
+  beforeVersion: string,
+  afterVersion: string,
+  resolver: UpgradeDeps["resolveGraphPlan"],
+): Promise<UpgradeGraphPlanSnapshots> {
+  if (resolver) {
+    try {
+      return await resolver({ cwd, packageName, beforeVersion, afterVersion })
+    } catch {
+      return { before: null, after: null }
+    }
+  }
+
+  try {
+    const before = (await resolveProject(cwd)).graph
+    return { before, after: beforeVersion === afterVersion ? before : null }
+  } catch {
+    return { before: null, after: null }
+  }
+}
+
+function findNearestManagedProjectConfig(cwd: string): string | null {
+  let dir = cwd
+  for (;;) {
+    const candidate = join(dir, "voyant.config.ts")
+    if (existsSync(candidate)) return candidate
+    const parent = parsePath(dir).dir
+    if (!parent || parent === dir) return null
+    dir = parent
+  }
 }

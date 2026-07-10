@@ -55,4 +55,11 @@ describe("parseArgs", () => {
   it("handles empty input", () => {
     expect(parseArgs([])).toEqual({ positionals: [], flags: {} })
   })
+
+  it("keeps values after declared boolean flags as positionals", () => {
+    expect(parseArgs(["--plan", "@acme/plugin"], { booleanFlags: ["plan"] })).toEqual({
+      positionals: ["@acme/plugin"],
+      flags: { plan: true },
+    })
+  })
 })

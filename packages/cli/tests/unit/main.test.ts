@@ -101,11 +101,31 @@ describe("main", () => {
     expect(install.stderr.join("")).toContain("Usage: voyant add")
   })
 
+  it("dispatches `remove` and `uninstall` to the lifecycle command", async () => {
+    const remove = makeIo()
+    expect(await main(["remove"], remove.opts)).toBe(1)
+    expect(remove.stderr.join("")).toContain("Usage: voyant remove")
+
+    const uninstall = makeIo()
+    expect(await main(["uninstall"], uninstall.opts)).toBe(1)
+    expect(uninstall.stderr.join("")).toContain("Usage: voyant remove")
+  })
+
   it("dispatches `exec` to the exec command", async () => {
     const { stderr, opts } = makeIo()
     const code = await main(["exec"], opts)
     // No script provided — expect the exec-specific usage message.
     expect(code).toBe(1)
     expect(stderr.join("")).toContain("Usage: voyant exec")
+  })
+
+  it("dispatches top-level build and migrate commands", async () => {
+    const build = makeIo()
+    expect(await main(["build"], build.opts)).toBe(1)
+    expect(build.stderr.join("")).toContain("voyant build: No voyant.config.* found")
+
+    const migrate = makeIo()
+    expect(await main(["migrate"], migrate.opts)).toBe(1)
+    expect(migrate.stderr.join("")).toContain("voyant migrate: No voyant.config.* found")
   })
 })

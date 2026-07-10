@@ -247,8 +247,11 @@ describe("newCommand", () => {
     const { ctx } = makeCtx(["my-app", "--starter", "operator"], tmp)
     await newCommand(ctx)
     const cfg = readFileSync(join(tmp, "my-app", "voyant.config.ts"), "utf8")
-    expect(cfg).toContain("defineVoyantConfig")
-    expect(cfg).toContain('deployment: "cloudflare-worker"')
+    expect(cfg).toContain('from "@voyant-travel/framework/project"')
+    expect(cfg).toContain('target: "node"')
+    expect(cfg).not.toContain("cloudflare")
+    const pkg = JSON.parse(readFileSync(join(tmp, "my-app", "package.json"), "utf8"))
+    expect(pkg.dependencies["@voyant-travel/framework"]).toBe(expectedVoyantVersionRange)
   })
 
   it("preserves an existing voyant.config.ts from the starter", async () => {
@@ -286,10 +289,20 @@ describe("newCommand", () => {
     expect(stderr.join("")).toContain("Unknown option for voyant new: --template")
   })
 
-  it("rejects unknown presets", async () => {
+  it("reports the unpublished pms-standard package set as unavailable", async () => {
     const { ctx, stderr } = makeCtx(["my-app", "--preset", "pms-standard"], tmp)
     expect(await newCommand(ctx)).toBe(1)
-    expect(stderr.join("")).toContain("Unknown preset: pms-standard")
+    expect(stderr.join("")).toContain("VOYANT_PRESET_UNAVAILABLE")
+  })
+
+  it("emits a machine-readable diagnostic for an unavailable preset", async () => {
+    const { ctx, stderr } = makeCtx(["my-app", "--preset", "pms-standard", "--json"], tmp)
+    expect(await newCommand(ctx)).toBe(1)
+    expect(JSON.parse(stderr.join(""))).toMatchObject({
+      schemaVersion: "voyant.cli-diagnostic.v1",
+      code: "VOYANT_PRESET_UNAVAILABLE",
+      preset: "pms-standard",
+    })
   })
 
   it("rejects combining a preset and starter", async () => {

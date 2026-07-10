@@ -4,6 +4,7 @@ import { existsSync, readFileSync } from "node:fs"
 import { dirname, isAbsolute, join, resolve } from "node:path"
 
 import { getBooleanFlag, getStringFlag, parseArgs } from "../lib/args.js"
+import { resolveConfigPath } from "../lib/config-loader.js"
 import {
   type DeploymentGraphDiagnostic,
   type DeploymentGraphDoctorReport,
@@ -11,6 +12,7 @@ import {
   parseDeploymentGraphDoctorReport,
 } from "../lib/deployment-graph-doctor-report.js"
 import { printJson, wantsJson } from "../lib/output.js"
+import { checkProjectArtifacts } from "../lib/project-artifacts.js"
 import type { CommandContext, CommandResult } from "../types.js"
 import { adminDoctorCommand } from "./admin-doctor.js"
 import { dbDoctorCommand } from "./db-doctor.js"
@@ -22,13 +24,9 @@ import { dbDoctorCommand } from "./db-doctor.js"
  * The single preflight a deployment runs before deploying / after upgrading.
  * Composes three checks and exits non-zero if any gate fails:
  *
- *  1. **env/bindings preflight** (this command) — the genuinely-new check.
- *     Required Cloudflare bindings are the non-optional fields of the
- *     `CloudflareBindings` interface in `env.d.ts`; each must be wired in
- *     `wrangler.jsonc` (KV → `kv_namespaces`, R2 → `r2_buckets`, secret/string
- *     → present in `.dev.vars`/env or `vars`). Placeholder values left in
- *     `wrangler.jsonc` (e.g. `replace-with-...`) fail the gate. Missing secrets
- *     are warnings unless `--strict` (they are often injected at deploy time).
+ *  1. **Node binding preflight** — unified projects derive config, secrets,
+ *     resources, and providers from the resolved graph. The old Wrangler
+ *     preflight remains only when its paths are explicitly requested.
  *  2. **deployment graph preflight** — generated graph artifacts must be
  *     present, hash-consistent, diagnostic-free, and point at the managed Node
  *     runtime entry when a deployment emits them.
@@ -46,21 +44,13 @@ export async function doctorCommand(ctx: CommandContext): Promise<CommandResult>
   let failed = false
 
   if (!getBooleanFlag(args, "skip-env")) {
-    const code = runEnvPreflight(ctx, {
-      strict,
-      envTypesPath: getStringFlag(args, "env-types"),
-      wranglerPath: getStringFlag(args, "wrangler"),
-    })
+    const code = runConfiguredEnvironmentPreflight(ctx, args, strict)
     if (code !== 0) failed = true
   }
 
   if (!getBooleanFlag(args, "skip-deployment-graph")) {
-    const code = runDeploymentGraphPreflight(ctx, {
-      manifestPath: getStringFlag(args, "deployment-artifacts"),
-      reportPath: getStringFlag(args, "deployment-graph-report"),
-      doctorScriptPath: getStringFlag(args, "deployment-graph-doctor-script"),
-    })
-    if (code !== 0) failed = true
+    const result = await runConfiguredDeploymentGraphPreflight(ctx, args)
+    if (result.exitCode !== 0) failed = true
   }
 
   if (!getBooleanFlag(args, "skip-db")) {
@@ -90,6 +80,7 @@ export interface DoctorJsonCheck {
   stderr: string
   diagnostics?: readonly DeploymentGraphDiagnostic[]
   report?: DeploymentGraphDoctorReport
+  contentHash?: string
 }
 
 export interface DoctorJsonReport {
@@ -110,11 +101,7 @@ async function doctorJsonCommand(
   } else {
     checks.push(
       await captureDoctorCheck(ctx, "env", async (subCtx) =>
-        runEnvPreflight(subCtx, {
-          strict: options.strict,
-          envTypesPath: getStringFlag(args, "env-types"),
-          wranglerPath: getStringFlag(args, "wrangler"),
-        }),
+        runConfiguredEnvironmentPreflight(subCtx, args, options.strict),
       ),
     )
   }
@@ -122,13 +109,7 @@ async function doctorJsonCommand(
   if (getBooleanFlag(args, "skip-deployment-graph")) {
     checks.push(skippedCheck("deployment-graph"))
   } else {
-    checks.push(
-      await captureDeploymentGraphDoctorCheck(ctx, {
-        manifestPath: getStringFlag(args, "deployment-artifacts"),
-        reportPath: getStringFlag(args, "deployment-graph-report"),
-        doctorScriptPath: getStringFlag(args, "deployment-graph-doctor-script"),
-      }),
-    )
+    checks.push(await captureDeploymentGraphDoctorCheck(ctx, args))
   }
 
   if (getBooleanFlag(args, "skip-db")) {
@@ -163,19 +144,42 @@ async function doctorJsonCommand(
   return failed ? 1 : 0
 }
 
+function runConfiguredEnvironmentPreflight(
+  ctx: CommandContext,
+  args: ReturnType<typeof parseArgs>,
+  strict: boolean,
+): CommandResult {
+  const envTypesPath = getStringFlag(args, "env-types")
+  const wranglerPath = getStringFlag(args, "wrangler")
+  const hasExplicitWorkerInput = Boolean(envTypesPath || wranglerPath)
+  const configPath = resolveConfigPath({
+    cwd: ctx.cwd,
+    path: getStringFlag(args, "config"),
+  })
+  if (!hasExplicitWorkerInput) {
+    ctx.stdout(
+      configPath
+        ? "env preflight: skipped (unified Node project uses resolved graph bindings)\n"
+        : "env preflight: skipped (legacy Wrangler check requires explicit paths)\n",
+    )
+    return 0
+  }
+  return runEnvPreflight(ctx, { strict, envTypesPath, wranglerPath })
+}
+
 async function captureDeploymentGraphDoctorCheck(
   ctx: CommandContext,
-  options: DeploymentGraphPreflightOptions,
+  args: ReturnType<typeof parseArgs>,
 ): Promise<DoctorJsonCheck> {
   const stdout: string[] = []
   const stderr: string[] = []
-  const result = runDeploymentGraphPreflightWithResult(
+  const result = await runConfiguredDeploymentGraphPreflight(
     {
       ...ctx,
       stdout: (chunk) => stdout.push(chunk),
       stderr: (chunk) => stderr.push(chunk),
     },
-    options,
+    args,
   )
   const out = stdout.join("")
   return {
@@ -184,6 +188,8 @@ async function captureDeploymentGraphDoctorCheck(
     exitCode: result.exitCode,
     stdout: out,
     stderr: stderr.join(""),
+    ...(result.contentHash ? { contentHash: result.contentHash } : {}),
+    ...(result.diagnostics ? { diagnostics: result.diagnostics } : {}),
     ...(result.report ? { report: result.report, diagnostics: result.report.diagnostics } : {}),
   }
 }
@@ -257,6 +263,8 @@ interface DeploymentGraphPreflightOptions {
 interface DeploymentGraphPreflightResult {
   exitCode: 0 | 1
   report?: DeploymentGraphDoctorReport
+  diagnostics?: readonly DeploymentGraphDiagnostic[]
+  contentHash?: string
 }
 
 interface DeploymentArtifactManifest {
@@ -312,6 +320,224 @@ const EXPECTED_NODE_RUNTIME_ENTRY_FILE = "src/runtime-entry.generated.ts"
 const EXPECTED_NODE_RUNTIME_ENTRY_KIND = "managed-profile-node"
 const EXPECTED_PROFILE_SNAPSHOT = "managed-profile.json"
 const SHA256_CONTENT_HASH_PATTERN = /^sha256:[a-f0-9]{64}$/
+
+async function runConfiguredDeploymentGraphPreflight(
+  ctx: CommandContext,
+  args: ReturnType<typeof parseArgs>,
+): Promise<DeploymentGraphPreflightResult> {
+  const legacyOptions: DeploymentGraphPreflightOptions = {
+    manifestPath: getStringFlag(args, "deployment-artifacts"),
+    reportPath: getStringFlag(args, "deployment-graph-report"),
+    doctorScriptPath: getStringFlag(args, "deployment-graph-doctor-script"),
+  }
+  const hasExplicitLegacyInput = Object.values(legacyOptions).some(Boolean)
+  const configFlag = getStringFlag(args, "config")
+  const configPath = resolveConfigPath({
+    cwd: ctx.cwd,
+    path: configFlag,
+  })
+  if (configFlag && !configPath && !hasExplicitLegacyInput) {
+    ctx.stderr("deployment graph preflight: FAILED\n")
+    ctx.stderr(`  - Voyant project config was not found: ${configFlag}\n`)
+    return { exitCode: 1 }
+  }
+  if (!configPath || hasExplicitLegacyInput) {
+    return runDeploymentGraphPreflightWithResult(ctx, legacyOptions)
+  }
+
+  try {
+    const checked = await checkProjectArtifacts(ctx.cwd, { configPath })
+    const moduleCount = Array.isArray(checked.graph.modules) ? checked.graph.modules.length : 0
+    const pluginCount = Array.isArray(checked.graph.plugins) ? checked.graph.plugins.length : 0
+    const diagnostics = collectNodeProjectDiagnostics(
+      checked.graph,
+      checked.migrationPlan,
+      checked.projectRoot,
+    )
+    if (diagnostics.some((diagnostic) => diagnostic.severity === "error")) {
+      ctx.stderr("deployment graph preflight: FAILED\n")
+      for (const diagnostic of diagnostics) {
+        ctx.stderr(`  - ${formatDeploymentGraphDiagnostic(diagnostic)}\n`)
+      }
+      return { exitCode: 1, diagnostics, contentHash: checked.manifest.graphHash }
+    }
+    ctx.stdout(
+      `deployment graph preflight: OK (${checked.manifest.graphHash}; ${moduleCount} modules; ${pluginCount} plugins; ${checked.migrationPlan.migrations.length} migrations)\n`,
+    )
+    return { exitCode: 0, diagnostics, contentHash: checked.manifest.graphHash }
+  } catch (error) {
+    ctx.stderr("deployment graph preflight: FAILED\n")
+    ctx.stderr(`  - ${reason(error)}\n`)
+    return { exitCode: 1 }
+  }
+}
+
+function collectNodeProjectDiagnostics(
+  graph: Record<string, unknown>,
+  migrationPlan: { migrations: readonly unknown[]; [key: string]: unknown },
+  projectRoot: string,
+): DeploymentGraphDiagnostic[] {
+  const diagnostics: DeploymentGraphDiagnostic[] = []
+  const env = collectDeploymentEnv(projectRoot)
+  const secretBindings = collectSecretBindings(graph)
+  const units = [...optionalRecordArray(graph.modules), ...optionalRecordArray(graph.plugins)]
+  const selectedConfig = collectSelectedConfig(graph.project)
+  const plannedMigrationIds = new Set(
+    [
+      ...optionalRecordArray(migrationPlan.migrations),
+      ...optionalRecordArray(migrationPlan.setupMigrations),
+    ].flatMap((migration) => {
+      const id = stringField(migration, "id")
+      return id ? [id] : []
+    }),
+  )
+
+  for (const unit of units) {
+    const source = stringField(unit, "id") ?? stringField(unit, "packageName") ?? "unknown"
+    const unitConfig =
+      selectedConfig.get(source) ??
+      optionalRecord(unit.resolvedConfig) ??
+      optionalRecord(unit.configuration)
+    for (const declaration of optionalRecordArray(unit.config)) {
+      if (declaration.required !== true || declaration.default !== undefined) continue
+      const key = stringField(declaration, "key")
+      if (key && hasConfigValue(unitConfig, key)) continue
+      diagnostics.push({
+        code: "VOYANT_NODE_CONFIG_MISSING",
+        severity: "error",
+        source,
+        facet: "config",
+        message: `Required portable config ${key ?? "(missing key)"} has no selected value or package default.`,
+        hint: "Configure the selected module or plugin in voyant.config.ts.",
+      })
+    }
+    for (const secret of optionalRecordArray(unit.secrets)) {
+      if (secret.required !== true) continue
+      const key = stringField(secret, "key")
+      const envName = key ? secretBindings.get(key) : undefined
+      const legacyEnvName = key && /^[A-Z][A-Z0-9_]*$/.test(key) ? key : undefined
+      if (
+        (envName && env.get(envName)?.trim()) ||
+        (legacyEnvName && env.get(legacyEnvName)?.trim())
+      ) {
+        continue
+      }
+      diagnostics.push({
+        code: "VOYANT_NODE_SECRET_MISSING",
+        severity: "error",
+        source,
+        facet: "secrets",
+        message: `Required Node secret ${key ?? "(missing key)"} is not bound.`,
+        hint: key
+          ? "Bind the logical secret in deployment policy to a populated Node environment source."
+          : "Fix the package secret declaration.",
+      })
+    }
+    for (const resource of optionalRecordArray(unit.resources)) {
+      const id = stringField(resource, "id")
+      const kind = stringField(resource, "kind")
+      if (id && kind) continue
+      diagnostics.push({
+        code: "VOYANT_NODE_RESOURCE_INVALID",
+        severity: "error",
+        source,
+        facet: "resources",
+        message: `Node resource declaration ${id ?? "(missing id)"} must declare a non-empty kind.`,
+        hint: "Fix the package-owned resource facet before deployment.",
+      })
+    }
+    for (const provider of optionalRecordArray(unit.providers)) {
+      const id = stringField(provider, "id")
+      const port = stringField(provider, "port")
+      const runtime = optionalRecord(provider.runtime)
+      const entry = stringField(runtime ?? {}, "entry")
+      const exportName = stringField(runtime ?? {}, "export")
+      if (id && port && entry && exportName) continue
+      diagnostics.push({
+        code: "VOYANT_NODE_PROVIDER_INVALID",
+        severity: "error",
+        source,
+        facet: "providers",
+        message: `Node provider declaration ${id ?? "(missing id)"} must declare a port and symbolic runtime entry/export.`,
+        hint: "Fix the package-owned provider facet before deployment.",
+      })
+    }
+    for (const [facet, migrations] of [
+      ["migrations", optionalRecordArray(unit.migrations)],
+      ["setupMigrations", optionalRecordArray(unit.setupMigrations)],
+    ] as const) {
+      for (const migration of migrations) {
+        const id = stringField(migration, "id")
+        if (id && plannedMigrationIds.has(id)) continue
+        diagnostics.push({
+          code: "VOYANT_MIGRATION_PLAN_INCOMPLETE",
+          severity: "error",
+          source,
+          facet,
+          message: `Declared ${facet === "setupMigrations" ? "setup " : ""}migration ${id ?? "(missing id)"} is absent from the generated migration artifact.`,
+          hint: "Rebuild with a framework resolver that lowers every selected migration facet.",
+        })
+      }
+    }
+  }
+
+  return diagnostics.sort((left, right) =>
+    [left.code, left.source ?? "", left.message]
+      .join("\0")
+      .localeCompare([right.code, right.source ?? "", right.message].join("\0")),
+  )
+}
+
+function optionalRecordArray(value: unknown): Record<string, unknown>[] {
+  if (!Array.isArray(value)) return []
+  return value.filter(
+    (entry): entry is Record<string, unknown> =>
+      Boolean(entry) && typeof entry === "object" && !Array.isArray(entry),
+  )
+}
+
+function optionalRecord(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined
+}
+
+function collectSelectedConfig(value: unknown): Map<string, Record<string, unknown>> {
+  const selected = new Map<string, Record<string, unknown>>()
+  const project = optionalRecord(value)
+  const selections = optionalRecord(project?.selections)
+  for (const selection of [
+    ...optionalRecordArray(selections?.modules),
+    ...optionalRecordArray(selections?.plugins),
+  ]) {
+    const id = stringField(selection, "id")
+    const config = optionalRecord(selection.config)
+    if (id && config) selected.set(id, config)
+  }
+  return selected
+}
+
+function collectSecretBindings(graph: Record<string, unknown>): Map<string, string> {
+  const bindings = new Map<string, string>()
+  for (const owner of [optionalRecord(graph.project), optionalRecord(graph.deployment)]) {
+    const secrets = optionalRecord(optionalRecord(owner?.bindings)?.secrets)
+    for (const [key, binding] of Object.entries(secrets ?? {})) {
+      const envName = stringField(optionalRecord(binding) ?? {}, "env")
+      if (envName) bindings.set(key, envName)
+    }
+  }
+  return bindings
+}
+
+function hasConfigValue(config: Record<string, unknown> | undefined, key: string): boolean {
+  let current: unknown = config
+  for (const segment of key.split(".")) {
+    const record = optionalRecord(current)
+    if (!record || !(segment in record)) return false
+    current = record[segment]
+  }
+  return current !== undefined
+}
 
 /** Validate generated deployment graph artifacts when present at the deployment root. */
 export function runDeploymentGraphPreflight(
@@ -683,7 +909,7 @@ function deploymentGraphResourceEnvIssues(
 function collectDeploymentEnv(cwd: string): Map<string, string> {
   const env = new Map<string, string>()
   readEnvFileInto(env, join(cwd, ".env"))
-  readEnvFileInto(env, join(cwd, ".dev.vars"))
+  readEnvFileInto(env, join(cwd, ".env.local"))
   for (const [key, value] of Object.entries(process.env)) {
     if (typeof value === "string") env.set(key, value)
   }

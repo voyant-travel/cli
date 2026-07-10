@@ -33,9 +33,32 @@ export interface ProjectGraphDiagnostic {
 export interface ProjectMigrationPlan {
   schemaVersion: typeof MIGRATION_PLAN_SCHEMA_VERSION
   contentHash: string
-  migrations: readonly unknown[]
+  migrations: readonly ProjectMigration[]
   [key: string]: unknown
 }
+
+interface ProjectMigrationBase {
+  id: string
+  migrationKind: "schema" | "setup"
+  order: number
+  idempotencyKey: string
+  owner: string
+  packageName: string
+}
+
+export interface ProjectSchemaMigration extends ProjectMigrationBase {
+  migrationKind: "schema"
+  source: { kind: "package"; packageName: string; path: string }
+}
+
+export interface ProjectSetupMigration extends ProjectMigrationBase {
+  migrationKind: "setup"
+  source: string
+  runtime: { entry: string; export: string }
+  dependsOn: readonly string[]
+}
+
+export type ProjectMigration = ProjectSchemaMigration | ProjectSetupMigration
 
 export interface FrameworkGeneratedProjectFile {
   path: string
@@ -49,6 +72,7 @@ export interface ResolvedProject {
   graph: ResolvedProjectGraph
   artifacts: {
     runtimeEntry: string
+    migrationRunner: string
     files: readonly FrameworkGeneratedProjectFile[]
     migrationPlan: ProjectMigrationPlan
   }
@@ -174,9 +198,18 @@ function parseFrameworkResolution(value: unknown): Pick<ResolvedProject, "graph"
     artifacts.runtimeEntry,
     "framework project resolution artifacts.runtimeEntry",
   )
+  const migrationRunner = requireSafeRelativePath(
+    artifacts.migrationRunner,
+    "framework project resolution artifacts.migrationRunner",
+  )
   const files = parseGeneratedFiles(artifacts.files)
   if (!files.some((file) => file.path === runtimeEntry)) {
     throw contractError(`artifacts.runtimeEntry ${runtimeEntry} is not present in artifacts.files`)
+  }
+  if (!files.some((file) => file.path === migrationRunner)) {
+    throw contractError(
+      `artifacts.migrationRunner ${migrationRunner} is not present in artifacts.files`,
+    )
   }
   const runtimeFile = files.find((file) => file.path === runtimeEntry)
   if (!runtimeFile?.contents.includes(graph.contentHash)) {
@@ -184,7 +217,13 @@ function parseFrameworkResolution(value: unknown): Pick<ResolvedProject, "graph"
   }
 
   const migrationPlan = parseMigrationPlan(artifacts.migrationPlan, graph.contentHash)
-  return { graph, artifacts: { runtimeEntry, files, migrationPlan } }
+  const migrationRunnerFile = files.find((file) => file.path === migrationRunner)
+  if (!migrationRunnerFile?.contents.includes(graph.contentHash)) {
+    throw contractError(
+      `migration runner ${migrationRunner} must embed graph hash ${graph.contentHash}`,
+    )
+  }
+  return { graph, artifacts: { runtimeEntry, migrationRunner, files, migrationPlan } }
 }
 
 function parseResolvedGraph(value: unknown): ResolvedProjectGraph {
@@ -236,7 +275,7 @@ function parseGeneratedFiles(value: unknown): FrameworkGeneratedProjectFile[] {
   return files.sort((left, right) => left.path.localeCompare(right.path))
 }
 
-function parseMigrationPlan(value: unknown, contentHash: string): ProjectMigrationPlan {
+export function parseMigrationPlan(value: unknown, contentHash: string): ProjectMigrationPlan {
   const plan = requireRecord(value, "artifacts.migrationPlan")
   if (plan.schemaVersion !== MIGRATION_PLAN_SCHEMA_VERSION) {
     throw contractError(
@@ -251,7 +290,100 @@ function parseMigrationPlan(value: unknown, contentHash: string): ProjectMigrati
   if (!Array.isArray(plan.migrations)) {
     throw contractError("artifacts.migrationPlan.migrations must be an array")
   }
-  return plan as ProjectMigrationPlan
+  const migrations = plan.migrations.map((entry, index) =>
+    parseMigration(entry, index, plan.migrations as readonly unknown[]),
+  )
+  const ids = migrations.map((migration) => migration.id)
+  const keys = migrations.map((migration) => migration.idempotencyKey)
+  if (new Set(ids).size !== ids.length) {
+    throw contractError("artifacts.migrationPlan contains duplicate migration ids")
+  }
+  if (new Set(keys).size !== keys.length) {
+    throw contractError("artifacts.migrationPlan contains duplicate idempotency keys")
+  }
+  return {
+    schemaVersion: MIGRATION_PLAN_SCHEMA_VERSION,
+    contentHash,
+    migrations,
+  }
+}
+
+function parseMigration(value: unknown, index: number, all: readonly unknown[]): ProjectMigration {
+  const label = `artifacts.migrationPlan.migrations[${index}]`
+  const migration = requireRecord(value, label)
+  const id = requireString(migration.id, `${label}.id`)
+  const owner = requireString(migration.owner, `${label}.owner`)
+  const packageName = requireString(migration.packageName, `${label}.packageName`)
+  const idempotencyKey = requireString(migration.idempotencyKey, `${label}.idempotencyKey`)
+  if (migration.order !== index) {
+    throw contractError(`${label}.order must be ${index}, got ${String(migration.order)}`)
+  }
+  if (migration.migrationKind === "schema") {
+    if (
+      all
+        .slice(0, index)
+        .some(
+          (entry) =>
+            Boolean(entry) &&
+            typeof entry === "object" &&
+            (entry as { migrationKind?: unknown }).migrationKind === "setup",
+        )
+    ) {
+      throw contractError(`${label} schema migrations must precede setup migrations`)
+    }
+    const source = requireRecord(migration.source, `${label}.source`)
+    if (source.kind !== "package") {
+      throw contractError(`${label}.source.kind must be package`)
+    }
+    return {
+      id,
+      migrationKind: "schema",
+      order: index,
+      idempotencyKey,
+      owner,
+      packageName,
+      source: {
+        kind: "package",
+        packageName: requireString(source.packageName, `${label}.source.packageName`),
+        path: requireString(source.path, `${label}.source.path`),
+      },
+    }
+  }
+  if (migration.migrationKind !== "setup") {
+    throw contractError(`${label}.migrationKind must be schema or setup`)
+  }
+  const runtime = requireRecord(migration.runtime, `${label}.runtime`)
+  if (!Array.isArray(migration.dependsOn) || !migration.dependsOn.every(isNonEmptyString)) {
+    throw contractError(`${label}.dependsOn must be an array of non-empty ids`)
+  }
+  const priorIds = new Set(
+    all
+      .slice(0, index)
+      .flatMap((entry) =>
+        Boolean(entry) &&
+        typeof entry === "object" &&
+        isNonEmptyString((entry as { id?: unknown }).id)
+          ? [(entry as { id: string }).id]
+          : [],
+      ),
+  )
+  if (migration.dependsOn.some((dependency) => !priorIds.has(dependency))) {
+    throw contractError(`${label}.dependsOn must reference earlier migrations in the plan`)
+  }
+  return {
+    id,
+    migrationKind: "setup",
+    order: index,
+    idempotencyKey,
+    owner,
+    packageName,
+    source: requireString(migration.source, `${label}.source`),
+    runtime: {
+      entry: requireString(runtime.entry, `${label}.runtime.entry`),
+      export: requireString(runtime.export, `${label}.runtime.export`),
+    },
+    dependsOn: [...migration.dependsOn],
+  }
 }
 
 function requireRecord(value: unknown, label: string): Record<string, unknown> {
@@ -283,6 +415,15 @@ function requireContentHash(value: unknown, label: string): string {
     throw contractError(`${label} must match sha256:<64 lowercase hex characters>`)
   }
   return value
+}
+
+function requireString(value: unknown, label: string): string {
+  if (!isNonEmptyString(value)) throw contractError(`${label} must be a non-empty string`)
+  return value
+}
+
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === "string" && value.length > 0
 }
 
 export function computeGraphContentHash(graph: Record<string, unknown>): string {

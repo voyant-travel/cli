@@ -5,8 +5,8 @@ import { dirname, join, resolve } from "node:path"
 import { DEPLOYMENT_ARTIFACT_SCHEMA_VERSION } from "./deployment-artifact-reader.js"
 import {
   computeGraphContentHash,
-  MIGRATION_PLAN_SCHEMA_VERSION,
   type ProjectMigrationPlan,
+  parseMigrationPlan,
   projectRelativePath,
   RESOLVED_GRAPH_SCHEMA_VERSION,
   type ResolvedProject,
@@ -46,6 +46,7 @@ export interface ProjectArtifactManifest {
     },
   ]
   migrationPlan: typeof PROJECT_MIGRATION_PLAN_ARTIFACT
+  migrationRunner: string
   files: readonly string[]
 }
 
@@ -56,6 +57,7 @@ export interface LoadedProjectArtifacts {
   graph: ResolvedProjectGraph
   migrationPlan: ProjectMigrationPlan
   runtimeEntryPath: string
+  migrationRunnerPath: string
 }
 
 export interface CheckedProjectArtifacts extends LoadedProjectArtifacts {
@@ -132,6 +134,7 @@ export async function writeProjectArtifacts(resolution: ResolvedProject): Promis
       },
     ],
     migrationPlan: PROJECT_MIGRATION_PLAN_ARTIFACT,
+    migrationRunner: resolution.artifacts.migrationRunner,
     files,
   }
 
@@ -210,23 +213,16 @@ export async function loadProjectArtifacts(projectRoot: string): Promise<LoadedP
     throw hashMismatch("canonical deployment graph", computedHash, manifest.graphHash)
   }
 
-  const migrationPlan = (await readJson(
-    join(artifactRoot, manifest.migrationPlan),
-    "generated migration plan",
-  )) as ProjectMigrationPlan
-  if (migrationPlan.schemaVersion !== MIGRATION_PLAN_SCHEMA_VERSION) {
-    throw new ProjectArtifactError(
-      "artifact_invalid",
-      `Generated migration plan schema must be ${MIGRATION_PLAN_SCHEMA_VERSION}`,
+  let migrationPlan: ProjectMigrationPlan
+  try {
+    migrationPlan = parseMigrationPlan(
+      await readJson(join(artifactRoot, manifest.migrationPlan), "generated migration plan"),
+      manifest.graphHash,
     )
-  }
-  if (migrationPlan.contentHash !== manifest.graphHash) {
-    throw hashMismatch("migration plan", migrationPlan.contentHash, manifest.graphHash)
-  }
-  if (!Array.isArray(migrationPlan.migrations)) {
+  } catch (error) {
     throw new ProjectArtifactError(
       "artifact_invalid",
-      "Generated migration plan migrations must be an array",
+      error instanceof Error ? error.message : String(error),
     )
   }
 
@@ -239,7 +235,24 @@ export async function loadProjectArtifacts(projectRoot: string): Promise<LoadedP
     )
   }
 
-  return { projectRoot, artifactRoot, manifest, graph, migrationPlan, runtimeEntryPath }
+  const migrationRunnerPath = join(artifactRoot, manifest.migrationRunner)
+  const migrationRunnerSource = await readFile(migrationRunnerPath, "utf8")
+  if (!migrationRunnerSource.includes(manifest.graphHash)) {
+    throw new ProjectArtifactError(
+      "artifact_stale",
+      `Generated migration runner ${manifest.migrationRunner} does not reference ${manifest.graphHash}. Run \`voyant build\` or \`voyant dev\` to refresh .voyant/.`,
+    )
+  }
+
+  return {
+    projectRoot,
+    artifactRoot,
+    manifest,
+    graph,
+    migrationPlan,
+    runtimeEntryPath,
+    migrationRunnerPath,
+  }
 }
 
 export class ProjectArtifactError extends Error {
@@ -317,10 +330,14 @@ function parseManifest(value: unknown): ProjectArtifactManifest {
       `Project artifact migrationPlan must be ${PROJECT_MIGRATION_PLAN_ARTIFACT}`,
     )
   }
-  if (typeof manifest.config !== "string" || typeof manifest.runtimeEntry !== "string") {
+  if (
+    typeof manifest.config !== "string" ||
+    typeof manifest.runtimeEntry !== "string" ||
+    typeof manifest.migrationRunner !== "string"
+  ) {
     throw new ProjectArtifactError(
       "artifact_invalid",
-      "Project artifact config and runtimeEntry must be paths",
+      "Project artifact config, runtimeEntry, and migrationRunner must be paths",
     )
   }
   if (
@@ -352,7 +369,18 @@ function parseManifest(value: unknown): ProjectArtifactManifest {
       "Project artifact runtimeEntry must stay beneath .voyant/",
     )
   }
-  for (const required of [manifest.graph, manifest.migrationPlan, manifest.runtimeEntry]) {
+  if (!isSafeRelativePath(manifest.migrationRunner)) {
+    throw new ProjectArtifactError(
+      "artifact_invalid",
+      "Project artifact migrationRunner must stay beneath .voyant/",
+    )
+  }
+  for (const required of [
+    manifest.graph,
+    manifest.migrationPlan,
+    manifest.runtimeEntry,
+    manifest.migrationRunner,
+  ]) {
     if (!manifest.files.includes(required)) {
       throw new ProjectArtifactError(
         "artifact_invalid",

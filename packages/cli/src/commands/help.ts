@@ -34,7 +34,7 @@ OPEN-SOURCE COMMANDS
                                      (then run: voyant db migrate && voyant doctor)
   dev [--config <path>]              Resolve, generate, watch, and serve the project graph
   build [--config <path>] [--json]   Write deterministic project outputs beneath .voyant/
-  migrate [--config <path>] [--json] Inspect the current graph's migration plan
+  migrate [--plan|--dry-run] [--json] Execute the current graph's Node migration runner
   db <generate|migrate|studio|push>  Proxy drizzle-kit commands (generate defaults to --prefix timestamp)
   db schemas [--emit]                Print/emit the manifest-derived schema list
   db sync-links [--emit-drizzle]     Emit link-table DDL, or a generated Drizzle schema
@@ -90,7 +90,7 @@ EXAMPLES
   voyant admin generate --destinations
   voyant admin doctor
   voyant build --json
-  voyant migrate --json
+  voyant migrate --plan --json
   voyant db generate
   voyant exec ./scripts/backfill.ts --dry-run
   voyant login                                # browser device flow

@@ -37,6 +37,7 @@ describe("project artifacts", () => {
     expect(second.manifest.files).toEqual([
       "deployment-graph.generated.json",
       "migration-plan.generated.json",
+      "runtime/project-migrations.generated.mjs",
       "runtime/project-runtime.generated.ts",
     ])
     expect(existsSync(second.runtimeEntryPath)).toBe(true)

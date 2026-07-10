@@ -32,7 +32,12 @@ export async function resolveProject({ project }) {
     graph,
     artifacts: {
       runtimeEntry: "runtime/project-runtime.generated.ts",
+      migrationRunner: "runtime/project-migrations.generated.mjs",
       files: [
+        {
+          path: "runtime/project-migrations.generated.mjs",
+          contents: `export const schemaVersion = "voyant.node-migration-runner.v1"\nexport const contentHash = ${JSON.stringify(contentHash)}\nexport async function runVoyantMigrations(options = {}) { return globalThis.__runVoyantMigrations?.(options) ?? { schemaVersion: "voyant.migration-result.v1", contentHash, applied: [], skipped: [], failed: [] } }\n`,
+        },
         {
           path: "runtime/project-runtime.generated.ts",
           contents: `// GENERATED test runtime for ${contentHash}\nexport const contentHash = ${JSON.stringify(contentHash)}\n`,
@@ -41,9 +46,14 @@ export async function resolveProject({ project }) {
       migrationPlan: {
         schemaVersion: "voyant.migration-plan.v1",
         contentHash,
-        migrations: modules.map((unit) => ({
+        migrations: modules.map((unit, order) => ({
           id: `${unit.id}#migration.initial`,
+          migrationKind: "schema",
+          order,
+          idempotencyKey: `schema:${unit.id}#migration.initial`,
           owner: unit.id,
+          packageName: unit.packageName,
+          source: { kind: "package", packageName: unit.packageName, path: "./migrations" },
         })),
       },
     },

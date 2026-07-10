@@ -1,5 +1,11 @@
 # @voyant-travel/cli
 
+## 0.37.0
+
+### Minor Changes
+
+- 0674cb5: Add graph-native project authoring: expand the `operator-standard` preset into a clean explicit project, scaffold selectable local modules with optional facets, and install/select package or path dependencies with idempotent `add` and `install` commands.
+
 ## 0.36.1
 
 ### Patch Changes

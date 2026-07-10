@@ -11,6 +11,7 @@ OPEN-SOURCE COMMANDS
   generate module <name> [--schema] [--admin] [--workflow]
                                      Scaffold a local package under src/modules/<name>
   add|install <package|path>         Install and explicitly select a module or plugin
+  remove|uninstall <package|path>    Remove a selected module or plugin and its dependency
   generate extension <name> --module <target>
                                      Scaffold a deployment extension under src/extensions/<name>
                                      that attaches to an existing module's surface
@@ -29,7 +30,7 @@ OPEN-SOURCE COMMANDS
                                      Preflight: env/bindings (env.d.ts <-> wrangler.jsonc +
                                      placeholders) + current .voyant graph artifacts +
                                      db doctor + admin doctor (exit 1 on any gate)
-  upgrade [--to <version>] [--dry-run]  Bump the @voyant-travel/framework BOM + install
+  upgrade [package] [--to <version>] [--plan]  Bump a dependency with a graph-aware plan
                                      (then run: voyant db migrate && voyant doctor)
   dev [--config <path>]              Resolve, generate, watch, and serve the project graph
   build [--config <path>] [--json]   Write deterministic project outputs beneath .voyant/

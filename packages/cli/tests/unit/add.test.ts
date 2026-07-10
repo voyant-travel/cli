@@ -87,6 +87,65 @@ describe("addCommand", () => {
     expect(config.plugins.map(selectionResolve)).toContain("@acme/voyant-payments")
   })
 
+  it("emits a machine-readable dry-run plan without installing or editing", async () => {
+    expect(await generateModuleCommand(makeCtx(["loyalty"], project).ctx)).toBe(0)
+    const configPath = join(project, "voyant.config.ts")
+    const before = readFileSync(configPath, "utf8")
+    let installed = false
+    const run = makeCtx(["--dry-run", "./src/modules/loyalty"], project)
+
+    expect(
+      await addCommand(run.ctx, {
+        runAdd: async () => {
+          installed = true
+          return 0
+        },
+      }),
+    ).toBe(0)
+
+    const plan = JSON.parse(run.stdout.join(""))
+    expect(plan).toMatchObject({
+      operation: "add",
+      status: "ready",
+      dependencyChanges: [
+        {
+          packageName: "@operator/loyalty",
+          before: null,
+          after: "file:src/modules/loyalty",
+        },
+      ],
+      graph: {
+        selections: {
+          modules: { additions: ["./src/modules/loyalty"], removals: [] },
+          plugins: { additions: [], removals: [] },
+        },
+      },
+    })
+    expect(installed).toBe(false)
+    expect(readFileSync(configPath, "utf8")).toBe(before)
+  })
+
+  it("restores package metadata when install fails", async () => {
+    expect(await generateModuleCommand(makeCtx(["loyalty"], project).ctx)).toBe(0)
+    const configPath = join(project, "voyant.config.ts")
+    const packagePath = join(project, "package.json")
+    const beforeConfig = readFileSync(configPath, "utf8")
+    const beforePackage = readFileSync(packagePath, "utf8")
+
+    const code = await addCommand(makeCtx(["./src/modules/loyalty"], project).ctx, {
+      runAdd: async () => {
+        const manifest = JSON.parse(readFileSync(packagePath, "utf8"))
+        manifest.dependencies["@operator/loyalty"] = "file:src/modules/loyalty"
+        writeFileSync(packagePath, `${JSON.stringify(manifest, null, 2)}\n`)
+        return 9
+      },
+    })
+
+    expect(code).toBe(9)
+    expect(readFileSync(configPath, "utf8")).toBe(beforeConfig)
+    expect(readFileSync(packagePath, "utf8")).toBe(beforePackage)
+  })
+
   it("fails closed for hand-authored config instead of applying text edits", async () => {
     writeFileSync(
       join(project, "voyant.config.ts"),

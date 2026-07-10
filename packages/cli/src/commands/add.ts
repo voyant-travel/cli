@@ -1,13 +1,32 @@
 import { spawn } from "node:child_process"
-import { existsSync, readFileSync, writeFileSync } from "node:fs"
-import { isAbsolute, join, parse as parsePath, relative, resolve } from "node:path"
+import { existsSync, readFileSync } from "node:fs"
+import { join, parse as parsePath, resolve } from "node:path"
 
 import { getBooleanFlag, parseArgs } from "../lib/args.js"
+import { authoringGraphSelections, diffGraphSelections } from "../lib/graph-diff.js"
+import {
+  detectPackageManager,
+  findManifestDependency,
+  type PackageManager,
+  type PackageSelectionTarget,
+  type ProjectManifest,
+  readProjectManifest,
+  resolvePackageSelectionTarget,
+  restoreProjectFiles,
+  snapshotPackageManagerFiles,
+} from "../lib/package-lifecycle.js"
+import {
+  createPackageLifecyclePlan,
+  renderPackageLifecyclePlan,
+} from "../lib/package-lifecycle-plan.js"
 import {
   type AuthoringProjectConfig,
+  addProjectSelection,
+  cloneProjectConfig,
   parseProjectConfig,
   renderProjectConfig,
   selectionResolve,
+  writeProjectConfig,
 } from "../lib/project-config.js"
 import type { CommandContext, CommandResult } from "../types.js"
 
@@ -17,13 +36,13 @@ export interface AddCommandDeps {
   runAdd?: (cwd: string, manager: PackageManager, specifier: string) => Promise<number>
 }
 
-type PackageManager = "pnpm" | "npm" | "yarn" | "bun"
-
 export async function addCommand(
   ctx: CommandContext,
   deps: AddCommandDeps = {},
 ): Promise<CommandResult> {
-  const args = parseArgs(ctx.argv)
+  const args = parseArgs(ctx.argv, {
+    booleanFlags: ["module", "plugin", "dry-run", "plan"],
+  })
   const requested = args.positionals[0]
   if (!requested) {
     ctx.stderr("Usage: voyant add <package|path> [--module | --plugin]\n")
@@ -32,6 +51,7 @@ export async function addCommand(
 
   const forceModule = getBooleanFlag(args, "module")
   const forcePlugin = getBooleanFlag(args, "plugin")
+  const planOnly = getBooleanFlag(args, "dry-run", "plan")
   if (forceModule && forcePlugin) {
     ctx.stderr("voyant add: --module and --plugin cannot be used together.\n")
     return 1
@@ -44,18 +64,20 @@ export async function addCommand(
   }
   const projectRoot = parsePath(configPath).dir
 
+  let originalSource: string
   let config: AuthoringProjectConfig
   try {
-    config = parseProjectConfig(readFileSync(configPath, "utf8"))
+    originalSource = readFileSync(configPath, "utf8")
+    config = parseProjectConfig(originalSource)
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error)
     ctx.stderr(`voyant add: cannot update ${configPath}: ${reason}.\n`)
     return 1
   }
 
-  let target: AddTarget
+  let target: PackageSelectionTarget
   try {
-    target = resolveAddTarget(projectRoot, requested)
+    target = resolvePackageSelectionTarget(projectRoot, requested)
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error)
     ctx.stderr(`voyant add: ${reason}.\n`)
@@ -64,6 +86,16 @@ export async function addCommand(
 
   const existingKind = selectedKind(config, target.selection)
   if (existingKind) {
+    if (planOnly) {
+      const packagePath = join(projectRoot, "package.json")
+      const manager = readManagerOrDefault(projectRoot, packagePath)
+      ctx.stdout(
+        renderPackageLifecyclePlan(
+          createPackageLifecyclePlan({ operation: "add", packageManager: manager }),
+        ),
+      )
+      return 0
+    }
     ctx.stdout(`Already selected ${target.selection} as a ${existingKind}.\n`)
     return 0
   }
@@ -81,104 +113,89 @@ export async function addCommand(
     return 1
   }
 
-  const manager = detectPackageManager(projectRoot, packagePath)
+  let manifest: ProjectManifest
+  try {
+    manifest = readProjectManifest(packagePath)
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error)
+    ctx.stderr(`voyant add: cannot read ${packagePath}: ${reason}.\n`)
+    return 1
+  }
+  const manager = detectPackageManager(projectRoot, manifest)
+
+  if (planOnly) {
+    const currentDependency = findManifestDependency(manifest, target.packageName)
+    const nextConfig = cloneProjectConfig(config)
+    if (kind) addProjectSelection(nextConfig, kind, target.selection)
+    const plan = createPackageLifecyclePlan({
+      operation: "add",
+      packageManager: manager,
+      dependencyChanges: [
+        {
+          packageName: target.packageName,
+          section: currentDependency?.section ?? "dependencies",
+          before: currentDependency?.version ?? null,
+          after:
+            target.versionExplicit || !currentDependency
+              ? target.plannedVersion
+              : currentDependency.version,
+        },
+      ],
+      selections: diffGraphSelections(
+        authoringGraphSelections(config),
+        authoringGraphSelections(nextConfig),
+      ),
+      ...(!kind
+        ? {
+            blockedBy: {
+              code: "unit_kind_unknown",
+              message: `${target.packageName} is not installed with voyant.package.v1 metadata; pass --module or --plugin`,
+            },
+          }
+        : {}),
+    })
+    ctx.stdout(renderPackageLifecyclePlan(plan))
+    return plan.status === "blocked" ? 1 : 0
+  }
+
+  const snapshots = snapshotPackageManagerFiles(projectRoot)
   const runAdd = deps.runAdd ?? defaultRunAdd
   ctx.stdout(`Installing ${target.installSpecifier} with ${manager}...\n`)
-  const installCode = await runAdd(projectRoot, manager, target.installSpecifier)
+  let installCode: number
+  try {
+    installCode = await runAdd(projectRoot, manager, target.installSpecifier)
+  } catch {
+    installCode = 1
+  }
   if (installCode !== 0) {
+    restoreProjectFiles(snapshots)
     ctx.stderr(`voyant add: ${manager} install failed (exit ${installCode}).\n`)
     return installCode
   }
 
   kind ??= readVoyantKind(target.metadataPath)
   if (!kind) {
+    restoreProjectFiles(snapshots)
     ctx.stderr(
       `voyant add: ${target.packageName} does not declare voyant.kind; pass --module or --plugin.\n`,
     )
     return 1
   }
 
-  const selections = kind === "module" ? config.modules : config.plugins
-  selections.push(target.selection)
-  writeFileSync(configPath, renderProjectConfig(config))
+  const nextConfig = cloneProjectConfig(config)
+  addProjectSelection(nextConfig, kind, target.selection)
+  const nextSource = renderProjectConfig(nextConfig)
+  try {
+    writeProjectConfig(configPath, nextSource)
+  } catch (error) {
+    restoreProjectFiles(snapshots)
+    writeProjectConfig(configPath, originalSource)
+    const reason = error instanceof Error ? error.message : String(error)
+    ctx.stderr(`voyant add: could not safely update ${configPath}: ${reason}.\n`)
+    return 1
+  }
   ctx.stdout(`Selected ${target.selection} in ${kind === "module" ? "modules" : "plugins"}.\n`)
   return 0
-}
-
-interface AddTarget {
-  selection: string
-  installSpecifier: string
-  packageName: string
-  metadataPath: string
-}
-
-function resolveAddTarget(projectRoot: string, requested: string): AddTarget {
-  if (isLocalSpecifier(requested)) {
-    const withoutFilePrefix = requested.startsWith("file:") ? requested.slice(5) : requested
-    const absolute = isAbsolute(withoutFilePrefix)
-      ? resolve(withoutFilePrefix)
-      : resolve(projectRoot, withoutFilePrefix)
-    const relativePath = relative(projectRoot, absolute).replaceAll("\\", "/")
-    if (!relativePath || relativePath === ".." || relativePath.startsWith("../")) {
-      throw new Error("local paths must identify a package inside the project")
-    }
-    const metadataPath = join(absolute, "package.json")
-    const packageName = readPackageName(metadataPath)
-    if (!packageName) throw new Error(`local package metadata not found at ${metadataPath}`)
-    return {
-      selection: `./${relativePath}`,
-      installSpecifier: `./${relativePath}`,
-      packageName,
-      metadataPath,
-    }
-  }
-
-  const parsed = parseRegistrySpecifier(requested)
-  return {
-    selection: parsed.selection,
-    installSpecifier: parsed.installSpecifier,
-    packageName: parsed.packageName,
-    metadataPath: join(
-      projectRoot,
-      "node_modules",
-      ...parsed.packageName.split("/"),
-      "package.json",
-    ),
-  }
-}
-
-function parseRegistrySpecifier(requested: string): {
-  selection: string
-  installSpecifier: string
-  packageName: string
-} {
-  if (!requested.startsWith("@")) {
-    throw new Error("registry selections must use a scoped package name or a local path")
-  }
-  const parts = requested.split("/")
-  const scope = parts[0]
-  const packageAndVersion = parts[1]
-  if (!scope || !packageAndVersion) throw new Error(`invalid package specifier ${requested}`)
-  const versionAt = packageAndVersion.indexOf("@")
-  const packagePart = versionAt === -1 ? packageAndVersion : packageAndVersion.slice(0, versionAt)
-  const version = versionAt === -1 ? "" : packageAndVersion.slice(versionAt)
-  if (
-    !/^@[a-z0-9][a-z0-9._-]*$/.test(scope) ||
-    !/^[a-z0-9][a-z0-9._-]*$/.test(packagePart) ||
-    (versionAt !== -1 && version.length < 2)
-  ) {
-    throw new Error(`invalid package specifier ${requested}`)
-  }
-  if (version && parts.length > 2) {
-    throw new Error("versioned package selections cannot include a unit subpath")
-  }
-
-  const packageName = `${scope}/${packagePart}`
-  return {
-    packageName,
-    installSpecifier: `${packageName}${version}`,
-    selection: parts.length > 2 ? `${packageName}/${parts.slice(2).join("/")}` : packageName,
-  }
 }
 
 function selectedKind(config: AuthoringProjectConfig, selection: string): UnitKind | null {
@@ -202,16 +219,6 @@ function readVoyantKind(packagePath: string): UnitKind | undefined {
   }
 }
 
-function readPackageName(packagePath: string): string | null {
-  if (!existsSync(packagePath)) return null
-  try {
-    const pkg = JSON.parse(readFileSync(packagePath, "utf8")) as { name?: unknown }
-    return typeof pkg.name === "string" && pkg.name.length > 0 ? pkg.name : null
-  } catch {
-    return null
-  }
-}
-
 function findNearestProjectConfig(cwd: string): string | null {
   let current = resolve(cwd)
   for (;;) {
@@ -223,22 +230,12 @@ function findNearestProjectConfig(cwd: string): string | null {
   }
 }
 
-function detectPackageManager(root: string, packagePath: string): PackageManager {
+function readManagerOrDefault(root: string, packagePath: string): PackageManager {
   try {
-    const pkg = JSON.parse(readFileSync(packagePath, "utf8")) as { packageManager?: unknown }
-    if (typeof pkg.packageManager === "string") {
-      const manager = pkg.packageManager.split("@")[0]
-      if (manager === "pnpm" || manager === "npm" || manager === "yarn" || manager === "bun") {
-        return manager
-      }
-    }
+    return detectPackageManager(root, readProjectManifest(packagePath))
   } catch {
-    // Lockfile fallback below.
+    return "npm"
   }
-  if (existsSync(join(root, "pnpm-lock.yaml"))) return "pnpm"
-  if (existsSync(join(root, "yarn.lock"))) return "yarn"
-  if (existsSync(join(root, "bun.lockb")) || existsSync(join(root, "bun.lock"))) return "bun"
-  return "npm"
 }
 
 function defaultRunAdd(cwd: string, manager: PackageManager, specifier: string): Promise<number> {
@@ -248,13 +245,4 @@ function defaultRunAdd(cwd: string, manager: PackageManager, specifier: string):
     child.on("exit", (code) => done(code ?? 0))
     child.on("error", () => done(1))
   })
-}
-
-function isLocalSpecifier(value: string): boolean {
-  return (
-    value.startsWith("./") ||
-    value.startsWith("../") ||
-    value.startsWith("file:") ||
-    isAbsolute(value)
-  )
 }

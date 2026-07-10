@@ -23,6 +23,7 @@ import { logsCommand } from "./commands/logs.js"
 import { migrateCommand } from "./commands/migrate-command.js"
 import { newCommand } from "./commands/new.js"
 import { orgCommand } from "./commands/org.js"
+import { removeCommand } from "./commands/remove.js"
 import { secretsCommand } from "./commands/secrets.js"
 import { storageCommand } from "./commands/storage.js"
 import { upgradeCommand } from "./commands/upgrade.js"
@@ -88,6 +89,10 @@ export async function main(
     case "add":
     case "install": {
       return addCommand({ ...ctx, argv: rest })
+    }
+    case "remove":
+    case "uninstall": {
+      return removeCommand({ ...ctx, argv: rest })
     }
     case "generate": {
       const [sub, ...subArgs] = rest

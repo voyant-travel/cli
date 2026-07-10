@@ -101,6 +101,16 @@ describe("main", () => {
     expect(install.stderr.join("")).toContain("Usage: voyant add")
   })
 
+  it("dispatches `remove` and `uninstall` to the lifecycle command", async () => {
+    const remove = makeIo()
+    expect(await main(["remove"], remove.opts)).toBe(1)
+    expect(remove.stderr.join("")).toContain("Usage: voyant remove")
+
+    const uninstall = makeIo()
+    expect(await main(["uninstall"], uninstall.opts)).toBe(1)
+    expect(uninstall.stderr.join("")).toContain("Usage: voyant remove")
+  })
+
   it("dispatches `exec` to the exec command", async () => {
     const { stderr, opts } = makeIo()
     const code = await main(["exec"], opts)

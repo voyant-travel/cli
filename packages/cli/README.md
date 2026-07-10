@@ -16,7 +16,7 @@ voyant --help
 | `voyant generate extension <name> --module <target>` | Scaffold a deployment extension under `src/extensions/<name>` that attaches to an existing module (`--public`, `--with-schema`, `--dir`, `--force`) |
 | `voyant generate link <a> <b>` | Print a `defineLink` snippet — `<a>` and `<b>` as `<module>.<entity>` |
 | `voyant config <show\|validate\|path>` | Inspect the nearest `voyant.config.*` |
-| `voyant doctor [--json]` | Run the env, deployment graph artifact/resource env, database, and admin preflight checks; `--json` emits a `voyant.doctor.v1` report |
+| `voyant doctor [--json]` | Run the env, deployment graph doctor, database, and admin preflight checks; `--json` emits a `voyant.doctor.v1` report and embeds the `voyant.graph-doctor-report.v1` graph report when available |
 | `voyant db <generate\|migrate\|studio\|push\|check>` | Proxy drizzle-kit to the project root |
 | `voyant db sync-links [--out <file>]` | Emit DDL for cross-module link tables |
 | `voyant exec <script.ts> [args…]` | Run a TS/JS script with native strip-types |

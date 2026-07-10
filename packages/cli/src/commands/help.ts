@@ -21,9 +21,9 @@ OPEN-SOURCE COMMANDS
   admin generate --destinations [--check]  Emit the generated destination resolver map (RFC 4.7)
   admin doctor                       Check manifest <-> admin extension <-> route/destination parity
                                      (generated-destination drift gates: exit 1; the rest reports)
-  doctor [--strict] [--skip-*] [--json] [--deployment-artifacts <file>]
+  doctor [--strict] [--skip-*] [--json] [--deployment-graph-report <file>]
                                      Preflight: env/bindings (env.d.ts <-> wrangler.jsonc +
-                                     placeholders) + deployment graph artifacts/resource env +
+                                     placeholders) + deployment graph doctor report/artifacts +
                                      db doctor + admin doctor (exit 1 on any gate)
   upgrade [--to <version>] [--dry-run]  Bump the @voyant-travel/framework BOM + install
                                      (then run: voyant db migrate && voyant doctor)

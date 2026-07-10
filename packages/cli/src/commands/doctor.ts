@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process"
 import { createHash } from "node:crypto"
 import { existsSync, readFileSync } from "node:fs"
 import { dirname, isAbsolute, join, resolve } from "node:path"
@@ -50,6 +51,8 @@ export async function doctorCommand(ctx: CommandContext): Promise<CommandResult>
   if (!getBooleanFlag(args, "skip-deployment-graph")) {
     const code = runDeploymentGraphPreflight(ctx, {
       manifestPath: getStringFlag(args, "deployment-artifacts"),
+      reportPath: getStringFlag(args, "deployment-graph-report"),
+      doctorScriptPath: getStringFlag(args, "deployment-graph-doctor-script"),
     })
     if (code !== 0) failed = true
   }
@@ -79,6 +82,8 @@ export interface DoctorJsonCheck {
   exitCode: number
   stdout: string
   stderr: string
+  diagnostics?: readonly DeploymentGraphDiagnostic[]
+  report?: DeploymentGraphDoctorReport
 }
 
 export interface DoctorJsonReport {
@@ -112,11 +117,11 @@ async function doctorJsonCommand(
     checks.push(skippedCheck("deployment-graph"))
   } else {
     checks.push(
-      await captureDoctorCheck(ctx, "deployment-graph", (subCtx) =>
-        runDeploymentGraphPreflight(subCtx, {
-          manifestPath: getStringFlag(args, "deployment-artifacts"),
-        }),
-      ),
+      await captureDeploymentGraphDoctorCheck(ctx, {
+        manifestPath: getStringFlag(args, "deployment-artifacts"),
+        reportPath: getStringFlag(args, "deployment-graph-report"),
+        doctorScriptPath: getStringFlag(args, "deployment-graph-doctor-script"),
+      }),
     )
   }
 
@@ -150,6 +155,31 @@ async function doctorJsonCommand(
   }
   printJson(ctx, report)
   return failed ? 1 : 0
+}
+
+async function captureDeploymentGraphDoctorCheck(
+  ctx: CommandContext,
+  options: DeploymentGraphPreflightOptions,
+): Promise<DoctorJsonCheck> {
+  const stdout: string[] = []
+  const stderr: string[] = []
+  const result = runDeploymentGraphPreflightWithResult(
+    {
+      ...ctx,
+      stdout: (chunk) => stdout.push(chunk),
+      stderr: (chunk) => stderr.push(chunk),
+    },
+    options,
+  )
+  const out = stdout.join("")
+  return {
+    id: "deployment-graph",
+    status: result.exitCode === 0 ? inferPassedStatus("deployment-graph", out) : "failed",
+    exitCode: result.exitCode,
+    stdout: out,
+    stderr: stderr.join(""),
+    ...(result.report ? { report: result.report, diagnostics: result.report.diagnostics } : {}),
+  }
 }
 
 function skippedCheck(id: DoctorCheckId): DoctorJsonCheck {
@@ -214,6 +244,13 @@ interface EnvPreflightOptions {
 
 interface DeploymentGraphPreflightOptions {
   manifestPath?: string
+  reportPath?: string
+  doctorScriptPath?: string
+}
+
+interface DeploymentGraphPreflightResult {
+  exitCode: 0 | 1
+  report?: DeploymentGraphDoctorReport
 }
 
 interface DeploymentArtifactManifest {
@@ -259,9 +296,36 @@ interface DeploymentGraphEnvRequirement {
   description: string
 }
 
+interface DeploymentGraphDiagnostic {
+  code: string
+  severity: "info" | "warning" | "error"
+  source?: string
+  facet?: string
+  location?: string
+  message: string
+  hint?: string
+}
+
+interface DeploymentGraphDoctorReport {
+  schemaVersion: "voyant.graph-doctor-report.v1"
+  ok: boolean
+  graph: {
+    schemaVersion: string
+    contentHash: string
+    target?: string
+    mode?: string
+    modules: { count: number; ids: readonly string[] }
+    plugins: { count: number; ids: readonly string[] }
+    packageRecords: { count: number; packageNames: readonly string[] }
+  }
+  diagnostics: readonly DeploymentGraphDiagnostic[]
+}
+
 const ARTIFACT_MANIFEST_SCHEMA_VERSION = "voyant.deployment-artifacts.v1"
+const GRAPH_DOCTOR_REPORT_SCHEMA_VERSION = "voyant.graph-doctor-report.v1"
 const RESOLVED_GRAPH_SCHEMA_VERSION = "voyant.resolved-graph.v1"
 const DEPLOYMENT_ARTIFACTS_FILENAME = "deployment-artifacts.generated.json"
+const DEPLOYMENT_GRAPH_DOCTOR_SCRIPT = join("scripts", "emit-deployment-graph.ts")
 const EXPECTED_GRAPH_ARTIFACT = "deployment-graph.generated.json"
 const EXPECTED_NODE_RUNTIME_ENTRY_ID = "@voyant-travel/framework#runtime.node"
 const EXPECTED_NODE_RUNTIME_ENTRY_FILE = "src/runtime-entry.generated.ts"
@@ -274,10 +338,28 @@ export function runDeploymentGraphPreflight(
   ctx: CommandContext,
   opts: DeploymentGraphPreflightOptions = {},
 ): CommandResult {
+  return runDeploymentGraphPreflightWithResult(ctx, opts).exitCode
+}
+
+function runDeploymentGraphPreflightWithResult(
+  ctx: CommandContext,
+  opts: DeploymentGraphPreflightOptions = {},
+): DeploymentGraphPreflightResult {
+  const reportResult = loadDeploymentGraphDoctorReport(ctx.cwd, opts)
+  if (reportResult.kind === "report") {
+    writeDeploymentGraphDoctorReport(ctx, reportResult.report)
+    return { exitCode: reportResult.report.ok ? 0 : 1, report: reportResult.report }
+  }
+  if (reportResult.kind === "failed") {
+    ctx.stderr("deployment graph preflight: FAILED\n")
+    ctx.stderr(`  - ${reportResult.message}\n`)
+    return { exitCode: 1 }
+  }
+
   const manifestPath = resolveDeploymentArtifactManifestPath(ctx.cwd, opts.manifestPath)
   if (!manifestPath) {
     ctx.stdout("deployment graph preflight: skipped (no deployment artifacts found)\n")
-    return 0
+    return { exitCode: 0 }
   }
 
   try {
@@ -289,17 +371,207 @@ export function runDeploymentGraphPreflight(
     if (envIssues.length > 0) {
       ctx.stderr("deployment graph preflight: FAILED\n")
       for (const issue of envIssues) ctx.stderr(`  - ${issue}\n`)
-      return 1
+      return { exitCode: 1 }
     }
     ctx.stdout(
       `deployment graph preflight: OK (${summary.graphHash}; ${summary.moduleCount} modules; ${summary.pluginCount} plugins; ${summary.packageCount} packages; ${summary.requiredEnvCount} required resource env)\n`,
     )
-    return 0
+    return { exitCode: 0 }
   } catch (error) {
     ctx.stderr("deployment graph preflight: FAILED\n")
     ctx.stderr(`  - ${reason(error)}\n`)
-    return 1
+    return { exitCode: 1 }
   }
+}
+
+function loadDeploymentGraphDoctorReport(
+  cwd: string,
+  opts: DeploymentGraphPreflightOptions,
+):
+  | { kind: "none" }
+  | { kind: "failed"; message: string }
+  | { kind: "report"; report: DeploymentGraphDoctorReport } {
+  if (opts.reportPath) {
+    try {
+      return {
+        kind: "report",
+        report: parseDeploymentGraphDoctorReport(
+          readFileSync(resolveDeploymentGraphPath(cwd, opts.reportPath), "utf8"),
+        ),
+      }
+    } catch (error) {
+      return { kind: "failed", message: reason(error) }
+    }
+  }
+
+  const scriptPath = resolveDeploymentGraphDoctorScriptPath(cwd, opts.doctorScriptPath)
+  if (!scriptPath) return { kind: "none" }
+
+  const result = spawnSync("pnpm", ["exec", "tsx", scriptPath, "--json"], {
+    cwd,
+    encoding: "utf8",
+    maxBuffer: 1024 * 1024 * 16,
+  })
+  const stdout = result.stdout ?? ""
+  if (stdout.trim().length > 0) {
+    try {
+      return { kind: "report", report: parseDeploymentGraphDoctorReport(stdout) }
+    } catch (error) {
+      return {
+        kind: "failed",
+        message: `deployment graph doctor script emitted invalid JSON report: ${reason(error)}`,
+      }
+    }
+  }
+  if (result.error) {
+    return { kind: "failed", message: reason(result.error) }
+  }
+  if (result.status && result.status !== 0) {
+    const stderr = (result.stderr ?? "").trim()
+    return {
+      kind: "failed",
+      message: stderr
+        ? `deployment graph doctor script failed: ${stderr}`
+        : `deployment graph doctor script failed with exit code ${result.status}`,
+    }
+  }
+  return { kind: "none" }
+}
+
+function resolveDeploymentGraphPath(cwd: string, value: string): string {
+  return isAbsolute(value) ? value : resolve(cwd, value)
+}
+
+function resolveDeploymentGraphDoctorScriptPath(
+  cwd: string,
+  scriptPath: string | undefined,
+): string | null {
+  if (scriptPath) return resolveDeploymentGraphPath(cwd, scriptPath)
+  const candidate = join(cwd, DEPLOYMENT_GRAPH_DOCTOR_SCRIPT)
+  return existsSync(candidate) ? candidate : null
+}
+
+function parseDeploymentGraphDoctorReport(source: string): DeploymentGraphDoctorReport {
+  const value = JSON.parse(source) as unknown
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("deployment graph doctor report must be an object")
+  }
+  const report = value as Record<string, unknown>
+  if (report.schemaVersion !== GRAPH_DOCTOR_REPORT_SCHEMA_VERSION) {
+    throw new Error(
+      `deployment graph doctor report schema must be ${GRAPH_DOCTOR_REPORT_SCHEMA_VERSION}, got ${String(
+        report.schemaVersion,
+      )}`,
+    )
+  }
+  if (typeof report.ok !== "boolean") {
+    throw new Error("deployment graph doctor report ok must be a boolean")
+  }
+  const graph = report.graph
+  if (!graph || typeof graph !== "object" || Array.isArray(graph)) {
+    throw new Error("deployment graph doctor report graph must be an object")
+  }
+  const graphRecord = graph as Record<string, unknown>
+  requireString(graphRecord.schemaVersion, "deployment graph doctor report graph.schemaVersion")
+  requireSha256ContentHash(
+    graphRecord.contentHash,
+    "deployment graph doctor report graph.contentHash",
+  )
+  parseGraphDoctorCountList(graphRecord.modules, "modules", "ids")
+  parseGraphDoctorCountList(graphRecord.plugins, "plugins", "ids")
+  parseGraphDoctorCountList(graphRecord.packageRecords, "packageRecords", "packageNames")
+
+  const diagnostics = arrayOfRecords(
+    report.diagnostics,
+    "deployment graph doctor report diagnostics",
+  ).map((diagnostic, index) => parseDeploymentGraphDiagnostic(diagnostic, index))
+
+  return {
+    schemaVersion: GRAPH_DOCTOR_REPORT_SCHEMA_VERSION,
+    ok: report.ok,
+    graph: graphRecord as DeploymentGraphDoctorReport["graph"],
+    diagnostics,
+  }
+}
+
+function parseGraphDoctorCountList(
+  value: unknown,
+  label: string,
+  listField: "ids" | "packageNames",
+): void {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error(`deployment graph doctor report graph.${label} must be an object`)
+  }
+  const record = value as Record<string, unknown>
+  if (typeof record.count !== "number") {
+    throw new Error(`deployment graph doctor report graph.${label}.count must be a number`)
+  }
+  collectStringArray(
+    record[listField],
+    `deployment graph doctor report graph.${label}.${listField}`,
+  )
+}
+
+function parseDeploymentGraphDiagnostic(
+  value: Record<string, unknown>,
+  index: number,
+): DeploymentGraphDiagnostic {
+  const severity = requireString(
+    value.severity,
+    `deployment graph doctor report diagnostics[${index}].severity`,
+  )
+  if (severity !== "info" && severity !== "warning" && severity !== "error") {
+    throw new Error(
+      `deployment graph doctor report diagnostics[${index}].severity must be info, warning, or error`,
+    )
+  }
+  const diagnostic: DeploymentGraphDiagnostic = {
+    code: requireString(value.code, `deployment graph doctor report diagnostics[${index}].code`),
+    severity,
+    message: requireString(
+      value.message,
+      `deployment graph doctor report diagnostics[${index}].message`,
+    ),
+  }
+  const source = stringField(value, "source")
+  const facet = stringField(value, "facet")
+  const location = stringField(value, "location")
+  const hint = stringField(value, "hint")
+  if (source) diagnostic.source = source
+  if (facet) diagnostic.facet = facet
+  if (location) diagnostic.location = location
+  if (hint) diagnostic.hint = hint
+  return diagnostic
+}
+
+function writeDeploymentGraphDoctorReport(
+  ctx: CommandContext,
+  report: DeploymentGraphDoctorReport,
+): void {
+  if (report.ok) {
+    ctx.stdout(
+      `deployment graph preflight: OK (${report.graph.contentHash}; ${report.graph.modules.count} modules; ${report.graph.plugins.count} plugins; ${report.graph.packageRecords.count} packages; ${report.diagnostics.length} diagnostics)\n`,
+    )
+    return
+  }
+
+  ctx.stderr("deployment graph preflight: FAILED\n")
+  for (const diagnostic of report.diagnostics) {
+    ctx.stderr(`  - ${formatDeploymentGraphDiagnostic(diagnostic)}\n`)
+  }
+}
+
+function formatDeploymentGraphDiagnostic(diagnostic: DeploymentGraphDiagnostic): string {
+  const suffix = [
+    diagnostic.source ? `source=${diagnostic.source}` : undefined,
+    diagnostic.facet ? `facet=${diagnostic.facet}` : undefined,
+    diagnostic.location ? `location=${diagnostic.location}` : undefined,
+  ]
+    .filter(Boolean)
+    .join(", ")
+  return `${diagnostic.code}: ${diagnostic.message}${suffix ? ` (${suffix})` : ""}${
+    diagnostic.hint ? ` Hint: ${diagnostic.hint}` : ""
+  }`
 }
 
 function resolveDeploymentArtifactManifestPath(

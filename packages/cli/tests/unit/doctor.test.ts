@@ -153,6 +153,47 @@ describe("runDeploymentGraphPreflight", () => {
     expect(out.join("")).toContain("1 required resource env")
   })
 
+  it("prefers a deployment graph doctor report contract when one is provided", () => {
+    writeDeploymentGraphDoctorReport(tmp)
+    const { ctx: c, out, err } = ctx()
+
+    const code = runDeploymentGraphPreflight(c, {
+      reportPath: "deployment-graph-report.json",
+    })
+
+    expect(code).toBe(0)
+    expect(err.join("")).toBe("")
+    expect(out.join("")).toContain("deployment graph preflight: OK")
+    expect(out.join("")).toContain("1 modules; 1 plugins; 2 packages")
+  })
+
+  it("fails with stable diagnostics from a deployment graph doctor report", () => {
+    writeDeploymentGraphDoctorReport(tmp, {
+      ok: false,
+      diagnostics: [
+        {
+          code: "VOYANT_GRAPH_ARTIFACT_STALE",
+          severity: "error",
+          source: "starters/operator/deployment-graph.generated.json",
+          facet: "deployment-graph",
+          message: "starters/operator/deployment-graph.generated.json is stale.",
+          hint: "Run `pnpm --filter operator graph:emit` to refresh generated artifacts.",
+        },
+      ],
+    })
+    const { ctx: c, err } = ctx()
+
+    const code = runDeploymentGraphPreflight(c, {
+      reportPath: "deployment-graph-report.json",
+    })
+
+    expect(code).toBe(1)
+    expect(err.join("")).toContain("deployment graph preflight: FAILED")
+    expect(err.join("")).toContain("VOYANT_GRAPH_ARTIFACT_STALE")
+    expect(err.join("")).toContain("source=starters/operator/deployment-graph.generated.json")
+    expect(err.join("")).toContain("facet=deployment-graph")
+  })
+
   it("fails when graph resource env is missing", () => {
     writeDeploymentGraphFixture(tmp)
     const { ctx: c, err } = ctx()
@@ -356,6 +397,57 @@ describe("doctorCommand --json", () => {
       "secret DATABASE_URL is required for database:postgres",
     )
   })
+
+  it("includes the deployment graph doctor report contract in JSON output", async () => {
+    writeDeploymentGraphDoctorReport(tmp, {
+      ok: false,
+      diagnostics: [
+        {
+          code: "VOYANT_GRAPH_MISSING_CAPABILITY",
+          severity: "error",
+          source: "@acme/voyant-plugin-loyalty",
+          facet: "requires.capabilities",
+          message: "Required capability identity.people is not provided.",
+        },
+      ],
+    })
+    const {
+      ctx: c,
+      out,
+      err,
+    } = ctx([
+      "--json",
+      "--skip-env",
+      "--skip-db",
+      "--skip-admin",
+      "--deployment-graph-report",
+      "deployment-graph-report.json",
+    ])
+
+    const code = await withDatabaseUrlAsync(undefined, () => doctorCommand(c))
+    const report = JSON.parse(out.join("")) as {
+      ok: boolean
+      checks: Array<{
+        id: string
+        status: string
+        diagnostics?: Array<{ code: string }>
+        report?: { schemaVersion: string; ok: boolean }
+      }>
+    }
+
+    expect(code).toBe(1)
+    expect(err.join("")).toBe("")
+    expect(report.ok).toBe(false)
+    expect(report.checks[1]).toMatchObject({
+      id: "deployment-graph",
+      status: "failed",
+      report: {
+        schemaVersion: "voyant.graph-doctor-report.v1",
+        ok: false,
+      },
+      diagnostics: [{ code: "VOYANT_GRAPH_MISSING_CAPABILITY" }],
+    })
+  })
 })
 
 function withDatabaseUrlSync<T>(value: string | undefined, fn: () => T): T {
@@ -472,6 +564,47 @@ function writeDeploymentGraphFixture(
     ],
   })
   return { graph }
+}
+
+function writeDeploymentGraphDoctorReport(
+  root: string,
+  options: {
+    ok?: boolean
+    diagnostics?: Array<{
+      code: string
+      severity: "info" | "warning" | "error"
+      source?: string
+      facet?: string
+      location?: string
+      message: string
+      hint?: string
+    }>
+  } = {},
+): void {
+  mkdirSync(root, { recursive: true })
+  writeJson(join(root, "deployment-graph-report.json"), {
+    schemaVersion: "voyant.graph-doctor-report.v1",
+    ok: options.ok ?? true,
+    graph: {
+      schemaVersion: "voyant.resolved-graph.v1",
+      contentHash: VALID_GRAPH_HASH,
+      target: "node",
+      mode: "self-hosted",
+      modules: {
+        count: 1,
+        ids: ["@voyant-travel/bookings"],
+      },
+      plugins: {
+        count: 1,
+        ids: ["@voyant-travel/plugin-smartbill"],
+      },
+      packageRecords: {
+        count: 2,
+        packageNames: ["@voyant-travel/bookings", "@voyant-travel/plugin-smartbill"],
+      },
+    },
+    diagnostics: options.diagnostics ?? [],
+  })
 }
 
 function writeJson(path: string, value: unknown): void {

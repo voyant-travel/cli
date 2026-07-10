@@ -318,7 +318,21 @@ function resolvePackageExportPath(
   const entry = exportsMap?.[key]
   const entryRel =
     typeof entry === "string" ? entry : ((entry as { import?: string } | undefined)?.import ?? null)
-  return entryRel ? join(dirname(pkgJsonPath), entryRel) : null
+  if (!entryRel) return null
+
+  const packageDir = dirname(pkgJsonPath)
+  // Workspace packages commonly export their TypeScript source while retaining
+  // build output. The published CLI runs on Node 20, which cannot import .ts.
+  if (entryRel.startsWith("./src/") && entryRel.endsWith(".ts")) {
+    const compiledEntry = join(
+      packageDir,
+      "dist",
+      `${entryRel.slice("./src/".length, -".ts".length)}.js`,
+    )
+    if (existsSync(compiledEntry)) return compiledEntry
+  }
+
+  return join(packageDir, entryRel)
 }
 
 function printReport(

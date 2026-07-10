@@ -14,6 +14,7 @@ OPEN-SOURCE COMMANDS
   generate link <a> <b>              Emit a defineLink snippet (a, b as <module>.<entity>)
   config <show|validate|path>        Inspect the nearest voyant.config.* manifest
   admin generate [--check]           Emit admin.extensions.generated.ts from the manifest
+                                     (--graph <artifact> derives selected admin packages from a resolved graph)
   admin generate --routes [--check]  Emit the code-assembled admin route module (--files: legacy thin files)
                                      (auto-includes the built-in core entry @voyant-travel/admin-app/core-extension
                                      when the package resolves with a ./core-extension export;
@@ -77,6 +78,7 @@ EXAMPLES
   voyant generate link crm.person products.product --right-list
   voyant config show
   voyant admin generate --check
+  voyant admin generate --graph deployment-graph.generated.json
   voyant admin generate --routes
   voyant admin generate --destinations
   voyant admin doctor

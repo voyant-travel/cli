@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path"
 
-import type { VoyantConfig } from "@voyant-travel/core/config"
+import type { ModuleEntry, VoyantConfig } from "@voyant-travel/core/config"
 import { resolveCoreAdminEntry } from "../lib/admin-core-entry.js"
 import {
   type AdminEntryScanResult,
@@ -41,11 +41,13 @@ import type { CommandContext, CommandResult } from "../types.js"
 
 /**
  * `voyant admin generate [--config <path>] [--out <file>] [--check]`
+ * `voyant admin generate --graph <path> [--config <path>] [--out <file>] [--check]`
  *
  * Manifest-driven admin composition (packaged-admin RFC §4.1): for every
- * module in voyant.config.*, derive its `<module>-react/admin` entry (or the
- * module's `package.json#voyant.adminEntry` override), verify the entry via
- * package.json inspection only, and emit a committed file of static imports:
+ * module in voyant.config.* — or each graph-selected package with an admin
+ * API surface — derive its `<module>-react/admin` entry (or the module's
+ * `package.json#voyant.adminEntry` override), verify the entry via package.json
+ * inspection only, and emit a committed file of static imports:
  *
  * ```ts
  * import { createPromotionsAdminExtension } from "@voyant-travel/promotions-react/admin"
@@ -106,40 +108,22 @@ import type { CommandContext, CommandResult } from "../types.js"
 export async function adminGenerateCommand(ctx: CommandContext): Promise<CommandResult> {
   const args = parseArgs(ctx.argv)
   const configFlag = getStringFlag(args, "config")
+  const graphFlag = getStringFlag(args, "graph")
   const outFlag = getStringFlag(args, "out")
   const check = getBooleanFlag(args, "check")
   const routesMode = getBooleanFlag(args, "routes")
 
-  const configPath = resolveConfigPath({ path: configFlag, cwd: ctx.cwd })
-  if (!configPath) {
-    ctx.stderr(
-      configFlag
-        ? `No voyant config found at ${configFlag}\n`
-        : `No voyant.config.* found in ${ctx.cwd} or any parent directory.\n`,
-    )
-    return 1
-  }
-
-  let config: VoyantConfig
-  try {
-    const loaded = await loadVoyantConfigFile<VoyantConfig>(configPath)
-    config = loaded.config
-  } catch (err) {
-    ctx.stderr(`${err instanceof Error ? err.message : String(err)}\n`)
-    return 1
-  }
-
-  const configDir = dirname(configPath)
-  const modules = config.modules ?? []
-  const results = scanAdminEntries(modules, configDir)
+  const input = await resolveAdminGenerationInput({ ctx, configFlag, graphFlag })
+  if (!input) return 1
+  const results = scanAdminEntries(input.modules, input.dir)
 
   if (routesMode) {
     const routesOptions = {
       ctx,
-      configDir,
+      configDir: input.dir,
       results,
       check,
-      routesConfig: resolveAdminRoutesManifestConfig(config),
+      routesConfig: resolveAdminRoutesManifestConfig(input.config),
       routesDirFlag: getStringFlag(args, "routes-dir"),
     }
     return getBooleanFlag(args, "files")
@@ -148,7 +132,7 @@ export async function adminGenerateCommand(ctx: CommandContext): Promise<Command
   }
 
   if (getBooleanFlag(args, "destinations")) {
-    return generateDestinationsModule({ ctx, configDir, results, check, outFlag })
+    return generateDestinationsModule({ ctx, configDir: input.dir, results, check, outFlag })
   }
 
   for (const result of results) {
@@ -157,20 +141,20 @@ export async function adminGenerateCommand(ctx: CommandContext): Promise<Command
   }
 
   const found = results.filter((result) => result.status === "found")
-  const content = renderGeneratedFile(found)
+  const content = renderGeneratedFile(found, input.source)
 
   const outPath = outFlag
     ? isAbsolute(outFlag)
       ? outFlag
       : resolve(ctx.cwd, outFlag)
-    : join(configDir, DEFAULT_GENERATED_RELATIVE_PATH)
+    : join(input.dir, DEFAULT_GENERATED_RELATIVE_PATH)
   const printablePath = relative(ctx.cwd, outPath) || outPath
 
   if (check) {
     const existing = existsSync(outPath) ? readFileSync(outPath, "utf8") : null
     if (existing === content) {
       ctx.stdout(
-        `[admin-generate] ${modules.length} modules, ${found.length} admin entries, ${printablePath} is up to date\n`,
+        `[admin-generate] ${input.summary}, ${found.length} admin entries, ${printablePath} is up to date\n`,
       )
       return 0
     }
@@ -185,9 +169,126 @@ export async function adminGenerateCommand(ctx: CommandContext): Promise<Command
   mkdirSync(dirname(outPath), { recursive: true })
   writeFileSync(outPath, content)
   ctx.stdout(
-    `[admin-generate] ${modules.length} modules, ${found.length} admin entries, wrote ${printablePath}\n`,
+    `[admin-generate] ${input.summary}, ${found.length} admin entries, wrote ${printablePath}\n`,
   )
   return 0
+}
+
+type AdminGenerationSource = "config" | "graph"
+
+interface AdminGenerationInput {
+  config: unknown
+  dir: string
+  modules: ReadonlyArray<ModuleEntry>
+  source: AdminGenerationSource
+  summary: string
+}
+
+async function resolveAdminGenerationInput({
+  ctx,
+  configFlag,
+  graphFlag,
+}: {
+  ctx: CommandContext
+  configFlag: string | undefined
+  graphFlag: string | undefined
+}): Promise<AdminGenerationInput | undefined> {
+  if (graphFlag) {
+    const graphPath = isAbsolute(graphFlag) ? graphFlag : resolve(ctx.cwd, graphFlag)
+    let modules: string[]
+    try {
+      modules = readGraphSelectedAdminPackages(graphPath)
+    } catch (err) {
+      ctx.stderr(`${err instanceof Error ? err.message : String(err)}\n`)
+      return undefined
+    }
+
+    let config: unknown = {}
+    if (configFlag) {
+      const configPath = resolveConfigPath({ path: configFlag, cwd: ctx.cwd })
+      if (!configPath) {
+        ctx.stderr(`No voyant config found at ${configFlag}\n`)
+        return undefined
+      }
+      try {
+        config = (await loadVoyantConfigFile<VoyantConfig>(configPath)).config
+      } catch (err) {
+        ctx.stderr(`${err instanceof Error ? err.message : String(err)}\n`)
+        return undefined
+      }
+    }
+
+    return {
+      config,
+      dir: dirname(graphPath),
+      modules,
+      source: "graph",
+      summary: `${modules.length} graph-selected packages`,
+    }
+  }
+
+  const configPath = resolveConfigPath({ path: configFlag, cwd: ctx.cwd })
+  if (!configPath) {
+    ctx.stderr(
+      configFlag
+        ? `No voyant config found at ${configFlag}\n`
+        : `No voyant.config.* found in ${ctx.cwd} or any parent directory.\n`,
+    )
+    return undefined
+  }
+
+  let config: VoyantConfig
+  try {
+    config = (await loadVoyantConfigFile<VoyantConfig>(configPath)).config
+  } catch (err) {
+    ctx.stderr(`${err instanceof Error ? err.message : String(err)}\n`)
+    return undefined
+  }
+
+  const modules = config.modules ?? []
+  return {
+    config,
+    dir: dirname(configPath),
+    modules,
+    source: "config",
+    summary: `${modules.length} modules`,
+  }
+}
+
+function readGraphSelectedAdminPackages(graphPath: string): string[] {
+  if (!existsSync(graphPath)) {
+    throw new Error(`No deployment graph found at ${graphPath}`)
+  }
+
+  let graph: unknown
+  try {
+    graph = JSON.parse(readFileSync(graphPath, "utf8"))
+  } catch (err) {
+    throw new Error(
+      `Failed to read deployment graph at ${graphPath}: ${err instanceof Error ? err.message : String(err)}`,
+    )
+  }
+
+  if (!isRecord(graph) || !Array.isArray(graph.modules)) {
+    throw new Error(`Deployment graph at ${graphPath} has no modules array`)
+  }
+
+  const packages = new Set<string>()
+  for (const unit of [...graph.modules, ...(Array.isArray(graph.plugins) ? graph.plugins : [])]) {
+    if (
+      isRecord(unit) &&
+      typeof unit.packageName === "string" &&
+      Array.isArray(unit.api) &&
+      unit.api.some((route) => isRecord(route) && route.surface === "admin")
+    ) {
+      packages.add(unit.packageName)
+    }
+  }
+  return [...packages]
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null
 }
 
 function describeResult(result: AdminEntryScanResult): string {
@@ -208,13 +309,24 @@ function describeResult(result: AdminEntryScanResult): string {
  * Render the committed composition file. Deterministic output (manifest
  * order) so `--check` is a pure string comparison.
  */
-export function renderGeneratedFile(found: ReadonlyArray<AdminEntryScanResult>): string {
-  const header = [
-    "// GENERATED by voyant admin generate — do not edit.",
-    "// Recreate after changing the modules list in voyant.config.*:",
-    "//   voyant admin generate",
-    "",
-  ]
+export function renderGeneratedFile(
+  found: ReadonlyArray<AdminEntryScanResult>,
+  source: AdminGenerationSource = "config",
+): string {
+  const header =
+    source === "graph"
+      ? [
+          "// GENERATED by voyant admin generate — do not edit.",
+          "// Recreate from the selected deployment graph:",
+          "//   voyant admin generate --graph deployment-graph.generated.json",
+          "",
+        ]
+      : [
+          "// GENERATED by voyant admin generate — do not edit.",
+          "// Recreate after changing the modules list in voyant.config.*:",
+          "//   voyant admin generate",
+          "",
+        ]
 
   const imports = found.map((entry) => `import { ${entry.exportName} } from "${entry.importSpec}"`)
 

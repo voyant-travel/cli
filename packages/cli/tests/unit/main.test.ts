@@ -108,4 +108,14 @@ describe("main", () => {
     expect(code).toBe(1)
     expect(stderr.join("")).toContain("Usage: voyant exec")
   })
+
+  it("dispatches top-level build and migrate commands", async () => {
+    const build = makeIo()
+    expect(await main(["build"], build.opts)).toBe(1)
+    expect(build.stderr.join("")).toContain("voyant build: No voyant.config.* found")
+
+    const migrate = makeIo()
+    expect(await main(["migrate"], migrate.opts)).toBe(1)
+    expect(migrate.stderr.join("")).toContain("voyant migrate: No voyant.config.* found")
+  })
 })

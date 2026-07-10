@@ -19,11 +19,13 @@ voyant --help
 | `voyant generate link <a> <b>` | Print a `defineLink` snippet — `<a>` and `<b>` as `<module>.<entity>` |
 | `voyant config <show\|validate\|path>` | Inspect the nearest `voyant.config.*` |
 | `voyant admin generate [--graph <artifact>]` | Emit packaged admin composition from config or a resolved deployment graph |
-| `voyant doctor [--json]` | Run the env, deployment graph doctor, database, and admin preflight checks; `--json` emits a `voyant.doctor.v1` report and embeds the `voyant.graph-doctor-report.v1` graph report when available |
+| `voyant doctor [--json]` | Validate that `.voyant/` represents the current project graph, then run env, database, and admin preflight checks |
 | `voyant db <generate\|migrate\|studio\|push\|check>` | Proxy drizzle-kit to the project root |
 | `voyant db sync-links [--out <file>]` | Emit DDL for cross-module link tables |
 | `voyant exec <script.ts> [args…]` | Run a TS/JS script with native strip-types |
-| `voyant dev [--file <path>]` | Watch + serve workflows or the graph runtime locally |
+| `voyant dev [--config <path>]` | Resolve the project, refresh `.voyant/`, and watch + serve its generated runtime |
+| `voyant build [--json]` | Resolve one target-neutral graph and write deterministic `.voyant/` outputs |
+| `voyant migrate [--json]` | Validate `.voyant/` and report the framework-authored migration plan |
 | `voyant workflows <subcommand>` | Build, serve, inspect, and self-host workflows |
 | `voyant --version` | Print the CLI version |
 
@@ -63,6 +65,35 @@ load during manifest extraction and in the self-hosted Node runner.
 
 Use `--platform neutral` or `--platform browser` for runtimes that do not load
 workflow bundles from the filesystem.
+
+## Framework project resolver contract
+
+Project lifecycle commands resolve `@voyant-travel/framework/project` relative
+to the project, never from the CLI's dependencies. That export must provide:
+
+```ts
+resolveProject({ project, projectRoot, configPath }): Promise<{
+  graph: {
+    schemaVersion: "voyant.resolved-graph.v1"
+    contentHash: `sha256:${string}`
+    diagnostics: readonly unknown[]
+    deployment?: { target?: undefined }
+  }
+  artifacts: {
+    runtimeEntry: string
+    files: readonly { path: string; contents: string }[]
+    migrationPlan: {
+      schemaVersion: "voyant.migration-plan.v1"
+      contentHash: string
+      migrations: readonly unknown[]
+    }
+  }
+}>
+```
+
+`project` is the default export loaded from the single `voyant.config.*` input.
+Generated paths are relative to `.voyant/`, must not escape it, and the runtime
+entry and migration plan must carry the graph's canonical `contentHash`.
 
 ## Programmatic use
 

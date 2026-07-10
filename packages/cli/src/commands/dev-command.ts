@@ -1,12 +1,19 @@
 import { existsSync, readFileSync } from "node:fs"
 import { dirname, isAbsolute, join, resolve } from "node:path"
 import { parseArgs } from "../lib/args.js"
+import { resolveConfigPath } from "../lib/config-loader.js"
+import {
+  PROJECT_ARTIFACT_DIRECTORY,
+  PROJECT_ARTIFACT_MANIFEST,
+  prepareProjectArtifacts,
+} from "../lib/project-artifacts.js"
 import { waitForShutdownSignal } from "../lib/shutdown.js"
 import type { CommandContext, CommandResult } from "../types.js"
 import { type DevDeps, defaultDevDeps, parseServeOptions, runDev } from "./dev.js"
 
 export interface DevCommandDeps {
   devDeps?: DevDeps
+  prepareArtifacts?: typeof prepareProjectArtifacts
   waitForShutdown?: (cleanup: () => Promise<void>) => Promise<void>
 }
 
@@ -26,7 +33,7 @@ export async function devCommand(
     return parsed.exitCode
   }
 
-  const entry = resolveDevEntryFile(ctx.cwd, args.flags)
+  const entry = await resolveDevEntryFile(ctx.cwd, args.flags, deps.prepareArtifacts)
   if (!entry.ok) {
     ctx.stderr(`${entry.message}\n`)
     return 2
@@ -37,7 +44,7 @@ export async function devCommand(
   let handle: { close: () => Promise<void>; url: string } | undefined
   try {
     handle = await runDev(
-      { entryFile: entry.file, outDir, options: parsed.options },
+      { entryFile: entry.file, outDir, options: parsed.options, contentHash: entry.contentHash },
       deps.devDeps ?? (await defaultDevDeps()),
     )
   } catch (err) {
@@ -48,6 +55,7 @@ export async function devCommand(
   ctx.stderr(`voyant dev: listening at ${handle.url}\n`)
   ctx.stderr(`  watching ${entry.file}\n`)
   if (entry.manifest) ctx.stderr(`  graph     ${entry.manifest}\n`)
+  if (entry.contentHash) ctx.stderr(`  hash      ${entry.contentHash}\n`)
   ctx.stderr(`  output   ${outDir}\n`)
   ctx.stderr("Press Ctrl+C to stop.\n")
 
@@ -66,7 +74,7 @@ export async function devCommand(
 const DEV_USAGE = `voyant dev - watch and serve workflows locally
 
 usage:
-  voyant dev [--file <path>] [--deployment-artifacts <path>] [--port <n>] [--host <h>] [--out <dir>] [--dashboard <path>]
+  voyant dev [--file <path>] [--config <path>] [--deployment-artifacts <path>] [--port <n>] [--host <h>] [--out <dir>] [--dashboard <path>]
 `
 
 const DEFAULT_DEPLOYMENT_ARTIFACTS = "deployment-artifacts.generated.json"
@@ -74,6 +82,7 @@ const MANAGED_NODE_RUNTIME_KIND = "managed-profile-node"
 
 interface DeploymentArtifactManifest {
   schemaVersion?: unknown
+  graphHash?: unknown
   runtimeEntries?: unknown
 }
 
@@ -88,15 +97,44 @@ type DevEntryResult =
       ok: true
       file: string
       manifest?: string
+      contentHash?: string
     }
   | {
       ok: false
       message: string
     }
 
-function resolveDevEntryFile(cwd: string, flags: Record<string, string | boolean>): DevEntryResult {
+async function resolveDevEntryFile(
+  cwd: string,
+  flags: Record<string, string | boolean>,
+  prepareArtifacts: typeof prepareProjectArtifacts = prepareProjectArtifacts,
+): Promise<DevEntryResult> {
   if (typeof flags.file === "string") {
     return { ok: true, file: flags.file }
+  }
+
+  const configFlag = typeof flags.config === "string" ? flags.config : undefined
+  const projectConfig = resolveConfigPath({ cwd, path: configFlag })
+  if (projectConfig && flags["deployment-artifacts"] === undefined) {
+    try {
+      const prepared = await prepareArtifacts(cwd, { configPath: projectConfig })
+      return {
+        ok: true,
+        file: prepared.runtimeEntryPath,
+        manifest: join(PROJECT_ARTIFACT_DIRECTORY, PROJECT_ARTIFACT_MANIFEST),
+        contentHash: prepared.manifest.graphHash,
+      }
+    } catch (error) {
+      return {
+        ok: false,
+        message: `voyant dev: project preparation failed: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      }
+    }
+  }
+  if (configFlag && !projectConfig) {
+    return { ok: false, message: `voyant dev: project config was not found: ${configFlag}` }
   }
 
   const manifestPath =
@@ -152,6 +190,7 @@ function resolveDevEntryFile(cwd: string, flags: Record<string, string | boolean
     ok: true,
     file: resolveArtifactPath(String(runtimeEntry.file), resolvedManifestPath),
     manifest: manifestPath,
+    contentHash: typeof manifest.graphHash === "string" ? manifest.graphHash : undefined,
   }
 }
 

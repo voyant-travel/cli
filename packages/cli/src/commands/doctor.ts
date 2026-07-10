@@ -4,6 +4,7 @@ import { existsSync, readFileSync } from "node:fs"
 import { dirname, isAbsolute, join, resolve } from "node:path"
 
 import { getBooleanFlag, getStringFlag, parseArgs } from "../lib/args.js"
+import { resolveConfigPath } from "../lib/config-loader.js"
 import {
   type DeploymentGraphDiagnostic,
   type DeploymentGraphDoctorReport,
@@ -11,6 +12,7 @@ import {
   parseDeploymentGraphDoctorReport,
 } from "../lib/deployment-graph-doctor-report.js"
 import { printJson, wantsJson } from "../lib/output.js"
+import { checkProjectArtifacts } from "../lib/project-artifacts.js"
 import type { CommandContext, CommandResult } from "../types.js"
 import { adminDoctorCommand } from "./admin-doctor.js"
 import { dbDoctorCommand } from "./db-doctor.js"
@@ -55,12 +57,8 @@ export async function doctorCommand(ctx: CommandContext): Promise<CommandResult>
   }
 
   if (!getBooleanFlag(args, "skip-deployment-graph")) {
-    const code = runDeploymentGraphPreflight(ctx, {
-      manifestPath: getStringFlag(args, "deployment-artifacts"),
-      reportPath: getStringFlag(args, "deployment-graph-report"),
-      doctorScriptPath: getStringFlag(args, "deployment-graph-doctor-script"),
-    })
-    if (code !== 0) failed = true
+    const result = await runConfiguredDeploymentGraphPreflight(ctx, args)
+    if (result.exitCode !== 0) failed = true
   }
 
   if (!getBooleanFlag(args, "skip-db")) {
@@ -90,6 +88,7 @@ export interface DoctorJsonCheck {
   stderr: string
   diagnostics?: readonly DeploymentGraphDiagnostic[]
   report?: DeploymentGraphDoctorReport
+  contentHash?: string
 }
 
 export interface DoctorJsonReport {
@@ -122,13 +121,7 @@ async function doctorJsonCommand(
   if (getBooleanFlag(args, "skip-deployment-graph")) {
     checks.push(skippedCheck("deployment-graph"))
   } else {
-    checks.push(
-      await captureDeploymentGraphDoctorCheck(ctx, {
-        manifestPath: getStringFlag(args, "deployment-artifacts"),
-        reportPath: getStringFlag(args, "deployment-graph-report"),
-        doctorScriptPath: getStringFlag(args, "deployment-graph-doctor-script"),
-      }),
-    )
+    checks.push(await captureDeploymentGraphDoctorCheck(ctx, args))
   }
 
   if (getBooleanFlag(args, "skip-db")) {
@@ -165,17 +158,17 @@ async function doctorJsonCommand(
 
 async function captureDeploymentGraphDoctorCheck(
   ctx: CommandContext,
-  options: DeploymentGraphPreflightOptions,
+  args: ReturnType<typeof parseArgs>,
 ): Promise<DoctorJsonCheck> {
   const stdout: string[] = []
   const stderr: string[] = []
-  const result = runDeploymentGraphPreflightWithResult(
+  const result = await runConfiguredDeploymentGraphPreflight(
     {
       ...ctx,
       stdout: (chunk) => stdout.push(chunk),
       stderr: (chunk) => stderr.push(chunk),
     },
-    options,
+    args,
   )
   const out = stdout.join("")
   return {
@@ -184,6 +177,7 @@ async function captureDeploymentGraphDoctorCheck(
     exitCode: result.exitCode,
     stdout: out,
     stderr: stderr.join(""),
+    ...(result.contentHash ? { contentHash: result.contentHash } : {}),
     ...(result.report ? { report: result.report, diagnostics: result.report.diagnostics } : {}),
   }
 }
@@ -257,6 +251,7 @@ interface DeploymentGraphPreflightOptions {
 interface DeploymentGraphPreflightResult {
   exitCode: 0 | 1
   report?: DeploymentGraphDoctorReport
+  contentHash?: string
 }
 
 interface DeploymentArtifactManifest {
@@ -312,6 +307,45 @@ const EXPECTED_NODE_RUNTIME_ENTRY_FILE = "src/runtime-entry.generated.ts"
 const EXPECTED_NODE_RUNTIME_ENTRY_KIND = "managed-profile-node"
 const EXPECTED_PROFILE_SNAPSHOT = "managed-profile.json"
 const SHA256_CONTENT_HASH_PATTERN = /^sha256:[a-f0-9]{64}$/
+
+async function runConfiguredDeploymentGraphPreflight(
+  ctx: CommandContext,
+  args: ReturnType<typeof parseArgs>,
+): Promise<DeploymentGraphPreflightResult> {
+  const legacyOptions: DeploymentGraphPreflightOptions = {
+    manifestPath: getStringFlag(args, "deployment-artifacts"),
+    reportPath: getStringFlag(args, "deployment-graph-report"),
+    doctorScriptPath: getStringFlag(args, "deployment-graph-doctor-script"),
+  }
+  const hasExplicitLegacyInput = Object.values(legacyOptions).some(Boolean)
+  const configFlag = getStringFlag(args, "config")
+  const configPath = resolveConfigPath({
+    cwd: ctx.cwd,
+    path: configFlag,
+  })
+  if (configFlag && !configPath && !hasExplicitLegacyInput) {
+    ctx.stderr("deployment graph preflight: FAILED\n")
+    ctx.stderr(`  - Voyant project config was not found: ${configFlag}\n`)
+    return { exitCode: 1 }
+  }
+  if (!configPath || hasExplicitLegacyInput) {
+    return runDeploymentGraphPreflightWithResult(ctx, legacyOptions)
+  }
+
+  try {
+    const checked = await checkProjectArtifacts(ctx.cwd, { configPath })
+    const moduleCount = Array.isArray(checked.graph.modules) ? checked.graph.modules.length : 0
+    const pluginCount = Array.isArray(checked.graph.plugins) ? checked.graph.plugins.length : 0
+    ctx.stdout(
+      `deployment graph preflight: OK (${checked.manifest.graphHash}; ${moduleCount} modules; ${pluginCount} plugins; ${checked.migrationPlan.migrations.length} migrations)\n`,
+    )
+    return { exitCode: 0, contentHash: checked.manifest.graphHash }
+  } catch (error) {
+    ctx.stderr("deployment graph preflight: FAILED\n")
+    ctx.stderr(`  - ${reason(error)}\n`)
+    return { exitCode: 1 }
+  }
+}
 
 /** Validate generated deployment graph artifacts when present at the deployment root. */
 export function runDeploymentGraphPreflight(

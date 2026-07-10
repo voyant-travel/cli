@@ -87,6 +87,66 @@ function writeGraphFixture(root: string) {
   )
 }
 
+function writeAdminFacetGraphFixture(root: string) {
+  writeFileSync(
+    join(root, "deployment-graph.generated.json"),
+    JSON.stringify({
+      schemaVersion: "voyant.resolved-graph.v1",
+      deployment: { providers: { database: "postgres" } },
+      modules: [
+        {
+          id: "@acme/voyant-loyalty",
+          packageName: "@acme/voyant-loyalty",
+          admin: {
+            copy: [
+              {
+                id: "@acme/voyant-loyalty#copy.admin",
+                namespace: "loyalty.admin",
+                fallbackLocale: "en",
+                runtime: { entry: "@acme/voyant-loyalty/admin/copy", export: "messages" },
+              },
+            ],
+            routes: [
+              {
+                id: "@acme/voyant-loyalty#admin.route.index",
+                path: "/loyalty",
+                runtime: { entry: "@acme/voyant-loyalty/admin", export: "LoyaltyPage" },
+                requiredScopes: ["loyalty:read"],
+                copy: [{ namespace: "loyalty.admin", key: "routes.index.title" }],
+              },
+            ],
+            nav: [
+              {
+                id: "@acme/voyant-loyalty#admin.nav",
+                routeId: "@acme/voyant-loyalty#admin.route.index",
+                label: { namespace: "loyalty.admin", key: "nav.loyalty" },
+                order: 20,
+              },
+            ],
+            slots: [
+              {
+                id: "@acme/voyant-loyalty#admin.slot.summary",
+                routeId: "@acme/voyant-loyalty#admin.route.index",
+              },
+            ],
+            contributions: [
+              {
+                id: "@acme/voyant-loyalty#admin.contribution.balance",
+                slotId: "@acme/voyant-loyalty#admin.slot.summary",
+                runtime: { entry: "@acme/voyant-loyalty/admin", export: "BalanceWidget" },
+                order: 10,
+                requiredScopes: ["loyalty:read"],
+                copy: [{ namespace: "loyalty.admin", key: "widgets.balance.title" }],
+              },
+            ],
+          },
+        },
+      ],
+      plugins: [],
+    }),
+  )
+}
+
 describe("adminGenerateCommand", () => {
   let tmp: string
 
@@ -136,7 +196,104 @@ describe("adminGenerateCommand", () => {
     expect(content).toContain(
       `import { createFooAdminExtension } from "@voyant-travel/foo-react/admin"`,
     )
-    expect(stdout.join("")).toContain("1 graph-selected packages, 1 admin entries, wrote")
+    expect(stdout.join("")).toContain(
+      "1 graph-selected packages (legacy fallback), 1 admin entries, wrote",
+    )
+  })
+
+  it("generates the complete admin surface from graph-owned symbolic references", async () => {
+    writeAdminFacetGraphFixture(tmp)
+    const { ctx, stdout, stderr } = makeCtx(["--graph", "deployment-graph.generated.json"], tmp)
+
+    expect(await adminGenerateCommand(ctx)).toBe(0)
+    expect(stderr).toEqual([])
+
+    const content = readFileSync(join(tmp, "src", "admin.extensions.generated.ts"), "utf8")
+    expect(content).toContain('import("@acme/voyant-loyalty/admin")')
+    expect(content).toContain("module.LoyaltyPage")
+    expect(content).toContain("module.BalanceWidget")
+    expect(content).toContain('import("@acme/voyant-loyalty/admin/copy")')
+    expect(content).toContain("module.messages")
+    expect(content).toContain("export const generatedAdminGraph = {")
+    expect(content).toContain('id: "@acme/voyant-loyalty#admin.route.index"')
+    expect(content).toContain("runtime: adminRouteIndexRuntime")
+    expect(content).toContain('routeId: "@acme/voyant-loyalty#admin.route.index"')
+    expect(content).toContain('slotId: "@acme/voyant-loyalty#admin.slot.summary"')
+    expect(content).toContain("runtime: adminContributionBalanceRuntime")
+    expect(content).toContain("runtime: copyAdminRuntime")
+    expect(content).not.toContain("createLoyaltyAdminExtension")
+    expect(stdout.join("")).toContain("1 graph-selected units, 5 admin facets, wrote")
+  })
+
+  it("rejects duplicate graph admin ids with a machine-readable diagnostic", async () => {
+    writeAdminFacetGraphFixture(tmp)
+    const graphPath = join(tmp, "deployment-graph.generated.json")
+    const graph = JSON.parse(readFileSync(graphPath, "utf8"))
+    graph.modules[0].admin.slots[0].id = graph.modules[0].admin.routes[0].id
+    writeFileSync(graphPath, JSON.stringify(graph))
+    const { ctx, stderr } = makeCtx(["--graph", "deployment-graph.generated.json"], tmp)
+
+    expect(await adminGenerateCommand(ctx)).toBe(1)
+    expect(JSON.parse(stderr.join(""))).toMatchObject({
+      code: "VOYANT_ADMIN_GRAPH_DUPLICATE_ID",
+      reference: "@acme/voyant-loyalty#admin.route.index",
+    })
+    expect(existsSync(join(tmp, "src", "admin.extensions.generated.ts"))).toBe(false)
+  })
+
+  it("rejects unresolved graph admin references with a machine-readable diagnostic", async () => {
+    writeAdminFacetGraphFixture(tmp)
+    const graphPath = join(tmp, "deployment-graph.generated.json")
+    const graph = JSON.parse(readFileSync(graphPath, "utf8"))
+    graph.modules[0].admin.nav[0].routeId = "@acme/voyant-loyalty#admin.route.missing"
+    writeFileSync(graphPath, JSON.stringify(graph))
+    const { ctx, stderr } = makeCtx(["--graph", "deployment-graph.generated.json"], tmp)
+
+    expect(await adminGenerateCommand(ctx)).toBe(1)
+    expect(JSON.parse(stderr.join(""))).toMatchObject({
+      code: "VOYANT_ADMIN_GRAPH_UNKNOWN_REFERENCE",
+      facetId: "@acme/voyant-loyalty#admin.nav",
+      reference: "@acme/voyant-loyalty#admin.route.missing",
+    })
+  })
+
+  it("emits identical admin code across Node hosting targets and graph ordering", async () => {
+    writeAdminFacetGraphFixture(tmp)
+    const graphPath = join(tmp, "deployment-graph.generated.json")
+    const graph = JSON.parse(readFileSync(graphPath, "utf8"))
+    graph.deployment = { target: { kind: "docker" } }
+    writeFileSync(graphPath, JSON.stringify(graph))
+    expect(
+      await adminGenerateCommand(
+        makeCtx(["--graph", graphPath, "--out", "src/docker.generated.ts"], tmp).ctx,
+      ),
+    ).toBe(0)
+
+    graph.deployment = { target: { kind: "voyant-cloud" } }
+    for (const key of ["copy", "routes", "nav", "slots", "contributions"]) {
+      graph.modules[0].admin[key].reverse()
+    }
+    graph.modules.reverse()
+    writeFileSync(graphPath, JSON.stringify(graph))
+    expect(
+      await adminGenerateCommand(
+        makeCtx(["--graph", graphPath, "--out", "src/cloud.generated.ts"], tmp).ctx,
+      ),
+    ).toBe(0)
+
+    expect(readFileSync(join(tmp, "src", "cloud.generated.ts"), "utf8")).toBe(
+      readFileSync(join(tmp, "src", "docker.generated.ts"), "utf8"),
+    )
+  })
+
+  it("never sends facet graphs through legacy source-scanning generation modes", async () => {
+    writeAdminFacetGraphFixture(tmp)
+    const { ctx, stderr } = makeCtx(["--graph", "deployment-graph.generated.json", "--routes"], tmp)
+
+    expect(await adminGenerateCommand(ctx)).toBe(1)
+    expect(JSON.parse(stderr.join(""))).toMatchObject({
+      code: "VOYANT_ADMIN_GRAPH_LEGACY_MODE",
+    })
   })
 
   it("rejects a graph that does not declare modules", async () => {

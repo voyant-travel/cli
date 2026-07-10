@@ -36,25 +36,32 @@ import {
 } from "../lib/admin-routes.js"
 import { getBooleanFlag, getStringFlag, parseArgs } from "../lib/args.js"
 import { loadVoyantConfigFile, resolveConfigPath } from "../lib/config-loader.js"
-import { toPascalCase } from "../lib/strings.js"
+import { toCamelCase, toPascalCase } from "../lib/strings.js"
 import type { CommandContext, CommandResult } from "../types.js"
 
 /**
  * `voyant admin generate [--config <path>] [--out <file>] [--check]`
  * `voyant admin generate --graph <path> [--config <path>] [--out <file>] [--check]`
  *
- * Manifest-driven admin composition (packaged-admin RFC §4.1): for every
- * module in voyant.config.* — or each graph-selected package with an admin
- * API surface — derive its `<module>-react/admin` entry (or the module's
- * `package.json#voyant.adminEntry` override), verify the entry via package.json
- * inspection only, and emit a committed file of static imports:
+ * Graph-driven admin composition: a `voyant.resolved-graph.v1` carrying
+ * package-owned `unit.admin` facets emits one deterministic, target-neutral
+ * static entry module. Route, navigation, copy, slot, and contribution
+ * declarations come directly from the graph, and executable exports stay
+ * behind literal dynamic imports so the Node bundle preserves lazy boundaries.
+ *
+ * Compatibility: config input, and old graphs with no `unit.admin` facets,
+ * retain the packaged-admin RFC §4.1 scanner. That isolated legacy path derives
+ * `<module>-react/admin` (or `package.json#voyant.adminEntry`) entries. A graph
+ * with any admin facet never enters the scanner.
+ *
+ * The compatibility output remains:
  *
  * ```ts
  * import { createPromotionsAdminExtension } from "@voyant-travel/promotions-react/admin"
  * export const generatedAdminExtensionFactories = { ... } as const
  * ```
  *
- * Factories — not instances — so hosts can pass localized labels/icons.
+ * Factories — not instances — so legacy hosts can pass localized labels/icons.
  *
  * `voyant admin generate --routes [--routes-dir <dir>] [--out <file>] [--check]`
  *
@@ -115,6 +122,49 @@ export async function adminGenerateCommand(ctx: CommandContext): Promise<Command
 
   const input = await resolveAdminGenerationInput({ ctx, configFlag, graphFlag })
   if (!input) return 1
+  if (input.graphAdmin && (routesMode || getBooleanFlag(args, "destinations"))) {
+    ctx.stderr(
+      formatGraphAdminError(
+        new AdminGraphError(
+          "VOYANT_ADMIN_GRAPH_LEGACY_MODE",
+          "Graph-owned admin facets are emitted by `voyant admin generate --graph`; --routes, --routes --files, and --destinations are legacy source-scanning modes for old graphs only.",
+        ),
+      ),
+    )
+    return 1
+  }
+  if (input.graphAdmin && !routesMode && !getBooleanFlag(args, "destinations")) {
+    const content = renderGeneratedAdminGraph(input.graphAdmin)
+    const outPath = outFlag
+      ? isAbsolute(outFlag)
+        ? outFlag
+        : resolve(ctx.cwd, outFlag)
+      : join(input.dir, DEFAULT_GENERATED_RELATIVE_PATH)
+    const printablePath = relative(ctx.cwd, outPath) || outPath
+
+    if (check) {
+      const existing = existsSync(outPath) ? readFileSync(outPath, "utf8") : null
+      if (existing === content) {
+        ctx.stdout(
+          `[admin-generate] ${input.summary}, ${input.graphAdmin.facetCount} admin facets, ${printablePath} is up to date\n`,
+        )
+        return 0
+      }
+      ctx.stderr(
+        existing === null
+          ? `[admin-generate] ${printablePath} is missing — run \`voyant admin generate\`\n`
+          : `[admin-generate] ${printablePath} is out of date — run \`voyant admin generate\`\n`,
+      )
+      return 1
+    }
+
+    mkdirSync(dirname(outPath), { recursive: true })
+    writeFileSync(outPath, content)
+    ctx.stdout(
+      `[admin-generate] ${input.summary}, ${input.graphAdmin.facetCount} admin facets, wrote ${printablePath}\n`,
+    )
+    return 0
+  }
   const results = scanAdminEntries(input.modules, input.dir)
 
   if (routesMode) {
@@ -179,6 +229,7 @@ type AdminGenerationSource = "config" | "graph"
 interface AdminGenerationInput {
   config: unknown
   dir: string
+  graphAdmin?: ResolvedAdminGraph
   modules: ReadonlyArray<ModuleEntry>
   source: AdminGenerationSource
   summary: string
@@ -195,11 +246,11 @@ async function resolveAdminGenerationInput({
 }): Promise<AdminGenerationInput | undefined> {
   if (graphFlag) {
     const graphPath = isAbsolute(graphFlag) ? graphFlag : resolve(ctx.cwd, graphFlag)
-    let modules: string[]
+    let graphInput: GraphAdminInput
     try {
-      modules = readGraphSelectedAdminPackages(graphPath)
+      graphInput = readGraphAdminInput(graphPath)
     } catch (err) {
-      ctx.stderr(`${err instanceof Error ? err.message : String(err)}\n`)
+      ctx.stderr(formatGraphAdminError(err))
       return undefined
     }
 
@@ -221,9 +272,12 @@ async function resolveAdminGenerationInput({
     return {
       config,
       dir: dirname(graphPath),
-      modules,
+      graphAdmin: graphInput.admin,
+      modules: graphInput.legacyModules,
       source: "graph",
-      summary: `${modules.length} graph-selected packages`,
+      summary: graphInput.admin
+        ? `${graphInput.admin.units.length} graph-selected units`
+        : `${graphInput.legacyModules.length} graph-selected packages (legacy fallback)`,
     }
   }
 
@@ -255,7 +309,69 @@ async function resolveAdminGenerationInput({
   }
 }
 
-function readGraphSelectedAdminPackages(graphPath: string): string[] {
+interface GraphRuntimeReference {
+  entry: string
+  export?: string
+}
+
+interface ResolvedAdminFacet extends Record<string, unknown> {
+  id: string
+  runtime?: GraphRuntimeReference
+}
+
+interface ResolvedAdminUnit {
+  id: string
+  copy: ResolvedAdminFacet[]
+  routes: ResolvedAdminFacet[]
+  nav: ResolvedAdminFacet[]
+  slots: ResolvedAdminFacet[]
+  contributions: ResolvedAdminFacet[]
+}
+
+interface ResolvedAdminGraph {
+  facetCount: number
+  units: ResolvedAdminUnit[]
+}
+
+interface GraphAdminInput {
+  admin?: ResolvedAdminGraph
+  legacyModules: string[]
+}
+
+const ADMIN_FACET_KEYS = ["copy", "routes", "nav", "slots", "contributions"] as const
+
+type AdminGraphErrorCode =
+  | "VOYANT_ADMIN_GRAPH_DUPLICATE_ID"
+  | "VOYANT_ADMIN_GRAPH_DUPLICATE_REFERENCE"
+  | "VOYANT_ADMIN_GRAPH_INVALID_FACET"
+  | "VOYANT_ADMIN_GRAPH_LEGACY_MODE"
+  | "VOYANT_ADMIN_GRAPH_UNKNOWN_REFERENCE"
+
+class AdminGraphError extends Error {
+  constructor(
+    readonly code: AdminGraphErrorCode,
+    message: string,
+    readonly reference?: string,
+    readonly facetId?: string,
+  ) {
+    super(message)
+    this.name = "AdminGraphError"
+  }
+}
+
+function formatGraphAdminError(error: unknown): string {
+  if (!(error instanceof AdminGraphError)) {
+    return `${error instanceof Error ? error.message : String(error)}\n`
+  }
+  return `${JSON.stringify({
+    code: error.code,
+    message: error.message,
+    ...(error.facetId ? { facetId: error.facetId } : {}),
+    ...(error.reference ? { reference: error.reference } : {}),
+  })}\n`
+}
+
+function readGraphAdminInput(graphPath: string): GraphAdminInput {
   if (!existsSync(graphPath)) {
     throw new Error(`No deployment graph found at ${graphPath}`)
   }
@@ -273,18 +389,215 @@ function readGraphSelectedAdminPackages(graphPath: string): string[] {
     throw new Error(`Deployment graph at ${graphPath} has no modules array`)
   }
 
-  const packages = new Set<string>()
-  for (const unit of [...graph.modules, ...(Array.isArray(graph.plugins) ? graph.plugins : [])]) {
+  const legacyPackages = new Set<string>()
+  const adminUnits: ResolvedAdminUnit[] = []
+  for (const [unitIndex, unit] of [
+    ...graph.modules,
+    ...(Array.isArray(graph.plugins) ? graph.plugins : []),
+  ].entries()) {
     if (
       isRecord(unit) &&
       typeof unit.packageName === "string" &&
       Array.isArray(unit.api) &&
       unit.api.some((route) => isRecord(route) && route.surface === "admin")
     ) {
-      packages.add(unit.packageName)
+      legacyPackages.add(unit.packageName)
+    }
+    if (!isRecord(unit) || !isRecord(unit.admin)) continue
+    const admin = unit.admin
+    const facets = Object.fromEntries(
+      ADMIN_FACET_KEYS.map((key) => [
+        key,
+        parseAdminFacetArray(admin[key], `units[${unitIndex}].admin.${key}`),
+      ]),
+    ) as Record<(typeof ADMIN_FACET_KEYS)[number], ResolvedAdminFacet[]>
+    if (ADMIN_FACET_KEYS.every((key) => facets[key].length === 0)) continue
+    const id = requireGraphString(unit.id, `units[${unitIndex}].id`)
+    adminUnits.push({ id, ...facets })
+  }
+  // Explicit compatibility boundary: only graphs with zero package-owned
+  // admin facets may use the package-name/export scanner.
+  if (adminUnits.length === 0) return { legacyModules: [...legacyPackages] }
+  if (graph.schemaVersion !== "voyant.resolved-graph.v1") {
+    throw new AdminGraphError(
+      "VOYANT_ADMIN_GRAPH_INVALID_FACET",
+      `Graph-owned admin facets require schemaVersion voyant.resolved-graph.v1, got ${String(graph.schemaVersion)}`,
+      "schemaVersion",
+    )
+  }
+
+  adminUnits.sort((left, right) => left.id.localeCompare(right.id))
+  for (const unit of adminUnits) {
+    for (const key of ADMIN_FACET_KEYS) {
+      unit[key].sort((left, right) => left.id.localeCompare(right.id))
     }
   }
-  return [...packages]
+  validateAdminGraph(adminUnits)
+  return {
+    admin: {
+      facetCount: adminUnits.reduce(
+        (count, unit) =>
+          count + ADMIN_FACET_KEYS.reduce((unitCount, key) => unitCount + unit[key].length, 0),
+        0,
+      ),
+      units: adminUnits,
+    },
+    legacyModules: [],
+  }
+}
+
+function parseAdminFacetArray(value: unknown, label: string): ResolvedAdminFacet[] {
+  if (value === undefined) return []
+  if (!Array.isArray(value)) throw new Error(`${label} must be an array`)
+  return value.map((facet, index) => {
+    if (!isRecord(facet)) throw new Error(`${label}[${index}] must be an object`)
+    return { ...facet, id: requireGraphString(facet.id, `${label}[${index}].id`) }
+  })
+}
+
+function requireGraphString(value: unknown, label: string): string {
+  if (typeof value !== "string" || value.length === 0) throw new Error(`${label} must be a string`)
+  return value
+}
+
+function validateAdminGraph(units: ReadonlyArray<ResolvedAdminUnit>): void {
+  const seenIds = new Set<string>()
+  const routeIds = new Set<string>()
+  const slotIds = new Set<string>()
+  const copyNamespaces = new Set<string>()
+  for (const unit of units) {
+    for (const key of ADMIN_FACET_KEYS) {
+      for (const facet of unit[key]) {
+        if (seenIds.has(facet.id)) {
+          throw new AdminGraphError(
+            "VOYANT_ADMIN_GRAPH_DUPLICATE_ID",
+            `Duplicate admin facet id: ${facet.id}`,
+            facet.id,
+            facet.id,
+          )
+        }
+        seenIds.add(facet.id)
+      }
+    }
+    for (const copy of unit.copy) {
+      const namespace = requireFacetString(copy.namespace, copy.id, "namespace")
+      if (copyNamespaces.has(namespace)) {
+        throw new AdminGraphError(
+          "VOYANT_ADMIN_GRAPH_DUPLICATE_REFERENCE",
+          `Duplicate admin copy namespace: ${namespace}`,
+          namespace,
+          copy.id,
+        )
+      }
+      copyNamespaces.add(namespace)
+      validateFacetRuntime(copy)
+    }
+    for (const route of unit.routes) {
+      routeIds.add(route.id)
+      requireFacetString(route.path, route.id, "path")
+      validateFacetRuntime(route)
+    }
+    for (const slot of unit.slots) slotIds.add(slot.id)
+    for (const contribution of unit.contributions) validateFacetRuntime(contribution)
+  }
+
+  for (const unit of units) {
+    for (const nav of unit.nav) {
+      validateKnownReference(nav, "routeId", routeIds)
+      validateMessageReference(nav.label, nav.id, "label", copyNamespaces)
+    }
+    for (const slot of unit.slots) validateKnownReference(slot, "routeId", routeIds)
+    for (const route of unit.routes) {
+      validateMessageReferences(route.copy, route.id, "copy", copyNamespaces)
+    }
+    for (const contribution of unit.contributions) {
+      validateKnownReference(contribution, "slotId", slotIds)
+      validateMessageReferences(contribution.copy, contribution.id, "copy", copyNamespaces)
+    }
+  }
+}
+
+function requireFacetString(value: unknown, facetId: string, field: string): string {
+  if (typeof value === "string" && value.length > 0) return value
+  throw new AdminGraphError(
+    "VOYANT_ADMIN_GRAPH_INVALID_FACET",
+    `${facetId}.${field} must be a non-empty string`,
+    field,
+    facetId,
+  )
+}
+
+function validateFacetRuntime(facet: ResolvedAdminFacet): void {
+  try {
+    parseRuntimeReference(facet.runtime, `${facet.id}.runtime`)
+  } catch (error) {
+    throw new AdminGraphError(
+      "VOYANT_ADMIN_GRAPH_INVALID_FACET",
+      error instanceof Error ? error.message : String(error),
+      "runtime",
+      facet.id,
+    )
+  }
+}
+
+function validateKnownReference(
+  facet: ResolvedAdminFacet,
+  field: string,
+  known: ReadonlySet<string>,
+): void {
+  const reference = requireFacetString(facet[field], facet.id, field)
+  if (known.has(reference)) return
+  throw new AdminGraphError(
+    "VOYANT_ADMIN_GRAPH_UNKNOWN_REFERENCE",
+    `${facet.id}.${field} references unknown admin facet ${reference}`,
+    reference,
+    facet.id,
+  )
+}
+
+function validateMessageReferences(
+  value: unknown,
+  facetId: string,
+  field: string,
+  namespaces: ReadonlySet<string>,
+): void {
+  if (value === undefined) return
+  if (!Array.isArray(value)) {
+    throw new AdminGraphError(
+      "VOYANT_ADMIN_GRAPH_INVALID_FACET",
+      `${facetId}.${field} must be an array`,
+      field,
+      facetId,
+    )
+  }
+  for (const [index, reference] of value.entries()) {
+    validateMessageReference(reference, facetId, `${field}[${index}]`, namespaces)
+  }
+}
+
+function validateMessageReference(
+  value: unknown,
+  facetId: string,
+  field: string,
+  namespaces: ReadonlySet<string>,
+): void {
+  if (!isRecord(value)) {
+    throw new AdminGraphError(
+      "VOYANT_ADMIN_GRAPH_INVALID_FACET",
+      `${facetId}.${field} must be a message reference`,
+      field,
+      facetId,
+    )
+  }
+  const namespace = requireFacetString(value.namespace, facetId, `${field}.namespace`)
+  requireFacetString(value.key, facetId, `${field}.key`)
+  if (namespaces.has(namespace)) return
+  throw new AdminGraphError(
+    "VOYANT_ADMIN_GRAPH_UNKNOWN_REFERENCE",
+    `${facetId}.${field} references unknown admin copy namespace ${namespace}`,
+    namespace,
+    facetId,
+  )
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -343,6 +656,134 @@ export function renderGeneratedFile(
   ]
 
   return [...header, ...(imports.length > 0 ? [...imports, ""] : []), ...body].join("\n")
+}
+
+interface RawTsExpression {
+  readonly __rawTsExpression: string
+}
+
+function renderGeneratedAdminGraph(graph: ResolvedAdminGraph): string {
+  const imports = collectAdminRuntimeImports(graph)
+  const bindingByFacetId = new Map(imports.map((entry) => [entry.facetId, entry.binding]))
+  const runtimeBindingLines = renderRuntimeBindings(imports)
+  const units = graph.units.map((unit) => ({
+    id: unit.id,
+    ...Object.fromEntries(
+      ADMIN_FACET_KEYS.map((key) => [
+        key,
+        unit[key].map((facet) => {
+          const binding = bindingByFacetId.get(facet.id)
+          return binding
+            ? { ...facet, runtime: { __rawTsExpression: binding } satisfies RawTsExpression }
+            : facet
+        }),
+      ]),
+    ),
+  }))
+
+  return [
+    "// GENERATED by voyant admin generate — do not edit.",
+    "// Recreate from the selected target-neutral deployment graph:",
+    "//   voyant admin generate --graph .voyant/deployment-graph.generated.json",
+    "// Package-owned admin facets are authoritative; no package-name conventions are used.",
+    "",
+    ...runtimeBindingLines,
+    ...(runtimeBindingLines.length > 0 ? [""] : []),
+    `export const generatedAdminGraph = ${renderTsValue({ units })} as const`,
+    "",
+  ].join("\n")
+}
+
+interface FacetRuntimeImport {
+  binding: string
+  entry: string
+  exportName?: string
+  facetId: string
+}
+
+function collectAdminRuntimeImports(graph: ResolvedAdminGraph): FacetRuntimeImport[] {
+  const candidates: Array<Omit<FacetRuntimeImport, "binding">> = []
+  for (const unit of graph.units) {
+    for (const key of ["copy", "routes", "contributions"] as const) {
+      for (const facet of unit[key]) {
+        const runtime = parseRuntimeReference(facet.runtime, `${facet.id}.runtime`)
+        candidates.push({ entry: runtime.entry, exportName: runtime.export, facetId: facet.id })
+      }
+    }
+  }
+  candidates.sort(
+    (left, right) =>
+      left.entry.localeCompare(right.entry) ||
+      (left.exportName ?? "default").localeCompare(right.exportName ?? "default") ||
+      left.facetId.localeCompare(right.facetId),
+  )
+  const bindingCounts = new Map<string, number>()
+  return candidates.map((candidate) => {
+    const base = runtimeBindingName(candidate.facetId)
+    const count = (bindingCounts.get(base) ?? 0) + 1
+    bindingCounts.set(base, count)
+    return {
+      ...candidate,
+      binding: count === 1 ? base : `${base}${count}`,
+    }
+  })
+}
+
+function parseRuntimeReference(value: unknown, label: string): GraphRuntimeReference {
+  if (!isRecord(value)) throw new Error(`${label} must be an object`)
+  const entry = requireGraphString(value.entry, `${label}.entry`)
+  if (
+    value.export !== undefined &&
+    (typeof value.export !== "string" || !/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(value.export))
+  ) {
+    throw new Error(`${label}.export must be a JavaScript export identifier`)
+  }
+  return { entry, ...(typeof value.export === "string" ? { export: value.export } : {}) }
+}
+
+function runtimeBindingName(facetId: string): string {
+  const localId = facetId.includes("#") ? facetId.slice(facetId.indexOf("#") + 1) : facetId
+  const base = toCamelCase(localId.replaceAll(/[^A-Za-z0-9]+/g, "-")) || "admin"
+  return `${/^[0-9]/.test(base) ? `admin${toPascalCase(base)}` : base}Runtime`
+}
+
+function renderRuntimeBindings(imports: ReadonlyArray<FacetRuntimeImport>): string[] {
+  return imports.flatMap((runtimeImport) => {
+    const member = `module.${runtimeImport.exportName ?? "default"}`
+    const expression = `  import(${JSON.stringify(runtimeImport.entry)}).then((module) => ${member})`
+    return expression.length <= 100
+      ? [`const ${runtimeImport.binding} = () =>`, expression]
+      : [
+          `const ${runtimeImport.binding} = () =>`,
+          `  import(${JSON.stringify(runtimeImport.entry)}).then(`,
+          `    (module) => ${member},`,
+          "  )",
+        ]
+  })
+}
+
+function renderTsValue(value: unknown, indent = 0): string {
+  if (isRecord(value) && typeof value.__rawTsExpression === "string") {
+    return value.__rawTsExpression
+  }
+  if (Array.isArray(value)) {
+    if (value.length === 0) return "[]"
+    const prefix = " ".repeat(indent + 2)
+    return `[\n${value.map((item) => `${prefix}${renderTsValue(item, indent + 2)},`).join("\n")}\n${" ".repeat(indent)}]`
+  }
+  if (isRecord(value)) {
+    const entries = Object.entries(value).sort(([left], [right]) => left.localeCompare(right))
+    if (entries.length === 0) return "{}"
+    const prefix = " ".repeat(indent + 2)
+    return `{\n${entries
+      .map(([key, item]) => `${prefix}${renderTsKey(key)}: ${renderTsValue(item, indent + 2)},`)
+      .join("\n")}\n${" ".repeat(indent)}}`
+  }
+  return JSON.stringify(value)
+}
+
+function renderTsKey(key: string): string {
+  return /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(key) ? key : JSON.stringify(key)
 }
 
 interface GenerateRouteFilesOptions {

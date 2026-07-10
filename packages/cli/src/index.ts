@@ -31,6 +31,23 @@ import { whoamiCommand } from "./commands/whoami.js"
 import { workflowsCommand } from "./commands/workflows-command.js"
 import type { CommandContext, CommandResult } from "./types.js"
 
+export type {
+  DeploymentArtifactManifest,
+  DeploymentGraphArtifact,
+  DeploymentRuntimeEntry,
+  ResolvedDeploymentGraph,
+} from "./lib/deployment-artifact-reader.js"
+export {
+  createDeploymentPlan,
+  DEPLOYMENT_PLAN_SCHEMA_VERSION,
+  DEPLOYMENT_RESULT_SCHEMA_VERSION,
+  type DeploymentPlan,
+  type DeploymentPlanOperation,
+  type DeploymentResult,
+  type DeploymentTargetAdapter,
+  type DeploymentTargetContext,
+  deploymentResult,
+} from "./lib/deployment-target.js"
 export type { CommandContext, CommandResult } from "./types.js"
 
 export interface MainOptions {

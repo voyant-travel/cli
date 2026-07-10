@@ -1,3 +1,5 @@
+import { existsSync, readFileSync } from "node:fs"
+import { dirname, isAbsolute, join, resolve } from "node:path"
 import { parseArgs } from "../lib/args.js"
 import { waitForShutdownSignal } from "../lib/shutdown.js"
 import type { CommandContext, CommandResult } from "../types.js"
@@ -24,9 +26,9 @@ export async function devCommand(
     return parsed.exitCode
   }
 
-  const entryFile = typeof args.flags.file === "string" ? args.flags.file : undefined
-  if (!entryFile) {
-    ctx.stderr("voyant dev: missing required --file <path>\n")
+  const entry = resolveDevEntryFile(ctx.cwd, args.flags)
+  if (!entry.ok) {
+    ctx.stderr(`${entry.message}\n`)
     return 2
   }
 
@@ -35,7 +37,7 @@ export async function devCommand(
   let handle: { close: () => Promise<void>; url: string } | undefined
   try {
     handle = await runDev(
-      { entryFile, outDir, options: parsed.options },
+      { entryFile: entry.file, outDir, options: parsed.options },
       deps.devDeps ?? (await defaultDevDeps()),
     )
   } catch (err) {
@@ -44,7 +46,8 @@ export async function devCommand(
   }
 
   ctx.stderr(`voyant dev: listening at ${handle.url}\n`)
-  ctx.stderr(`  watching ${entryFile}\n`)
+  ctx.stderr(`  watching ${entry.file}\n`)
+  if (entry.manifest) ctx.stderr(`  graph     ${entry.manifest}\n`)
   ctx.stderr(`  output   ${outDir}\n`)
   ctx.stderr("Press Ctrl+C to stop.\n")
 
@@ -63,5 +66,107 @@ export async function devCommand(
 const DEV_USAGE = `voyant dev - watch and serve workflows locally
 
 usage:
-  voyant dev --file <path> [--port <n>] [--host <h>] [--out <dir>] [--dashboard <path>]
+  voyant dev [--file <path>] [--deployment-artifacts <path>] [--port <n>] [--host <h>] [--out <dir>] [--dashboard <path>]
 `
+
+const DEFAULT_DEPLOYMENT_ARTIFACTS = "deployment-artifacts.generated.json"
+const MANAGED_NODE_RUNTIME_KIND = "managed-profile-node"
+
+interface DeploymentArtifactManifest {
+  schemaVersion?: unknown
+  runtimeEntries?: unknown
+}
+
+interface RuntimeEntryArtifact {
+  target?: unknown
+  file?: unknown
+  kind?: unknown
+}
+
+type DevEntryResult =
+  | {
+      ok: true
+      file: string
+      manifest?: string
+    }
+  | {
+      ok: false
+      message: string
+    }
+
+function resolveDevEntryFile(cwd: string, flags: Record<string, string | boolean>): DevEntryResult {
+  if (typeof flags.file === "string") {
+    return { ok: true, file: flags.file }
+  }
+
+  const manifestPath =
+    typeof flags["deployment-artifacts"] === "string"
+      ? flags["deployment-artifacts"]
+      : DEFAULT_DEPLOYMENT_ARTIFACTS
+  const resolvedManifestPath = resolve(cwd, manifestPath)
+  if (!existsSync(resolvedManifestPath)) {
+    return {
+      ok: false,
+      message:
+        "voyant dev: missing --file <path> and no deployment-artifacts.generated.json was found",
+    }
+  }
+
+  let manifest: DeploymentArtifactManifest
+  try {
+    manifest = JSON.parse(readFileSync(resolvedManifestPath, "utf8")) as DeploymentArtifactManifest
+  } catch (err) {
+    return {
+      ok: false,
+      message: `voyant dev: could not read deployment artifacts: ${
+        err instanceof Error ? err.message : String(err)
+      }`,
+    }
+  }
+
+  if (manifest.schemaVersion !== "voyant.deployment-artifacts.v1") {
+    return {
+      ok: false,
+      message: `voyant dev: deployment artifacts schema must be voyant.deployment-artifacts.v1, got ${String(
+        manifest.schemaVersion,
+      )}`,
+    }
+  }
+
+  if (!Array.isArray(manifest.runtimeEntries)) {
+    return {
+      ok: false,
+      message: "voyant dev: deployment artifacts runtimeEntries must be an array",
+    }
+  }
+
+  const runtimeEntry = manifest.runtimeEntries.find(isManagedNodeRuntimeEntry)
+  if (!runtimeEntry) {
+    return {
+      ok: false,
+      message: "voyant dev: deployment artifacts do not declare a managed Node runtime entry",
+    }
+  }
+
+  return {
+    ok: true,
+    file: resolveArtifactPath(String(runtimeEntry.file), resolvedManifestPath),
+    manifest: manifestPath,
+  }
+}
+
+function isManagedNodeRuntimeEntry(value: unknown): value is RuntimeEntryArtifact {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false
+  const entry = value as RuntimeEntryArtifact
+  return (
+    entry.target === "node" &&
+    entry.kind === MANAGED_NODE_RUNTIME_KIND &&
+    typeof entry.file === "string" &&
+    entry.file.length > 0
+  )
+}
+
+function resolveArtifactPath(file: string, manifestPath: string): string {
+  if (isAbsolute(file)) return file
+  return join(dirname(manifestPath), file)
+}

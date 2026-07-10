@@ -20,7 +20,7 @@ voyant --help
 | `voyant db <generate\|migrate\|studio\|push\|check>` | Proxy drizzle-kit to the project root |
 | `voyant db sync-links [--out <file>]` | Emit DDL for cross-module link tables |
 | `voyant exec <script.ts> [args…]` | Run a TS/JS script with native strip-types |
-| `voyant dev --file <path>` | Watch + serve workflows locally |
+| `voyant dev [--file <path>]` | Watch + serve workflows or the graph runtime locally |
 | `voyant workflows <subcommand>` | Build, serve, inspect, and self-host workflows |
 | `voyant --version` | Print the CLI version |
 

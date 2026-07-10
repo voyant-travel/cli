@@ -27,7 +27,7 @@ OPEN-SOURCE COMMANDS
                                      db doctor + admin doctor (exit 1 on any gate)
   upgrade [--to <version>] [--dry-run]  Bump the @voyant-travel/framework BOM + install
                                      (then run: voyant db migrate && voyant doctor)
-  dev --file <path>                  Watch and serve workflows locally with hot reload
+  dev [--file <path>]                Watch and serve workflows or graph runtime locally
   db <generate|migrate|studio|push>  Proxy drizzle-kit commands (generate defaults to --prefix timestamp)
   db schemas [--emit]                Print/emit the manifest-derived schema list
   db sync-links [--emit-drizzle]     Emit link-table DDL, or a generated Drizzle schema

@@ -4,6 +4,12 @@ import { existsSync, readFileSync } from "node:fs"
 import { dirname, isAbsolute, join, resolve } from "node:path"
 
 import { getBooleanFlag, getStringFlag, parseArgs } from "../lib/args.js"
+import {
+  type DeploymentGraphDiagnostic,
+  type DeploymentGraphDoctorReport,
+  formatDeploymentGraphDiagnostic,
+  parseDeploymentGraphDoctorReport,
+} from "../lib/deployment-graph-doctor-report.js"
 import { printJson, wantsJson } from "../lib/output.js"
 import type { CommandContext, CommandResult } from "../types.js"
 import { adminDoctorCommand } from "./admin-doctor.js"
@@ -296,33 +302,7 @@ interface DeploymentGraphEnvRequirement {
   description: string
 }
 
-interface DeploymentGraphDiagnostic {
-  code: string
-  severity: "info" | "warning" | "error"
-  source?: string
-  facet?: string
-  location?: string
-  message: string
-  hint?: string
-}
-
-interface DeploymentGraphDoctorReport {
-  schemaVersion: "voyant.graph-doctor-report.v1"
-  ok: boolean
-  graph: {
-    schemaVersion: string
-    contentHash: string
-    target?: string
-    mode?: string
-    modules: { count: number; ids: readonly string[] }
-    plugins: { count: number; ids: readonly string[] }
-    packageRecords: { count: number; packageNames: readonly string[] }
-  }
-  diagnostics: readonly DeploymentGraphDiagnostic[]
-}
-
 const ARTIFACT_MANIFEST_SCHEMA_VERSION = "voyant.deployment-artifacts.v1"
-const GRAPH_DOCTOR_REPORT_SCHEMA_VERSION = "voyant.graph-doctor-report.v1"
 const RESOLVED_GRAPH_SCHEMA_VERSION = "voyant.resolved-graph.v1"
 const DEPLOYMENT_ARTIFACTS_FILENAME = "deployment-artifacts.generated.json"
 const DEPLOYMENT_GRAPH_DOCTOR_SCRIPT = join("scripts", "emit-deployment-graph.ts")
@@ -451,99 +431,6 @@ function resolveDeploymentGraphDoctorScriptPath(
   return existsSync(candidate) ? candidate : null
 }
 
-function parseDeploymentGraphDoctorReport(source: string): DeploymentGraphDoctorReport {
-  const value = JSON.parse(source) as unknown
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    throw new Error("deployment graph doctor report must be an object")
-  }
-  const report = value as Record<string, unknown>
-  if (report.schemaVersion !== GRAPH_DOCTOR_REPORT_SCHEMA_VERSION) {
-    throw new Error(
-      `deployment graph doctor report schema must be ${GRAPH_DOCTOR_REPORT_SCHEMA_VERSION}, got ${String(
-        report.schemaVersion,
-      )}`,
-    )
-  }
-  if (typeof report.ok !== "boolean") {
-    throw new Error("deployment graph doctor report ok must be a boolean")
-  }
-  const graph = report.graph
-  if (!graph || typeof graph !== "object" || Array.isArray(graph)) {
-    throw new Error("deployment graph doctor report graph must be an object")
-  }
-  const graphRecord = graph as Record<string, unknown>
-  requireString(graphRecord.schemaVersion, "deployment graph doctor report graph.schemaVersion")
-  requireSha256ContentHash(
-    graphRecord.contentHash,
-    "deployment graph doctor report graph.contentHash",
-  )
-  parseGraphDoctorCountList(graphRecord.modules, "modules", "ids")
-  parseGraphDoctorCountList(graphRecord.plugins, "plugins", "ids")
-  parseGraphDoctorCountList(graphRecord.packageRecords, "packageRecords", "packageNames")
-
-  const diagnostics = arrayOfRecords(
-    report.diagnostics,
-    "deployment graph doctor report diagnostics",
-  ).map((diagnostic, index) => parseDeploymentGraphDiagnostic(diagnostic, index))
-
-  return {
-    schemaVersion: GRAPH_DOCTOR_REPORT_SCHEMA_VERSION,
-    ok: report.ok,
-    graph: graphRecord as DeploymentGraphDoctorReport["graph"],
-    diagnostics,
-  }
-}
-
-function parseGraphDoctorCountList(
-  value: unknown,
-  label: string,
-  listField: "ids" | "packageNames",
-): void {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    throw new Error(`deployment graph doctor report graph.${label} must be an object`)
-  }
-  const record = value as Record<string, unknown>
-  if (typeof record.count !== "number") {
-    throw new Error(`deployment graph doctor report graph.${label}.count must be a number`)
-  }
-  collectStringArray(
-    record[listField],
-    `deployment graph doctor report graph.${label}.${listField}`,
-  )
-}
-
-function parseDeploymentGraphDiagnostic(
-  value: Record<string, unknown>,
-  index: number,
-): DeploymentGraphDiagnostic {
-  const severity = requireString(
-    value.severity,
-    `deployment graph doctor report diagnostics[${index}].severity`,
-  )
-  if (severity !== "info" && severity !== "warning" && severity !== "error") {
-    throw new Error(
-      `deployment graph doctor report diagnostics[${index}].severity must be info, warning, or error`,
-    )
-  }
-  const diagnostic: DeploymentGraphDiagnostic = {
-    code: requireString(value.code, `deployment graph doctor report diagnostics[${index}].code`),
-    severity,
-    message: requireString(
-      value.message,
-      `deployment graph doctor report diagnostics[${index}].message`,
-    ),
-  }
-  const source = stringField(value, "source")
-  const facet = stringField(value, "facet")
-  const location = stringField(value, "location")
-  const hint = stringField(value, "hint")
-  if (source) diagnostic.source = source
-  if (facet) diagnostic.facet = facet
-  if (location) diagnostic.location = location
-  if (hint) diagnostic.hint = hint
-  return diagnostic
-}
-
 function writeDeploymentGraphDoctorReport(
   ctx: CommandContext,
   report: DeploymentGraphDoctorReport,
@@ -559,19 +446,6 @@ function writeDeploymentGraphDoctorReport(
   for (const diagnostic of report.diagnostics) {
     ctx.stderr(`  - ${formatDeploymentGraphDiagnostic(diagnostic)}\n`)
   }
-}
-
-function formatDeploymentGraphDiagnostic(diagnostic: DeploymentGraphDiagnostic): string {
-  const suffix = [
-    diagnostic.source ? `source=${diagnostic.source}` : undefined,
-    diagnostic.facet ? `facet=${diagnostic.facet}` : undefined,
-    diagnostic.location ? `location=${diagnostic.location}` : undefined,
-  ]
-    .filter(Boolean)
-    .join(", ")
-  return `${diagnostic.code}: ${diagnostic.message}${suffix ? ` (${suffix})` : ""}${
-    diagnostic.hint ? ` Hint: ${diagnostic.hint}` : ""
-  }`
 }
 
 function resolveDeploymentArtifactManifestPath(

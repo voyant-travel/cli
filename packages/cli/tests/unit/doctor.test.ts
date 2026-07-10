@@ -167,6 +167,39 @@ describe("runDeploymentGraphPreflight", () => {
     expect(out.join("")).toContain("1 modules; 1 plugins; 2 packages")
   })
 
+  it("uses an explicit doctor report instead of validating legacy artifacts", () => {
+    writeDeploymentGraphFixture(tmp, { manifestGraphHash: VALID_GRAPH_HASH })
+    writeDeploymentGraphDoctorReport(tmp)
+    const { ctx: c, out, err } = ctx()
+
+    const code = withDatabaseUrlSync(undefined, () =>
+      runDeploymentGraphPreflight(c, {
+        reportPath: "deployment-graph-report.json",
+      }),
+    )
+
+    expect(code).toBe(0)
+    expect(err.join("")).toBe("")
+    expect(out.join("")).toContain("deployment graph preflight: OK")
+  })
+
+  it("fails an invalid explicit doctor report without falling back to artifacts", () => {
+    writeDeploymentGraphFixture(tmp)
+    writeFileSync(join(tmp, ".env"), "DATABASE_URL=postgres://user:pass@example.test:5432/voyant\n")
+    writeJson(join(tmp, "deployment-graph-report.json"), {
+      schemaVersion: "voyant.graph-doctor-report.v0",
+    })
+    const { ctx: c, err } = ctx()
+
+    const code = runDeploymentGraphPreflight(c, {
+      reportPath: "deployment-graph-report.json",
+    })
+
+    expect(code).toBe(1)
+    expect(err.join("")).toContain("deployment graph preflight: FAILED")
+    expect(err.join("")).toContain("deployment graph doctor report schema must be")
+  })
+
   it("fails with stable diagnostics from a deployment graph doctor report", () => {
     writeDeploymentGraphDoctorReport(tmp, {
       ok: false,

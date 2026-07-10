@@ -337,9 +337,9 @@ async function runConfiguredDeploymentGraphPreflight(
     const moduleCount = Array.isArray(checked.graph.modules) ? checked.graph.modules.length : 0
     const pluginCount = Array.isArray(checked.graph.plugins) ? checked.graph.plugins.length : 0
     ctx.stdout(
-      `deployment graph preflight: OK (${checked.manifest.contentHash}; ${moduleCount} modules; ${pluginCount} plugins; ${checked.migrationPlan.migrations.length} migrations)\n`,
+      `deployment graph preflight: OK (${checked.manifest.graphHash}; ${moduleCount} modules; ${pluginCount} plugins; ${checked.migrationPlan.migrations.length} migrations)\n`,
     )
-    return { exitCode: 0, contentHash: checked.manifest.contentHash }
+    return { exitCode: 0, contentHash: checked.manifest.graphHash }
   } catch (error) {
     ctx.stderr("deployment graph preflight: FAILED\n")
     ctx.stderr(`  - ${reason(error)}\n`)

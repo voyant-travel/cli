@@ -29,7 +29,7 @@ describe("project artifacts", () => {
 
     const second = await prepareProjectArtifacts(root)
 
-    expect(second.manifest.contentHash).toBe(first.manifest.contentHash)
+    expect(second.manifest.graphHash).toBe(first.manifest.graphHash)
     expect(readFileSync(join(root, ".voyant", PROJECT_ARTIFACT_MANIFEST), "utf8")).toBe(
       firstManifest,
     )
@@ -49,7 +49,7 @@ describe("project artifacts", () => {
     await expect(checkProjectArtifacts(root)).rejects.toMatchObject({
       code: "artifact_stale",
     })
-    await expect(checkProjectArtifacts(root)).rejects.toThrow(prepared.manifest.contentHash)
+    await expect(checkProjectArtifacts(root)).rejects.toThrow(prepared.manifest.graphHash)
   })
 
   it("fails clearly when generated outputs are missing", async () => {

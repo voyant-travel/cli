@@ -122,7 +122,7 @@ async function resolveDevEntryFile(
         ok: true,
         file: prepared.runtimeEntryPath,
         manifest: join(PROJECT_ARTIFACT_DIRECTORY, PROJECT_ARTIFACT_MANIFEST),
-        contentHash: prepared.manifest.contentHash,
+        contentHash: prepared.manifest.graphHash,
       }
     } catch (error) {
       return {

@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto"
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
@@ -11,6 +11,8 @@ import {
   runDeploymentGraphPreflight,
   runEnvPreflight,
 } from "../../src/commands/doctor.js"
+import { prepareProjectArtifacts } from "../../src/lib/project-artifacts.js"
+import { writeProjectFixture } from "../helpers/project-fixture.js"
 
 const VALID_GRAPH_HASH = `sha256:${"a".repeat(64)}`
 
@@ -340,13 +342,139 @@ describe("doctorCommand --json", () => {
     expect(report.checks[0]?.stdout).toContain("env preflight: skipped")
   })
 
+  it("uses resolved Node graph bindings instead of Wrangler for unified projects", async () => {
+    writeProjectFixture(tmp)
+    await prepareProjectArtifacts(tmp)
+    writeFileSync(
+      join(tmp, "env.d.ts"),
+      "interface CloudflareBindings { CACHE: KVNamespace; DATABASE_URL: string }\n",
+    )
+    writeFileSync(join(tmp, "wrangler.jsonc"), JSON.stringify({ kv_namespaces: [] }))
+    const { ctx: c, out, err } = ctx(["--json", "--skip-db", "--skip-admin"])
+
+    const code = await withDatabaseUrlAsync(undefined, () => doctorCommand(c))
+    const report = JSON.parse(out.join("")) as {
+      ok: boolean
+      checks: Array<{ id: string; status: string; stdout: string }>
+    }
+
+    expect(code).toBe(0)
+    expect(err.join("")).toBe("")
+    expect(report.ok).toBe(true)
+    expect(report.checks[0]).toMatchObject({ id: "env", status: "skipped" })
+    expect(report.checks[0]?.stdout).toContain("unified Node project")
+    expect(report.checks[1]).toMatchObject({ id: "deployment-graph", status: "passed" })
+  })
+
+  it("reports required package secrets from the resolved Node graph", async () => {
+    writeProjectFixture(tmp)
+    addMockUnitFacets(
+      tmp,
+      `secrets: [{ id: specifier + "#secret.api-token", key: "LOYALTY_API_TOKEN", required: true }],`,
+    )
+    await prepareProjectArtifacts(tmp)
+    const { ctx: c, out } = ctx(["--json", "--skip-db", "--skip-admin"])
+
+    const code = await doctorCommand(c)
+    const report = JSON.parse(out.join("")) as {
+      ok: boolean
+      checks: Array<{ id: string; diagnostics?: Array<{ code: string; facet?: string }> }>
+    }
+
+    expect(code).toBe(1)
+    expect(report.ok).toBe(false)
+    expect(report.checks[1]?.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: "VOYANT_NODE_SECRET_MISSING",
+        facet: "secrets",
+      }),
+    )
+  })
+
+  it("reports required package config that has no selected value or default", async () => {
+    writeProjectFixture(tmp)
+    addMockUnitFacets(
+      tmp,
+      `config: [{ id: specifier + "#config.region", key: "region", required: true }],`,
+    )
+    await prepareProjectArtifacts(tmp)
+    const { ctx: c, out } = ctx(["--json", "--skip-db", "--skip-admin"])
+
+    expect(await doctorCommand(c)).toBe(1)
+    const report = JSON.parse(out.join("")) as {
+      checks: Array<{ diagnostics?: Array<{ code: string; facet?: string }> }>
+    }
+    expect(report.checks[1]?.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: "VOYANT_NODE_CONFIG_MISSING",
+        facet: "config",
+      }),
+    )
+  })
+
+  it("rejects migration artifacts that omit a declared setup migration", async () => {
+    writeProjectFixture(tmp)
+    addMockUnitFacets(
+      tmp,
+      `setupMigrations: [{ id: specifier + "#setup.seed", runtime: { entry: specifier, export: "seed" } }],`,
+    )
+    await prepareProjectArtifacts(tmp)
+    const { ctx: c, out } = ctx(["--json", "--skip-db", "--skip-admin"])
+
+    expect(await doctorCommand(c)).toBe(1)
+    const report = JSON.parse(out.join("")) as {
+      checks: Array<{ diagnostics?: Array<{ code: string; facet?: string }> }>
+    }
+    expect(report.checks[1]?.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: "VOYANT_MIGRATION_PLAN_INCOMPLETE",
+        facet: "setupMigrations",
+      }),
+    )
+  })
+
+  it("rejects unusable Node resource and provider declarations", async () => {
+    writeProjectFixture(tmp)
+    addMockUnitFacets(
+      tmp,
+      `resources: [{ id: specifier + "#resource.database", required: true }],
+        providers: [{ id: specifier + "#provider.database", port: "database.client", runtime: { entry: specifier } }],`,
+    )
+    await prepareProjectArtifacts(tmp)
+    const { ctx: c, out } = ctx(["--json", "--skip-db", "--skip-admin"])
+
+    expect(await doctorCommand(c)).toBe(1)
+    const report = JSON.parse(out.join("")) as {
+      checks: Array<{ diagnostics?: Array<{ code: string; facet?: string }> }>
+    }
+    expect(report.checks[1]?.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: "VOYANT_NODE_RESOURCE_INVALID", facet: "resources" }),
+        expect.objectContaining({ code: "VOYANT_NODE_PROVIDER_INVALID", facet: "providers" }),
+      ]),
+    )
+  })
+
   it("captures failing check output in JSON and exits non-zero", async () => {
     writeFileSync(
       join(tmp, "env.d.ts"),
       "interface CloudflareBindings {\n  CACHE: KVNamespace\n  DATABASE_URL: string\n}\n",
     )
     writeFileSync(join(tmp, "wrangler.jsonc"), JSON.stringify({ kv_namespaces: [] }))
-    const { ctx: c, out, err } = ctx(["--json", "--strict", "--skip-db", "--skip-admin"])
+    const {
+      ctx: c,
+      out,
+      err,
+    } = ctx([
+      "--json",
+      "--strict",
+      "--env-types",
+      "env.d.ts",
+      "--wrangler",
+      "wrangler.jsonc",
+      "--skip-db",
+      "--skip-admin",
+    ])
 
     const code = await withDatabaseUrlAsync(undefined, () => doctorCommand(c))
     const report = JSON.parse(out.join("")) as {
@@ -642,6 +770,15 @@ function writeDeploymentGraphDoctorReport(
 
 function writeJson(path: string, value: unknown): void {
   writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`)
+}
+
+function addMockUnitFacets(root: string, source: string): void {
+  const resolverPath = join(root, "node_modules", "@voyant-travel", "framework", "project.mjs")
+  const resolver = readFileSync(resolverPath, "utf8")
+  writeFileSync(
+    resolverPath,
+    resolver.replace("        api: [],", `        ${source}\n        api: [],`),
+  )
 }
 
 function canonicalJson(value: unknown): string {

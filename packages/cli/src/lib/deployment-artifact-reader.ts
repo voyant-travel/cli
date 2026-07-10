@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto"
 import { existsSync, readFileSync } from "node:fs"
 import { dirname, isAbsolute, join, relative, resolve } from "node:path"
+import { resolveConfigPath } from "./config-loader.js"
 
 export const DEPLOYMENT_ARTIFACT_SCHEMA_VERSION = "voyant.deployment-artifacts.v1" as const
 export const RESOLVED_GRAPH_SCHEMA_VERSION = "voyant.resolved-graph.v1" as const
@@ -169,10 +170,9 @@ function resolveManifestPath(options: ReadDeploymentGraphArtifactOptions): strin
     )
   }
 
-  const candidates = [
-    resolve(options.cwd, DEFAULT_DEPLOYMENT_ARTIFACT_PATH),
-    resolve(options.cwd, LEGACY_DEPLOYMENT_ARTIFACT_PATH),
-  ]
+  const unifiedProject = Boolean(resolveConfigPath({ cwd: options.cwd }))
+  const candidates = [resolve(options.cwd, DEFAULT_DEPLOYMENT_ARTIFACT_PATH)]
+  if (!unifiedProject) candidates.push(resolve(options.cwd, LEGACY_DEPLOYMENT_ARTIFACT_PATH))
   const found = candidates.find((candidate) => existsSync(candidate))
   if (found) return found
   throw new DeploymentArtifactError(

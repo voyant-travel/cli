@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs"
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
@@ -40,6 +40,16 @@ describe("project artifacts", () => {
       "runtime/project-runtime.generated.ts",
     ])
     expect(existsSync(second.runtimeEntryPath)).toBe(true)
+  })
+
+  it("replaces .voyant as a complete artifact set", async () => {
+    await prepareProjectArtifacts(root)
+    const stalePath = join(root, ".voyant", "runtime", "removed.generated.ts")
+    writeFileSync(stalePath, "export const stale = true\n")
+
+    await prepareProjectArtifacts(root)
+
+    expect(existsSync(stalePath)).toBe(false)
   })
 
   it("detects artifacts made stale by a config change", async () => {

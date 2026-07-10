@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto"
 import { existsSync } from "node:fs"
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises"
 import { dirname, join, resolve } from "node:path"
@@ -92,6 +93,14 @@ export async function checkProjectArtifacts(
 export async function writeProjectArtifacts(resolution: ResolvedProject): Promise<void> {
   assertNoGraphErrors(resolution.graph)
   const artifactRoot = join(resolution.projectRoot, PROJECT_ARTIFACT_DIRECTORY)
+  const replacementRoot = join(
+    resolution.projectRoot,
+    `${PROJECT_ARTIFACT_DIRECTORY}.replacement-${randomUUID()}`,
+  )
+  const previousRoot = join(
+    resolution.projectRoot,
+    `${PROJECT_ARTIFACT_DIRECTORY}.previous-${randomUUID()}`,
+  )
   const frameworkFiles = resolution.artifacts.files
   for (const file of frameworkFiles) {
     if (CORE_ARTIFACT_PATHS.has(file.path)) {
@@ -126,20 +135,41 @@ export async function writeProjectArtifacts(resolution: ResolvedProject): Promis
     files,
   }
 
-  await mkdir(artifactRoot, { recursive: true })
-  await removePreviouslyGeneratedFiles(artifactRoot)
-  await writeDeterministicFile(
-    join(artifactRoot, PROJECT_GRAPH_ARTIFACT),
-    stableJson(resolution.graph),
-  )
-  await writeDeterministicFile(
-    join(artifactRoot, PROJECT_MIGRATION_PLAN_ARTIFACT),
-    stableJson(resolution.artifacts.migrationPlan),
-  )
-  for (const file of frameworkFiles) {
-    await writeDeterministicFile(join(artifactRoot, file.path), file.contents)
+  let movedPrevious = false
+  let installedReplacement = false
+  try {
+    await mkdir(replacementRoot, { recursive: true })
+    await writeDeterministicFile(
+      join(replacementRoot, PROJECT_GRAPH_ARTIFACT),
+      stableJson(resolution.graph),
+    )
+    await writeDeterministicFile(
+      join(replacementRoot, PROJECT_MIGRATION_PLAN_ARTIFACT),
+      stableJson(resolution.artifacts.migrationPlan),
+    )
+    for (const file of frameworkFiles) {
+      await writeDeterministicFile(join(replacementRoot, file.path), file.contents)
+    }
+    await writeDeterministicFile(
+      join(replacementRoot, PROJECT_ARTIFACT_MANIFEST),
+      stableJson(manifest),
+    )
+    if (existsSync(artifactRoot)) {
+      await rename(artifactRoot, previousRoot)
+      movedPrevious = true
+    }
+    await rename(replacementRoot, artifactRoot)
+    installedReplacement = true
+    if (movedPrevious) await rm(previousRoot, { recursive: true, force: true })
+  } catch (error) {
+    if (!installedReplacement && movedPrevious && !existsSync(artifactRoot)) {
+      await rename(previousRoot, artifactRoot)
+    }
+    throw error
+  } finally {
+    await rm(replacementRoot, { recursive: true, force: true })
+    if (installedReplacement) await rm(previousRoot, { recursive: true, force: true })
   }
-  await writeDeterministicFile(join(artifactRoot, PROJECT_ARTIFACT_MANIFEST), stableJson(manifest))
 }
 
 export async function loadProjectArtifacts(projectRoot: string): Promise<LoadedProjectArtifacts> {
@@ -235,21 +265,6 @@ function assertNoGraphErrors(graph: ResolvedProjectGraph): void {
     "artifact_invalid",
     `Resolved project graph contains ${errors.length} error diagnostic(s): ${details}`,
   )
-}
-
-async function removePreviouslyGeneratedFiles(artifactRoot: string): Promise<void> {
-  const manifestPath = join(artifactRoot, PROJECT_ARTIFACT_MANIFEST)
-  if (!existsSync(manifestPath)) return
-  try {
-    const previous = parseManifest(
-      await readJson(manifestPath, "previous project artifact manifest"),
-    )
-    for (const file of [...previous.files, PROJECT_ARTIFACT_MANIFEST]) {
-      await rm(join(artifactRoot, file), { force: true })
-    }
-  } catch {
-    await rm(manifestPath, { force: true })
-  }
 }
 
 async function writeDeterministicFile(path: string, contents: string): Promise<void> {

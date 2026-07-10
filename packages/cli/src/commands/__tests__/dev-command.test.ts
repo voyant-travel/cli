@@ -2,6 +2,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { describe, expect, it, vi } from "vitest"
+import { writeProjectConfig, writeProjectFixture } from "../../../tests/helpers/project-fixture.js"
 import type { DevDeps } from "../dev.js"
 import { devCommand } from "../dev-command.js"
 
@@ -129,6 +130,43 @@ describe("devCommand", () => {
 
     expect(code).toBe(0)
     expect(startedEntries).toEqual([join(tmp, "generated/runtime-entry.generated.ts")])
+  })
+
+  it("re-resolves and refreshes a unified project when a watched input changes", async () => {
+    const tmp = mkdtempSync(join(tmpdir(), "voyant-dev-command-"))
+    writeProjectFixture(tmp)
+    const { ctx, stderr } = makeCtx([], tmp)
+    const startedEntries: string[] = []
+    let onProjectChange: (() => Promise<void>) | undefined
+    const closeProjectWatcher = vi.fn()
+    let cleanup: (() => Promise<void>) | undefined
+    let release: (() => void) | undefined
+
+    const command = devCommand(ctx, {
+      devDeps: makeReadyDevDeps(startedEntries),
+      watchProjectInputs: (_input, onChange) => {
+        onProjectChange = onChange
+        return { close: closeProjectWatcher }
+      },
+      waitForShutdown: (fn) =>
+        new Promise<void>((resolve) => {
+          cleanup = fn
+          release = resolve
+        }),
+    })
+
+    await vi.waitFor(() => expect(onProjectChange).toBeTypeOf("function"))
+    writeProjectConfig(tmp, { modules: ["@acme/bookings", "@acme/loyalty"] })
+    await onProjectChange?.()
+
+    expect(stderr.join("")).toContain("project graph refreshed")
+    expect(stderr.join("")).toMatch(/sha256:[a-f0-9]{64}/)
+    expect(startedEntries).toHaveLength(2)
+
+    await cleanup?.()
+    release?.()
+    await expect(command).resolves.toBe(0)
+    expect(closeProjectWatcher).toHaveBeenCalledTimes(2)
   })
 })
 

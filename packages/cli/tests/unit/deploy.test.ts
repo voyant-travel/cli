@@ -97,7 +97,7 @@ describe("deploy target adapters", () => {
     expect(readFileSync(manifestPath, "utf8")).toBe(first)
   })
 
-  it("loads the project-specified custom adapter without loading project config or resolving a graph", async () => {
+  it("deploys an explicit artifact without loading project config or resolving a graph", async () => {
     const fixture = writeDeploymentFixture({
       project: { meta: { deploymentAdapter: "./deployment-adapter.mjs" } },
     })
@@ -130,7 +130,14 @@ describe("deploy target adapters", () => {
 `,
     )
 
-    const run = makeContext(fixture.root, ["--target", "custom", "--dry-run", "--json"])
+    const run = makeContext(fixture.root, [
+      "--target",
+      "custom",
+      "--deployment-artifacts",
+      ".voyant/deployment-artifacts.generated.json",
+      "--dry-run",
+      "--json",
+    ])
     expect(await deployCommand(run.ctx)).toBe(0)
     const plan = JSON.parse(run.stdout.join(""))
     expect(plan.target).toBe("custom")

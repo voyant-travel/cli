@@ -1,3 +1,5 @@
+import { join } from "node:path"
+
 import { getBooleanFlag, getStringFlag, type ParsedArgs, parseArgs } from "../lib/args.js"
 import { loadVoyantConfigFile, resolveConfigPath } from "../lib/config-loader.js"
 import {
@@ -25,6 +27,11 @@ import {
   runCloud,
   wantsJson,
 } from "../lib/output.js"
+import {
+  checkProjectArtifacts,
+  PROJECT_ARTIFACT_MANIFEST,
+  ProjectArtifactError,
+} from "../lib/project-artifacts.js"
 import type { CommandContext, CommandResult } from "../types.js"
 
 const USAGE = `Usage: voyant deploy [<app>] [--target <voyant-cloud|docker|custom>]
@@ -100,10 +107,7 @@ async function deployResolvedGraph(
   }
 
   try {
-    const artifact = readDeploymentGraphArtifact({
-      cwd: ctx.cwd,
-      manifestPath: getStringFlag(args, "deployment-artifacts"),
-    })
+    const artifact = await resolveDeploymentArtifact(ctx.cwd, args)
     const targetContext: DeploymentTargetContext = {
       cwd: ctx.cwd,
       artifact,
@@ -140,9 +144,34 @@ async function deployResolvedGraph(
     return writeDeploymentResult(ctx, result)
   } catch (error) {
     if (error instanceof CommandAlreadyFailedError) return 1
-    const code = error instanceof DeploymentArtifactError ? error.code : "deployment_failed"
+    const code =
+      error instanceof DeploymentArtifactError || error instanceof ProjectArtifactError
+        ? error.code
+        : "deployment_failed"
     return fail(ctx, args, errorMessage(error), code)
   }
+}
+
+async function resolveDeploymentArtifact(
+  cwd: string,
+  args: ParsedArgs,
+): Promise<DeploymentGraphArtifact> {
+  const explicitManifest = getStringFlag(args, "deployment-artifacts")
+  if (explicitManifest) {
+    return readDeploymentGraphArtifact({ cwd, manifestPath: explicitManifest })
+  }
+
+  const configOverride = getStringFlag(args, "config")
+  const configPath = resolveConfigPath({ cwd, path: configOverride })
+  if (configOverride || configPath) {
+    const checked = await checkProjectArtifacts(cwd, { configPath: configOverride })
+    return readDeploymentGraphArtifact({
+      cwd: checked.projectRoot,
+      manifestPath: join(checked.artifactRoot, PROJECT_ARTIFACT_MANIFEST),
+    })
+  }
+
+  return readDeploymentGraphArtifact({ cwd })
 }
 
 async function resolveDeploymentTargetAdapter(

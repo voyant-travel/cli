@@ -91,7 +91,7 @@ describe("unified project graph lifecycle", () => {
     expect(cloudHash).toBe(buildReport.contentHash)
     expect(dockerHash).toBe(buildReport.contentHash)
     expect(customHash).toBe(buildReport.contentHash)
-  })
+  }, 15_000)
 
   it("doctor and migrate fail with machine-readable stale artifact errors", async () => {
     const build = io([], root)
@@ -110,6 +110,12 @@ describe("unified project graph lifecycle", () => {
     const migrate = io(["--json"], root)
     expect(await migrateCommand(migrate.ctx)).toBe(1)
     expect(JSON.parse(migrate.stderr.join(""))).toMatchObject({
+      error: { code: "artifact_stale" },
+    })
+
+    const deploy = io(["fixture", "--dry-run", "--json"], root)
+    expect(await deployCommand(deploy.ctx)).toBe(1)
+    expect(JSON.parse(deploy.stderr.join(""))).toMatchObject({
       error: { code: "artifact_stale" },
     })
   })

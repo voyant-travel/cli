@@ -1,5 +1,12 @@
 # @voyant-travel/cli
 
+## 0.35.1
+
+### Patch Changes
+
+- 758de8f: Allow `voyant dev` to use the managed Node runtime entry from
+  `deployment-artifacts.generated.json` when `--file` is omitted.
+
 ## 0.35.0
 
 ### Minor Changes

@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import type { CommandContext } from "../../types.js"
 import {
   type LoadedFramework,
+  loadDeploymentFramework,
   managedDbDoctorCommand,
   resolveManagedSnapshotPath,
 } from "../db-doctor-managed.js"
@@ -136,6 +137,50 @@ describe("resolveManagedSnapshotPath", () => {
     expect(resolveManagedSnapshotPath(dir, "custom/profile.json")).toBe(
       join(dir, "custom", "profile.json"),
     )
+  })
+})
+
+describe("loadDeploymentFramework", () => {
+  let dir: string
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), "voyant-managed-doctor-framework-"))
+  })
+  afterEach(() => rmSync(dir, { recursive: true, force: true }))
+
+  it("loads compiled entries when a workspace framework exports TypeScript source", async () => {
+    const frameworkDir = join(dir, "node_modules", "@voyant-travel", "framework")
+    mkdirSync(join(frameworkDir, "src"), { recursive: true })
+    mkdirSync(join(frameworkDir, "dist"), { recursive: true })
+    writeFileSync(
+      join(frameworkDir, "package.json"),
+      JSON.stringify({
+        name: "@voyant-travel/framework",
+        version: FRAMEWORK_VERSION,
+        exports: {
+          "./profile": "./src/profile.ts",
+          "./deployment-graph": "./src/deployment-graph.ts",
+        },
+      }),
+    )
+    writeFileSync(join(frameworkDir, "src", "profile.ts"), "this source must not be imported")
+    writeFileSync(
+      join(frameworkDir, "dist", "profile.js"),
+      [
+        "export const validateVoyantProject = () => ({ ok: true, issues: [] })",
+        "export const getVoyantProjectMigrationMetadata = () => ({ moduleSources: [] })",
+        "export const resolveActiveModuleIds = () => []",
+      ].join("\n"),
+    )
+    writeFileSync(
+      join(frameworkDir, "dist", "deployment-graph.js"),
+      "export const resolveManagedProfileDeploymentGraph = async () => ({ diagnostics: [], modules: [], plugins: [] })",
+    )
+
+    const framework = await loadDeploymentFramework(dir)
+
+    expect(framework?.version).toBe(FRAMEWORK_VERSION)
+    expect(framework?.api.validateVoyantProject({}).ok).toBe(true)
+    expect(framework?.graphApi?.resolveManagedProfileDeploymentGraph).toBeTypeOf("function")
   })
 })
 

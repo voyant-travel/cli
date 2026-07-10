@@ -1,5 +1,11 @@
 # @voyant-travel/cli
 
+## 0.35.0
+
+### Minor Changes
+
+- b1a8312: Wire `voyant doctor` to consume deployment graph doctor reports and include graph diagnostics in JSON output.
+
 ## 0.34.2
 
 ### Patch Changes

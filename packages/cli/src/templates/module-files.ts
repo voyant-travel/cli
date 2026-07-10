@@ -1,180 +1,162 @@
 export interface ModuleNames {
-  /** Kebab-case name (e.g. "invoices"). Used for directory + package slug. */
   kebab: string
-  /** camelCase name (e.g. "invoices"). Used for variable names. */
   camel: string
-  /** PascalCase name (e.g. "Invoices"). Used for type names + exports. */
   pascal: string
+  packageName: string
 }
 
-export function packageJson(names: ModuleNames, version: string): string {
-  const body = {
-    name: `@voyant-travel/${names.kebab}`,
-    version,
-    type: "module",
-    exports: {
-      ".": "./src/index.ts",
-      "./schema": "./src/schema.ts",
-      "./validation": "./src/validation.ts",
-      "./routes": "./src/routes.ts",
-    },
-    scripts: {
-      build: "tsc -p tsconfig.json",
-      clean: "rm -rf dist",
-      prepack: "pnpm run build",
-      typecheck: "tsc --noEmit",
-      lint: "biome check src/",
-      test: "vitest run",
-    },
-    dependencies: {
-      "@voyant-travel/core": `^${version}`,
-      "@voyant-travel/db": `^${version}`,
-      "@voyant-travel/hono": `^${version}`,
-      "drizzle-orm": "^0.45.2",
-      hono: "^4.12.10",
-      zod: "^4.3.6",
-    },
-    devDependencies: {
-      typescript: "^5.9.2",
-    },
-    files: ["dist"],
-    publishConfig: {
-      access: "public",
-      main: "./dist/index.js",
-      types: "./dist/index.d.ts",
-      exports: {
-        ".": {
-          types: "./dist/index.d.ts",
-          import: "./dist/index.js",
-        },
-        "./schema": {
-          types: "./dist/schema.d.ts",
-          import: "./dist/schema.js",
-        },
-        "./validation": {
-          types: "./dist/validation.d.ts",
-          import: "./dist/validation.js",
-        },
-        "./routes": {
-          types: "./dist/routes.d.ts",
-          import: "./dist/routes.js",
-        },
-      },
+export interface ModuleFacets {
+  schema: boolean
+  admin: boolean
+  workflow: boolean
+}
+
+export function packageJson(names: ModuleNames, version: string, facets: ModuleFacets): string {
+  const exports: Record<string, string> = {
+    ".": "./src/index.ts",
+    "./voyant": "./src/voyant.ts",
+  }
+  if (facets.schema) exports["./schema"] = "./src/schema.ts"
+  if (facets.admin) exports["./admin"] = "./src/admin.ts"
+  if (facets.workflow) exports["./workflows"] = "./src/workflows.ts"
+
+  const dependencies: Record<string, string> = {
+    "@voyant-travel/framework": `^${version}`,
+  }
+  if (facets.schema) dependencies["drizzle-orm"] = "^0.45.2"
+  if (facets.admin) dependencies.hono = "^4.12.10"
+
+  const voyant: Record<string, unknown> = {
+    schemaVersion: "voyant.package.v1",
+    kind: "module",
+    manifest: "./voyant",
+    compatibleWith: {
+      framework: `>=${version}`,
+      targets: ["node", "voyant-cloud"],
+      modes: ["local", "managed-cloud", "self-hosted"],
     },
   }
-  return `${JSON.stringify(body, null, 2)}\n`
+  if (facets.schema) voyant.schema = "./schema"
+
+  return `${JSON.stringify(
+    {
+      name: names.packageName,
+      version: "0.0.1",
+      private: true,
+      type: "module",
+      exports,
+      voyant,
+      scripts: {
+        build: "tsc -p tsconfig.json",
+        typecheck: "tsc --noEmit",
+      },
+      dependencies,
+      devDependencies: {
+        typescript: "^5.9.2",
+      },
+    },
+    null,
+    2,
+  )}\n`
 }
 
 export function tsconfigJson(): string {
-  const body = {
-    compilerOptions: {
-      target: "ES2022",
-      lib: ["ES2022"],
-      module: "NodeNext",
-      moduleResolution: "NodeNext",
-      moduleDetection: "force",
-      esModuleInterop: true,
-      isolatedModules: true,
-      declaration: true,
-      declarationMap: true,
-      strict: true,
-      noUncheckedIndexedAccess: true,
-      resolveJsonModule: true,
-      skipLibCheck: true,
-      outDir: "dist",
-      rootDir: "src",
+  return `${JSON.stringify(
+    {
+      compilerOptions: {
+        target: "ES2022",
+        module: "NodeNext",
+        moduleResolution: "NodeNext",
+        declaration: true,
+        strict: true,
+        noUncheckedIndexedAccess: true,
+        skipLibCheck: true,
+        outDir: "dist",
+        rootDir: "src",
+      },
+      include: ["src/**/*.ts"],
     },
-    include: ["src/**/*"],
+    null,
+    2,
+  )}\n`
+}
+
+export function voyantTs(names: ModuleNames, facets: ModuleFacets): string {
+  const manifestLines = [
+    `  id: "${names.packageName}",`,
+    `  packageName: "${names.packageName}",`,
+    `  localId: "${names.kebab}",`,
+  ]
+  if (facets.schema) {
+    manifestLines.push(
+      `  schema: [{ id: "${names.packageName}#schema", source: "${names.packageName}/schema" }],`,
+    )
   }
-  return `${JSON.stringify(body, null, 2)}\n`
+  if (facets.admin) {
+    manifestLines.push(`  api: [
+    {
+      id: "${names.packageName}#api.admin",
+      surface: "admin",
+      mount: "${names.kebab}",
+      runtime: { entry: "${names.packageName}/admin", export: "${names.camel}AdminRoutes" },
+    },
+  ],`)
+  }
+  if (facets.workflow) {
+    manifestLines.push(
+      `  workflows: [{ id: "${names.packageName}#workflow.${names.kebab}", source: "${names.packageName}/workflows" }],`,
+    )
+  }
+
+  return `import { defineModule } from "@voyant-travel/framework/project"
+
+/** Import-cheap deployment declaration for the ${names.kebab} module. */
+export const ${names.camel}VoyantModule = defineModule({
+${manifestLines.join("\n")}
+})
+
+export default ${names.camel}VoyantModule
+`
+}
+
+export function indexTs(names: ModuleNames, facets: ModuleFacets): string {
+  const exports = [`export const ${names.camel}ModuleName = "${names.kebab}"`]
+  if (facets.schema) exports.push(`export * from "./schema.js"`)
+  if (facets.admin) exports.push(`export * from "./admin.js"`)
+  if (facets.workflow) exports.push(`export * from "./workflows.js"`)
+  return `${exports.join("\n")}\n`
 }
 
 export function schemaTs(names: ModuleNames): string {
-  return `import { typeId } from "@voyant-travel/db/lib/typeid-column"
-import { pgTable, text, timestamp } from "drizzle-orm/pg-core"
+  return `import { text } from "drizzle-orm/pg-core"
+import { pgTable } from "drizzle-orm/pg-core"
 
 export const ${names.camel} = pgTable("${names.kebab}", {
-  id: typeId("${names.camel}"),
-  name: text("name").notNull(),
-  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
-  deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  id: text("id").primaryKey(),
 })
 
 export type ${names.pascal} = typeof ${names.camel}.$inferSelect
-export type New${names.pascal} = typeof ${names.camel}.$inferInsert
 `
 }
 
-export function validationTs(names: ModuleNames): string {
-  return `import { z } from "zod"
-
-export const insert${names.pascal}Schema = z.object({
-  name: z.string().min(1),
-})
-
-export const update${names.pascal}Schema = insert${names.pascal}Schema.partial()
-
-export const list${names.pascal}QuerySchema = z.object({
-  limit: z.coerce.number().int().positive().max(200).optional(),
-  offset: z.coerce.number().int().nonnegative().optional(),
-})
-
-export type Insert${names.pascal}Input = z.infer<typeof insert${names.pascal}Schema>
-export type Update${names.pascal}Input = z.infer<typeof update${names.pascal}Schema>
-`
-}
-
-export function serviceTs(names: ModuleNames): string {
-  return `/**
- * Thin service scaffold for the ${names.kebab} module.
- *
- * Replace this with \`createCrudService\` from \`@voyant-travel/db/crud\`
- * once your table is finalized, or expand to capture multi-step workflows
- * and cross-module calls.
- */
-export const ${names.camel}Service = {
-  name: "${names.camel}",
-}
-`
-}
-
-export function routesTs(names: ModuleNames): string {
+export function adminTs(names: ModuleNames): string {
   return `import { Hono } from "hono"
 
-/**
- * Admin routes for the ${names.kebab} module. Mounted at
- * \`/v1/admin/${names.kebab}\` by \`createApp\`.
- */
-export const ${names.camel}Routes = new Hono()
+export const ${names.camel}AdminRoutes = new Hono()
 
-${names.camel}Routes.get("/", (c) => c.json({ data: [] }))
-
-export type ${names.pascal}Routes = typeof ${names.camel}Routes
+${names.camel}AdminRoutes.get("/", (c) => c.json({ data: [] }))
 `
 }
 
-export function indexTs(names: ModuleNames): string {
-  return `import type { Module } from "@voyant-travel/core"
-import type { HonoModule } from "@voyant-travel/hono/module"
-
-import { ${names.camel}Routes } from "./routes.js"
-
-export const ${names.camel}Module: Module = {
-  name: "${names.kebab}",
+export function workflowsTs(names: ModuleNames): string {
+  return `export interface ${names.pascal}WorkflowInput {
+  id: string
 }
 
-export const ${names.camel}HonoModule: HonoModule = {
-  module: ${names.camel}Module,
-  adminRoutes: ${names.camel}Routes,
+export async function run${names.pascal}Workflow(
+  input: ${names.pascal}WorkflowInput,
+): Promise<${names.pascal}WorkflowInput> {
+  return input
 }
-
-export type { ${names.pascal}, New${names.pascal} } from "./schema.js"
-export { ${names.camel} } from "./schema.js"
-export {
-  insert${names.pascal}Schema,
-  list${names.pascal}QuerySchema,
-  update${names.pascal}Schema,
-} from "./validation.js"
 `
 }

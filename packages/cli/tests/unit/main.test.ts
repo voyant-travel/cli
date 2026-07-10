@@ -91,6 +91,16 @@ describe("main", () => {
     expect(stderr.join("")).toContain("Usage: voyant new <name>")
   })
 
+  it("dispatches `add` and `install` to the authoring command", async () => {
+    const add = makeIo()
+    expect(await main(["add"], add.opts)).toBe(1)
+    expect(add.stderr.join("")).toContain("Usage: voyant add")
+
+    const install = makeIo()
+    expect(await main(["install"], install.opts)).toBe(1)
+    expect(install.stderr.join("")).toContain("Usage: voyant add")
+  })
+
   it("dispatches `exec` to the exec command", async () => {
     const { stderr, opts } = makeIo()
     const code = await main(["exec"], opts)

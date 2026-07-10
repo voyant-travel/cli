@@ -143,7 +143,7 @@ describe("newCommand", () => {
     seedStarter(join(tmp, "starters", "operator"))
     mkdirSync(join(tmp, "my-app"))
     writeFileSync(join(tmp, "my-app", "stale.txt"), "old\n")
-    const { ctx, stdout } = makeCtx(["my-app", "--force"], tmp)
+    const { ctx, stdout } = makeCtx(["my-app", "--starter", "operator", "--force"], tmp)
     const code = await newCommand(ctx)
     expect(code).toBe(0)
     expect(stdout.join("")).toContain("Created my-app")
@@ -151,16 +151,35 @@ describe("newCommand", () => {
     expect(existsSync(join(tmp, "my-app", "src", "entry.ts"))).toBe(true)
   })
 
-  it("defaults to the operator starter when no --starter is given", async () => {
-    seedStarter(join(tmp, "starters", "operator"))
-    const { ctx, stdout } = makeCtx(["my-app"], tmp)
+  it("expands the operator-standard preset into an explicit clean project", async () => {
+    const { ctx, stdout } = makeCtx(["my-app", "--preset", "operator-standard"], tmp)
     const code = await newCommand(ctx)
     expect(code).toBe(0)
     const out = stdout.join("")
     expect(out).toContain("Created my-app")
     expect(out).toContain("Next steps:")
     expect(existsSync(join(tmp, "my-app", "package.json"))).toBe(true)
-    expect(existsSync(join(tmp, "my-app", "src", "entry.ts"))).toBe(true)
+    expect(existsSync(join(tmp, "my-app", "src", "modules", ".gitkeep"))).toBe(true)
+    expect(existsSync(join(tmp, "my-app", "src", "plugins", ".gitkeep"))).toBe(true)
+    expect(existsSync(join(tmp, "my-app", "src", "entry.ts"))).toBe(false)
+
+    const pkg = JSON.parse(readFileSync(join(tmp, "my-app", "package.json"), "utf8"))
+    expect(pkg.devDependencies["@voyant-travel/cli"]).toMatch(/^\^\d+\.\d+\.\d+/)
+
+    const config = readFileSync(join(tmp, "my-app", "voyant.config.ts"), "utf8")
+    expect(config).toContain('from "@voyant-travel/framework/project"')
+    expect(config).toContain('"presetLineage": "operator-standard"')
+    expect(config).toContain('"@voyant-travel/bookings"')
+    expect(config).toContain('"@voyant-travel/finance/booking-tax-extension"')
+    expect(readFileSync(join(tmp, "my-app", ".gitignore"), "utf8")).toContain(".voyant/")
+  })
+
+  it("uses operator-standard when no preset or starter is given", async () => {
+    const { ctx } = makeCtx(["my-app"], tmp)
+    expect(await newCommand(ctx)).toBe(0)
+    expect(readFileSync(join(tmp, "my-app", "voyant.config.ts"), "utf8")).toContain(
+      '"presetLineage": "operator-standard"',
+    )
   })
 
   it("resolves the operator starter from a sibling Voyant checkout and composes local package versions", async () => {
@@ -182,7 +201,7 @@ describe("newCommand", () => {
       "1.6.0",
     )
 
-    const { ctx } = makeCtx(["my-app"], cliRoot)
+    const { ctx } = makeCtx(["my-app", "--starter", "operator"], cliRoot)
     const code = await newCommand(ctx)
 
     expect(code).toBe(0)
@@ -198,7 +217,7 @@ describe("newCommand", () => {
 
   it("rewrites package.json name + version + private", async () => {
     seedStarter(join(tmp, "starters", "operator"))
-    const { ctx } = makeCtx(["my-app"], tmp)
+    const { ctx } = makeCtx(["my-app", "--starter", "operator"], tmp)
     await newCommand(ctx)
     const pkg = JSON.parse(readFileSync(join(tmp, "my-app", "package.json"), "utf8"))
     expect(pkg.name).toBe("my-app")
@@ -214,7 +233,7 @@ describe("newCommand", () => {
 
   it("skips node_modules, dist, .turbo, and secret env files when copying", async () => {
     seedStarter(join(tmp, "starters", "operator"))
-    const { ctx } = makeCtx(["my-app"], tmp)
+    const { ctx } = makeCtx(["my-app", "--starter", "operator"], tmp)
     await newCommand(ctx)
     expect(existsSync(join(tmp, "my-app", "node_modules"))).toBe(false)
     expect(existsSync(join(tmp, "my-app", "dist"))).toBe(false)
@@ -225,7 +244,7 @@ describe("newCommand", () => {
 
   it("writes a default voyant.config.ts when the starter lacks one", async () => {
     seedStarter(join(tmp, "starters", "operator"))
-    const { ctx } = makeCtx(["my-app"], tmp)
+    const { ctx } = makeCtx(["my-app", "--starter", "operator"], tmp)
     await newCommand(ctx)
     const cfg = readFileSync(join(tmp, "my-app", "voyant.config.ts"), "utf8")
     expect(cfg).toContain("defineVoyantConfig")
@@ -236,7 +255,7 @@ describe("newCommand", () => {
     const starterRoot = join(tmp, "starters", "operator")
     seedStarter(starterRoot)
     writeFileSync(join(starterRoot, "voyant.config.ts"), "// pre-existing config\n")
-    const { ctx } = makeCtx(["my-app"], tmp)
+    const { ctx } = makeCtx(["my-app", "--starter", "operator"], tmp)
     await newCommand(ctx)
     const cfg = readFileSync(join(tmp, "my-app", "voyant.config.ts"), "utf8")
     expect(cfg).toBe("// pre-existing config\n")
@@ -267,9 +286,24 @@ describe("newCommand", () => {
     expect(stderr.join("")).toContain("Unknown option for voyant new: --template")
   })
 
+  it("rejects unknown presets", async () => {
+    const { ctx, stderr } = makeCtx(["my-app", "--preset", "pms-standard"], tmp)
+    expect(await newCommand(ctx)).toBe(1)
+    expect(stderr.join("")).toContain("Unknown preset: pms-standard")
+  })
+
+  it("rejects combining a preset and starter", async () => {
+    const { ctx, stderr } = makeCtx(
+      ["my-app", "--preset", "operator-standard", "--starter", "operator"],
+      tmp,
+    )
+    expect(await newCommand(ctx)).toBe(1)
+    expect(stderr.join("")).toContain("cannot be used together")
+  })
+
   it("rewrites monorepo drizzle config into a standalone schema entrypoint", async () => {
     seedStarter(join(tmp, "starters", "operator"))
-    const { ctx } = makeCtx(["my-app"], tmp)
+    const { ctx } = makeCtx(["my-app", "--starter", "operator"], tmp)
     await newCommand(ctx)
     const drizzle = readFileSync(join(tmp, "my-app", "drizzle.config.ts"), "utf8")
     const schema = readFileSync(join(tmp, "my-app", "src", "db", "voyant-schema.ts"), "utf8")

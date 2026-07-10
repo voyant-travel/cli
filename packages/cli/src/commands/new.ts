@@ -14,6 +14,7 @@ import { x } from "tar"
 
 import { parseArgs } from "../lib/args.js"
 import { VOYANT_FRAMEWORK_VERSION } from "../lib/voyant-version.js"
+import { DEFAULT_PROJECT_PRESET, operatorStandardProjectFiles } from "../templates/project-files.js"
 import type { CommandContext, CommandResult } from "../types.js"
 
 /**
@@ -43,30 +44,29 @@ const BUILT_IN_STARTERS = new Set(["operator"])
 const STARTER_RELEASE_BASE_URL =
   process.env.VOYANT_STARTER_BASE_URL ?? "https://github.com/voyant-travel/voyant/releases/download"
 
-/** The starter used when `voyant new <name>` is run without `--starter`. */
-const DEFAULT_STARTER = "operator"
-
 /**
- * `voyant new <name> [--starter <name|path>] [--force]`
+ * `voyant new <name> [--preset operator-standard | --starter <name|path>] [--force]`
  *
- * Scaffold a new Voyant project by cloning a starter directory into
- * `<cwd>/<name>` and rewriting the package.json name. A minimal
- * `voyant.config.ts` is generated if the starter doesn't already
- * provide one.
+ * Scaffold a new Voyant project at `<cwd>/<name>`. Presets write a small,
+ * explicit project graph; the compatibility starter path copies a directory
+ * and rewrites its package metadata.
  *
- * Run without `--starter`, it scaffolds from the `operator` starter.
+ * The normal path writes a small graph-native project from the
+ * `operator-standard` preset. `--starter` is an explicit compatibility path
+ * for copying the legacy operator application or another starter directory.
  * The starter source is resolved (in priority order):
  *   1. `--starter <path>` — absolute or cwd-relative path
  *   2. `--starter <name>` — built-in / discoverable starter alias
  *   3. repo-local `starters/<name>` or sibling `voyant/starters/<name>`
  *   4. version-matched starter tarball from GitHub Releases
- *   5. `operator` as the default starter when none is given
  */
 export async function newCommand(ctx: CommandContext): Promise<CommandResult> {
   const { positionals, flags } = parseArgs(ctx.argv)
   const [name] = positionals
   if (!name) {
-    ctx.stderr("Usage: voyant new <name> [--starter <name|path>] [--force]\n")
+    ctx.stderr(
+      "Usage: voyant new <name> [--preset operator-standard | --starter <name|path>] [--force]\n",
+    )
     return 1
   }
 
@@ -84,11 +84,41 @@ export async function newCommand(ctx: CommandContext): Promise<CommandResult> {
   }
 
   if ("template" in flags) {
-    ctx.stderr("Unknown option for voyant new: --template. Use --starter <name|path>.\n")
+    ctx.stderr("Unknown option for voyant new: --template. Use --preset or --starter.\n")
     return 1
   }
 
   const starterFlag = flags.starter
+  const presetFlag = flags.preset
+  if (starterFlag !== undefined && presetFlag !== undefined) {
+    ctx.stderr("voyant new: --preset and --starter cannot be used together.\n")
+    return 1
+  }
+
+  if (starterFlag === undefined) {
+    const preset = typeof presetFlag === "string" ? presetFlag : DEFAULT_PROJECT_PRESET
+    if (presetFlag === true || preset !== DEFAULT_PROJECT_PRESET) {
+      ctx.stderr(
+        `Unknown preset: ${presetFlag === true ? "(missing)" : preset}. Expected ${DEFAULT_PROJECT_PRESET}.\n`,
+      )
+      return 1
+    }
+
+    try {
+      for (const [relPath, content] of operatorStandardProjectFiles(name)) {
+        const file = join(target, relPath)
+        mkdirSync(dirname(file), { recursive: true })
+        writeFileSync(file, content)
+      }
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err)
+      ctx.stderr(`Failed to write ${preset} preset: ${reason}\n`)
+      return 1
+    }
+
+    printNextSteps(ctx, name, target)
+    return 0
+  }
 
   let starterSource: StarterSource | null
   try {
@@ -164,12 +194,16 @@ export async function newCommand(ctx: CommandContext): Promise<CommandResult> {
     writeFileSync(configPath, defaultConfigSource())
   }
 
+  printNextSteps(ctx, name, target)
+  return 0
+}
+
+function printNextSteps(ctx: CommandContext, name: string, target: string): void {
   ctx.stdout(`Created ${name} at ${target}\n`)
   ctx.stdout("Next steps:\n")
   ctx.stdout(`  cd ${name}\n`)
   ctx.stdout("  pnpm install\n")
   ctx.stdout("  pnpm dev\n")
-  return 0
 }
 
 type StarterSource = {
@@ -186,7 +220,7 @@ async function resolveStarter(
     if (existsSync(abs)) return { path: abs }
   }
 
-  const requested = typeof override === "string" ? override : DEFAULT_STARTER
+  const requested = typeof override === "string" ? override : "operator"
 
   for (const localCandidate of localStarterCandidates(cwd, requested)) {
     if (existsSync(localCandidate)) {

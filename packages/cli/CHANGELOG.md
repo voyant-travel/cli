@@ -1,5 +1,11 @@
 # @voyant-travel/cli
 
+## 0.36.0
+
+### Minor Changes
+
+- 2adf822: Add `voyant admin generate --graph <artifact>` to derive packaged admin entries from the selected module and plugin packages in a resolved deployment graph.
+
 ## 0.35.2
 
 ### Patch Changes

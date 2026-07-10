@@ -1,5 +1,12 @@
 # @voyant-travel/cli
 
+## 0.35.2
+
+### Patch Changes
+
+- b7cd8c1: Extract deployment graph doctor report parsing into a shared CLI helper and keep
+  explicit graph doctor reports ahead of legacy artifact validation.
+
 ## 0.35.1
 
 ### Patch Changes

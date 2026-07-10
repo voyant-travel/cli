@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises"
 import { dirname, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
-
+import { addCommand } from "./commands/add.js"
 import { adminCommand } from "./commands/admin.js"
 import { appsCommand } from "./commands/apps.js"
 import { configCommand } from "./commands/config.js"
@@ -66,6 +66,10 @@ export async function main(
   }
 
   switch (head) {
+    case "add":
+    case "install": {
+      return addCommand({ ...ctx, argv: rest })
+    }
     case "generate": {
       const [sub, ...subArgs] = rest
       const subCtx = { ...ctx, argv: subArgs }

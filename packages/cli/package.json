@@ -11,6 +11,7 @@
     ".": "./src/index.ts",
     "./drizzle": "./src/drizzle.ts",
     "./commands/generate-module": "./src/commands/generate-module.ts",
+    "./commands/add": "./src/commands/add.ts",
     "./commands/generate-link": "./src/commands/generate-link.ts",
     "./commands/config": "./src/commands/config.ts",
     "./commands/admin-generate": "./src/commands/admin-generate.ts",
@@ -84,6 +85,11 @@
         "types": "./dist/commands/generate-module.d.ts",
         "import": "./dist/commands/generate-module.js",
         "default": "./dist/commands/generate-module.js"
+      },
+      "./commands/add": {
+        "types": "./dist/commands/add.d.ts",
+        "import": "./dist/commands/add.js",
+        "default": "./dist/commands/add.js"
       },
       "./commands/generate-link": {
         "types": "./dist/commands/generate-link.d.ts",

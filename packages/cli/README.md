@@ -11,8 +11,10 @@ voyant --help
 
 | Command | What it does |
 | --- | --- |
-| `voyant new <name> [--starter <name\|path>]` | Clone a starter into `<name>/` |
-| `voyant generate module <name>` | Scaffold a module package under `packages/<name>` |
+| `voyant new <name> [--preset operator-standard]` | Expand an explicit graph-native project under `<name>/` |
+| `voyant new <name> --starter <name\|path>` | Explicitly copy a legacy or custom starter into `<name>/` |
+| `voyant generate module <name> [--schema] [--admin] [--workflow]` | Scaffold a selectable local package under `src/modules/<name>` |
+| `voyant add\|install <package\|path>` | Install and explicitly select a module or plugin in `voyant.config.ts` |
 | `voyant generate extension <name> --module <target>` | Scaffold a deployment extension under `src/extensions/<name>` that attaches to an existing module (`--public`, `--with-schema`, `--dir`, `--force`) |
 | `voyant generate link <a> <b>` | Print a `defineLink` snippet — `<a>` and `<b>` as `<module>.<entity>` |
 | `voyant config <show\|validate\|path>` | Inspect the nearest `voyant.config.*` |
@@ -72,6 +74,7 @@ import { resolveSchemas } from "@voyant-travel/cli/drizzle"
 import { runDeviceCodeFlow } from "@voyant-travel/cli/lib/device-code"
 import { resolveCloudAuth } from "@voyant-travel/cli/lib/cloud-client"
 import { setCredential } from "@voyant-travel/cli/lib/credentials"
+import { addCommand } from "@voyant-travel/cli/commands/add"
 import { newCommand } from "@voyant-travel/cli/commands/new"
 ```
 

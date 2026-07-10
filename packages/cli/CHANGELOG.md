@@ -1,5 +1,11 @@
 # @voyant-travel/cli
 
+## 0.36.1
+
+### Patch Changes
+
+- 62942d5: Load compiled framework profile entries when a workspace deployment exports TypeScript source, so `voyant db doctor --fail-on-drift` works on Node 20.
+
 ## 0.36.0
 
 ### Minor Changes

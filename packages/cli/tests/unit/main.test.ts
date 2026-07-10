@@ -23,6 +23,7 @@ describe("main", () => {
     expect(code).toBe(0)
     expect(stdout.join("")).toContain("voyant — Voyant CLI")
     expect(stdout.join("")).toContain("generate module")
+    expect(stdout.join("")).not.toContain("generate extension")
   })
 
   it("prints usage with -h", async () => {
@@ -58,6 +59,14 @@ describe("main", () => {
     const code = await main(["generate", "nothing"], opts)
     expect(code).toBe(1)
     expect(stderr.join("")).toContain("Unknown generate subcommand: nothing")
+  })
+
+  it("rejects the removed extension generator", async () => {
+    const { stderr, opts } = makeIo()
+    const code = await main(["generate", "extension", "booking-notes"], opts)
+    expect(code).toBe(1)
+    expect(stderr.join("")).toContain("Unknown generate subcommand: extension")
+    expect(stderr.join("")).toContain('Expected "module" or "link"')
   })
 
   it("dispatches generate link to the link command", async () => {

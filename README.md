@@ -18,8 +18,8 @@ TypeScript script runner. These commands work standalone against any
 Voyant project.
 
 ```sh
-voyant new my-app                          # scaffold from a starter
-voyant generate module invoices            # add a new module package
+voyant new my-app                          # scaffold a clean project
+voyant generate module invoices           # add a conventional local module
 voyant generate link crm.person products.product --right-list
 voyant config show                         # inspect voyant.config.ts
 voyant db generate                         # drizzle-kit pass-through

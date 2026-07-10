@@ -6,15 +6,11 @@ USAGE
   voyant <command> [...args]
 
 OPEN-SOURCE COMMANDS
-  new <name> [--preset <name>]       Scaffold a graph-native project (operator-standard)
+  new <name> [--preset <name>]       Scaffold a clean project with standard defaults
   new <name> --starter <name|path>   Copy a legacy or custom starter explicitly
-  generate module <name> [--schema] [--admin] [--workflow]
-                                     Scaffold a local package under src/modules/<name>
+  generate module <name>             Scaffold a local module under src/modules/<name>
   add|install <package|path>         Install and explicitly select a module or plugin
   remove|uninstall <package|path>    Remove a selected module or plugin and its dependency
-  generate extension <name> --module <target>
-                                     Scaffold a deployment extension under src/extensions/<name>
-                                     that attaches to an existing module's surface
   generate link <a> <b>              Emit a defineLink snippet (a, b as <module>.<entity>)
   config <show|validate|path>        Inspect the nearest voyant.config.* manifest
   admin generate [--check]           Emit admin.extensions.generated.ts from the manifest
@@ -78,10 +74,7 @@ vault:read scope. Reveal values in the dashboard or with a server token.
 EXAMPLES
   voyant new my-app --preset operator-standard
   voyant new my-app --starter operator        # explicit legacy compatibility path
-  voyant generate module invoices --schema --admin --workflow
-  voyant add ./src/modules/invoices
-  voyant generate extension booking-notes --module bookings
-  voyant generate extension loyalty-offers --module bookings --public --with-schema
+  voyant generate module invoices
   voyant generate link crm.person products.product --right-list
   voyant config show
   voyant admin generate --check

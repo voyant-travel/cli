@@ -11,11 +11,10 @@ voyant --help
 
 | Command | What it does |
 | --- | --- |
-| `voyant new <name> [--preset operator-standard]` | Expand an explicit graph-native project under `<name>/` |
+| `voyant new <name> [--preset operator-standard]` | Scaffold a clean convention-based project under `<name>/` |
 | `voyant new <name> --starter <name\|path>` | Explicitly copy a legacy or custom starter into `<name>/` |
-| `voyant generate module <name> [--schema] [--admin] [--workflow]` | Scaffold a selectable local package under `src/modules/<name>` |
+| `voyant generate module <name>` | Scaffold a conventional local module under `src/modules/<name>` |
 | `voyant add\|install <package\|path>` | Install and explicitly select a module or plugin in `voyant.config.ts` |
-| `voyant generate extension <name> --module <target>` | Scaffold a deployment extension under `src/extensions/<name>` that attaches to an existing module (`--public`, `--with-schema`, `--dir`, `--force`) |
 | `voyant generate link <a> <b>` | Print a `defineLink` snippet — `<a>` and `<b>` as `<module>.<entity>` |
 | `voyant config <show\|validate\|path>` | Inspect the nearest `voyant.config.*` |
 | `voyant admin generate [--graph <artifact>]` | Emit packaged admin composition from config or a resolved deployment graph |

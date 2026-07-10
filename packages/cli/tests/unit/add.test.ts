@@ -4,9 +4,11 @@ import { join } from "node:path"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 
 import { addCommand } from "../../src/commands/add.js"
-import { generateModuleCommand } from "../../src/commands/generate-module.js"
-import { newCommand } from "../../src/commands/new.js"
-import { parseProjectConfig, selectionResolve } from "../../src/lib/project-config.js"
+import {
+  parseProjectConfig,
+  renderProjectConfig,
+  selectionResolve,
+} from "../../src/lib/project-config.js"
 
 function makeCtx(argv: string[], cwd: string) {
   const stdout: string[] = []
@@ -27,11 +29,17 @@ describe("addCommand", () => {
   let tmp: string
   let project: string
 
-  beforeEach(async () => {
+  beforeEach(() => {
     tmp = mkdtempSync(join(tmpdir(), "voyant-cli-add-"))
     project = join(tmp, "operator")
-    expect(await newCommand(makeCtx(["operator", "--preset", "operator-standard"], tmp).ctx)).toBe(
-      0,
+    mkdirSync(project, { recursive: true })
+    writeFileSync(
+      join(project, "package.json"),
+      `${JSON.stringify({ name: "operator", dependencies: {}, packageManager: "pnpm@9.0.0" }, null, 2)}\n`,
+    )
+    writeFileSync(
+      join(project, "voyant.config.ts"),
+      renderProjectConfig({ schemaVersion: "voyant.project.v1", modules: [], plugins: [] }),
     )
   })
 
@@ -39,8 +47,8 @@ describe("addCommand", () => {
     rmSync(tmp, { recursive: true, force: true })
   })
 
-  it("selects a generated local module and is idempotent", async () => {
-    expect(await generateModuleCommand(makeCtx(["loyalty", "--schema"], project).ctx)).toBe(0)
+  it("selects a packaged local module and is idempotent", async () => {
+    seedLocalModule()
 
     const installs: string[] = []
     const deps = {
@@ -88,7 +96,7 @@ describe("addCommand", () => {
   })
 
   it("emits a machine-readable dry-run plan without installing or editing", async () => {
-    expect(await generateModuleCommand(makeCtx(["loyalty"], project).ctx)).toBe(0)
+    seedLocalModule()
     const configPath = join(project, "voyant.config.ts")
     const before = readFileSync(configPath, "utf8")
     let installed = false
@@ -126,7 +134,7 @@ describe("addCommand", () => {
   })
 
   it("restores package metadata when install fails", async () => {
-    expect(await generateModuleCommand(makeCtx(["loyalty"], project).ctx)).toBe(0)
+    seedLocalModule()
     const configPath = join(project, "voyant.config.ts")
     const packagePath = join(project, "package.json")
     const beforeConfig = readFileSync(configPath, "utf8")
@@ -155,4 +163,16 @@ describe("addCommand", () => {
     expect(await addCommand(ctx, { runAdd: async () => 0 })).toBe(1)
     expect(stderr.join("")).toContain("CLI-managed defineProject format")
   })
+
+  function seedLocalModule() {
+    const moduleRoot = join(project, "src", "modules", "loyalty")
+    mkdirSync(moduleRoot, { recursive: true })
+    writeFileSync(
+      join(moduleRoot, "package.json"),
+      JSON.stringify({
+        name: "@operator/loyalty",
+        voyant: { schemaVersion: "voyant.package.v1", kind: "module" },
+      }),
+    )
+  }
 })

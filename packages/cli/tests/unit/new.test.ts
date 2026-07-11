@@ -151,7 +151,7 @@ describe("newCommand", () => {
     expect(existsSync(join(tmp, "my-app", "src", "entry.ts"))).toBe(true)
   })
 
-  it("expands the operator-standard preset into an explicit clean project", async () => {
+  it("scaffolds a clean convention-based project", async () => {
     const { ctx, stdout } = makeCtx(["my-app", "--preset", "operator-standard"], tmp)
     const code = await newCommand(ctx)
     expect(code).toBe(0)
@@ -159,26 +159,39 @@ describe("newCommand", () => {
     expect(out).toContain("Created my-app")
     expect(out).toContain("Next steps:")
     expect(existsSync(join(tmp, "my-app", "package.json"))).toBe(true)
-    expect(existsSync(join(tmp, "my-app", "src", "modules", ".gitkeep"))).toBe(true)
-    expect(existsSync(join(tmp, "my-app", "src", "plugins", ".gitkeep"))).toBe(true)
+    for (const directory of [
+      "src/api/admin",
+      "src/api/store",
+      "src/admin",
+      "src/workflows",
+      "src/jobs",
+      "src/subscribers",
+      "src/modules",
+      "src/links",
+    ]) {
+      expect(existsSync(join(tmp, "my-app", directory, ".gitkeep"))).toBe(true)
+    }
+    expect(existsSync(join(tmp, "my-app", "src", "plugins"))).toBe(false)
+    expect(existsSync(join(tmp, "my-app", "src", "scripts"))).toBe(false)
     expect(existsSync(join(tmp, "my-app", "src", "entry.ts"))).toBe(false)
 
     const pkg = JSON.parse(readFileSync(join(tmp, "my-app", "package.json"), "utf8"))
     expect(pkg.devDependencies["@voyant-travel/cli"]).toMatch(/^\^\d+\.\d+\.\d+/)
 
     const config = readFileSync(join(tmp, "my-app", "voyant.config.ts"), "utf8")
-    expect(config).toContain('from "@voyant-travel/framework/project"')
-    expect(config).toContain('"presetLineage": "operator-standard"')
-    expect(config).toContain('"@voyant-travel/bookings"')
-    expect(config).toContain('"@voyant-travel/finance/booking-tax-extension"')
+    expect(config).toContain('from "@voyant-travel/framework"')
+    expect(config).toContain("defineConfig({})")
+    expect(config).not.toContain("presetLineage")
+    expect(config).not.toContain("modules")
+    expect(config).not.toContain("extensions")
     expect(readFileSync(join(tmp, "my-app", ".gitignore"), "utf8")).toContain(".voyant/")
   })
 
-  it("uses operator-standard when no preset or starter is given", async () => {
+  it("uses the clean scaffold when no preset or starter is given", async () => {
     const { ctx } = makeCtx(["my-app"], tmp)
     expect(await newCommand(ctx)).toBe(0)
     expect(readFileSync(join(tmp, "my-app", "voyant.config.ts"), "utf8")).toContain(
-      '"presetLineage": "operator-standard"',
+      "defineConfig({})",
     )
   })
 

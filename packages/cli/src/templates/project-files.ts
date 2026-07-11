@@ -1,6 +1,5 @@
 import { readFileSync } from "node:fs"
 
-import { renderProjectConfig } from "../lib/project-config.js"
 import { VOYANT_FRAMEWORK_VERSION } from "../lib/voyant-version.js"
 
 export const DEFAULT_PROJECT_PRESET = "operator-standard"
@@ -12,60 +11,28 @@ export const UNAVAILABLE_PROJECT_PRESETS = {
   },
 } as const
 
-const OPERATOR_STANDARD_MODULES = [
-  "@voyant-travel/action-ledger",
-  "@voyant-travel/relationships",
-  "@voyant-travel/quotes",
-  "@voyant-travel/operations",
-  "@voyant-travel/identity",
-  "@voyant-travel/distribution",
-  "@voyant-travel/inventory/extras",
-  "@voyant-travel/bookings/requirements",
-  "@voyant-travel/commerce",
-  "@voyant-travel/inventory",
-  "@voyant-travel/catalog",
-  "@voyant-travel/accommodations",
-  "@voyant-travel/bookings",
-  "@voyant-travel/finance",
-  "@voyant-travel/legal",
-  "@voyant-travel/public-document-delivery",
-  "@voyant-travel/notifications",
-  "@voyant-travel/trips",
-  "@voyant-travel/flights",
-  "@voyant-travel/operator-settings",
-] as const
-
-const OPERATOR_STANDARD_PLUGINS = [
-  "@voyant-travel/bookings/booking-supplier-extension",
-  "@voyant-travel/finance/bookings-create-extension",
-  "@voyant-travel/inventory/booking-extension",
-  "@voyant-travel/inventory/authoring/extension",
-  "@voyant-travel/quotes/booking-extension",
-  "@voyant-travel/distribution#extension",
-  "@voyant-travel/distribution/channel-push-extension",
-  "@voyant-travel/finance/booking-tax-extension",
-] as const
-
-export function operatorStandardProjectFiles(name: string): Array<[string, string]> {
+export function cleanProjectFiles(name: string): Array<[string, string]> {
   return [
     ["package.json", projectPackageJson(name)],
-    ["voyant.config.ts", operatorStandardConfig()],
+    ["voyant.config.ts", projectConfig()],
     ["tsconfig.json", projectTsconfig()],
     [".gitignore", projectGitignore()],
+    ["src/api/admin/.gitkeep", ""],
+    ["src/api/store/.gitkeep", ""],
+    ["src/admin/.gitkeep", ""],
+    ["src/workflows/.gitkeep", ""],
+    ["src/jobs/.gitkeep", ""],
+    ["src/subscribers/.gitkeep", ""],
     ["src/modules/.gitkeep", ""],
-    ["src/plugins/.gitkeep", ""],
     ["src/links/.gitkeep", ""],
-    ["src/scripts/.gitkeep", ""],
   ]
 }
 
-function operatorStandardConfig(): string {
-  return renderProjectConfig({
-    schemaVersion: "voyant.project.v1",
-    presetLineage: DEFAULT_PROJECT_PRESET,
-    modules: [...OPERATOR_STANDARD_MODULES],
-    plugins: [...OPERATOR_STANDARD_PLUGINS],
-  })
+function projectConfig(): string {
+  return `import { defineConfig } from "@voyant-travel/framework"
+
+export default defineConfig({})
+`
 }
 
 function projectPackageJson(name: string): string {

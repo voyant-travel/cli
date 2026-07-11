@@ -15,8 +15,8 @@ import { x } from "tar"
 import { parseArgs } from "../lib/args.js"
 import { VOYANT_FRAMEWORK_VERSION } from "../lib/voyant-version.js"
 import {
+  cleanProjectFiles,
   DEFAULT_PROJECT_PRESET,
-  operatorStandardProjectFiles,
   UNAVAILABLE_PROJECT_PRESETS,
 } from "../templates/project-files.js"
 import type { CommandContext, CommandResult } from "../types.js"
@@ -51,12 +51,12 @@ const STARTER_RELEASE_BASE_URL =
 /**
  * `voyant new <name> [--preset operator-standard | --starter <name|path>] [--force]`
  *
- * Scaffold a new Voyant project at `<cwd>/<name>`. Presets write a small,
- * explicit project graph; the compatibility starter path copies a directory
- * and rewrites its package metadata.
+ * Scaffold a new Voyant project at `<cwd>/<name>`. The default path writes a
+ * clean convention-based project; the compatibility starter path copies a
+ * directory and rewrites its package metadata.
  *
- * The normal path writes a small graph-native project from the
- * `operator-standard` preset. `--starter` is an explicit compatibility path
+ * The normal path writes a clean project using the standard Operator defaults.
+ * `--starter` is an explicit compatibility path
  * for copying the legacy operator application or another starter directory.
  * The starter source is resolved (in priority order):
  *   1. `--starter <path>` — absolute or cwd-relative path
@@ -115,7 +115,7 @@ export async function newCommand(ctx: CommandContext): Promise<CommandResult> {
     }
 
     try {
-      for (const [relPath, content] of operatorStandardProjectFiles(name)) {
+      for (const [relPath, content] of cleanProjectFiles(name)) {
         const file = join(target, relPath)
         mkdirSync(dirname(file), { recursive: true })
         writeFileSync(file, content)

@@ -1,4 +1,6 @@
 import { createHash } from "node:crypto"
+import { mkdir, readFile, writeFile } from "node:fs/promises"
+import { dirname, join } from "node:path"
 
 export function defineProject(project) {
   return project
@@ -57,6 +59,36 @@ export async function resolveProject({ project }) {
         })),
       },
     },
+  }
+}
+
+export async function writeProjectArtifacts({ projectRoot, artifacts, mode = "write" }) {
+  const files = [...artifacts.files].sort((left, right) => left.path.localeCompare(right.path))
+  globalThis.__voyantFrameworkArtifactWrites?.push({ projectRoot, artifacts, mode })
+  const results = []
+  for (const file of files) {
+    const target = join(projectRoot, ".voyant", file.path)
+    let actual
+    try {
+      actual = await readFile(target, "utf8")
+    } catch (error) {
+      if (error?.code !== "ENOENT") throw error
+    }
+    if (actual === file.contents) {
+      results.push({ path: file.path, status: "unchanged" })
+    } else if (mode === "check") {
+      results.push({ path: file.path, status: actual === undefined ? "missing" : "stale" })
+    } else {
+      await mkdir(dirname(target), { recursive: true })
+      await writeFile(target, file.contents, "utf8")
+      results.push({ path: file.path, status: "written" })
+    }
+  }
+  return {
+    mode,
+    outputRoot: join(projectRoot, ".voyant"),
+    ok: mode === "write" || results.every((file) => file.status === "unchanged"),
+    files: results,
   }
 }
 

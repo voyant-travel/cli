@@ -1,13 +1,15 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { addCommand } from "../../src/commands/add.js"
-import { generateModuleCommand } from "../../src/commands/generate-module.js"
-import { newCommand } from "../../src/commands/new.js"
 import { removeCommand } from "../../src/commands/remove.js"
-import { parseProjectConfig, selectionResolve } from "../../src/lib/project-config.js"
+import {
+  parseProjectConfig,
+  renderProjectConfig,
+  selectionResolve,
+} from "../../src/lib/project-config.js"
 
 function makeCtx(argv: string[], cwd: string) {
   const stdout: string[] = []
@@ -30,13 +32,35 @@ describe("removeCommand", () => {
   let packagePath: string
   let configPath: string
 
-  beforeEach(async () => {
+  beforeEach(() => {
     tmp = mkdtempSync(join(tmpdir(), "voyant-cli-remove-"))
     project = join(tmp, "operator")
-    await newCommand(makeCtx(["operator", "--preset", "operator-standard"], tmp).ctx)
-    await generateModuleCommand(makeCtx(["loyalty"], project).ctx)
+    const moduleRoot = join(project, "src", "modules", "loyalty")
+    mkdirSync(moduleRoot, { recursive: true })
+    writeFileSync(
+      join(moduleRoot, "package.json"),
+      JSON.stringify({
+        name: "@operator/loyalty",
+        voyant: { schemaVersion: "voyant.package.v1", kind: "module" },
+      }),
+    )
     packagePath = join(project, "package.json")
     configPath = join(project, "voyant.config.ts")
+    writeFileSync(
+      packagePath,
+      `${JSON.stringify({ name: "operator", dependencies: {}, packageManager: "pnpm@9.0.0" }, null, 2)}\n`,
+    )
+    writeFileSync(
+      configPath,
+      renderProjectConfig({
+        schemaVersion: "voyant.project.v1",
+        modules: [],
+        plugins: [
+          "@voyant-travel/distribution#extension",
+          "@voyant-travel/distribution/channel-push-extension",
+        ],
+      }),
+    )
   })
 
   afterEach(() => rmSync(tmp, { recursive: true, force: true }))

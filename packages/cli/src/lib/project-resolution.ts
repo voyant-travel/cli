@@ -65,6 +65,19 @@ export interface FrameworkGeneratedProjectFile {
   contents: string
 }
 
+export type ProjectArtifactWriteMode = "write" | "check"
+export type ProjectArtifactWriteStatus = "written" | "unchanged" | "missing" | "stale"
+
+export interface ProjectArtifactWriteResult {
+  mode: ProjectArtifactWriteMode
+  outputRoot: string
+  ok: boolean
+  files: readonly {
+    path: string
+    status: ProjectArtifactWriteStatus
+  }[]
+}
+
 export interface ResolvedProject {
   configPath: string
   projectRoot: string
@@ -90,6 +103,11 @@ interface FrameworkProjectResolverInput {
 
 interface FrameworkProjectResolverModule {
   resolveProject?: (input: FrameworkProjectResolverInput) => unknown | Promise<unknown>
+  writeProjectArtifacts?: (input: {
+    projectRoot: string
+    artifacts: ResolvedProject["artifacts"]
+    mode: ProjectArtifactWriteMode
+  }) => unknown | Promise<unknown>
 }
 
 /**
@@ -142,6 +160,35 @@ export async function resolveProject(
     frameworkProjectModulePath,
     ...resolution,
   }
+}
+
+/** Persist or check artifacts through the framework version installed by the project. */
+export async function writeFrameworkProjectArtifacts(
+  resolution: ResolvedProject,
+  artifacts: ResolvedProject["artifacts"],
+  mode: ProjectArtifactWriteMode,
+): Promise<ProjectArtifactWriteResult> {
+  const frameworkModule = (await import(
+    pathToFileURL(resolution.frameworkProjectModulePath).href
+  )) as FrameworkProjectResolverModule
+  const writer = frameworkModule.writeProjectArtifacts
+  if (typeof writer !== "function") {
+    throw new ProjectResolutionError(
+      "framework_contract",
+      `${resolution.frameworkProjectModulePath} must export writeProjectArtifacts({ projectRoot, artifacts, mode })`,
+    )
+  }
+
+  let rawResult: unknown
+  try {
+    rawResult = await writer({ projectRoot: resolution.projectRoot, artifacts, mode })
+  } catch (error) {
+    throw new ProjectResolutionError(
+      "resolution_failed",
+      `Framework project artifact ${mode} failed: ${errorMessage(error)}`,
+    )
+  }
+  return parseProjectArtifactWriteResult(rawResult, mode)
 }
 
 export class ProjectResolutionError extends Error {
@@ -273,6 +320,42 @@ function parseGeneratedFiles(value: unknown): FrameworkGeneratedProjectFile[] {
     throw contractError("artifacts.files contains duplicate paths")
   }
   return files.sort((left, right) => left.path.localeCompare(right.path))
+}
+
+function parseProjectArtifactWriteResult(
+  value: unknown,
+  expectedMode: ProjectArtifactWriteMode,
+): ProjectArtifactWriteResult {
+  const result = requireRecord(value, "framework project artifact write result")
+  if (result.mode !== expectedMode) {
+    throw contractError(
+      `project artifact write result mode must be ${expectedMode}, got ${String(result.mode)}`,
+    )
+  }
+  if (typeof result.outputRoot !== "string" || typeof result.ok !== "boolean") {
+    throw contractError("project artifact write result outputRoot and ok are invalid")
+  }
+  if (!Array.isArray(result.files)) {
+    throw contractError("project artifact write result files must be an array")
+  }
+  const files = result.files.map((value, index) => {
+    const file = requireRecord(value, `project artifact write result files[${index}]`)
+    const path = requireSafeRelativePath(
+      file.path,
+      `project artifact write result files[${index}].path`,
+    )
+    if (!isProjectArtifactWriteStatus(file.status)) {
+      throw contractError(
+        `project artifact write result files[${index}].status is invalid: ${String(file.status)}`,
+      )
+    }
+    return { path, status: file.status }
+  })
+  return { mode: expectedMode, outputRoot: result.outputRoot, ok: result.ok, files }
+}
+
+function isProjectArtifactWriteStatus(value: unknown): value is ProjectArtifactWriteStatus {
+  return value === "written" || value === "unchanged" || value === "missing" || value === "stale"
 }
 
 export function parseMigrationPlan(value: unknown, contentHash: string): ProjectMigrationPlan {

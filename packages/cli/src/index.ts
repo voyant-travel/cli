@@ -13,7 +13,6 @@ import { devCommand } from "./commands/dev-command.js"
 import { doctorCommand } from "./commands/doctor.js"
 import { envCommand } from "./commands/env.js"
 import { execCommand } from "./commands/exec.js"
-import { generateExtensionCommand } from "./commands/generate-extension.js"
 import { generateLinkCommand } from "./commands/generate-link.js"
 import { generateModuleCommand } from "./commands/generate-module.js"
 import { helpCommand } from "./commands/help.js"
@@ -99,10 +98,7 @@ export async function main(
       const subCtx = { ...ctx, argv: subArgs }
       if (sub === "module") return generateModuleCommand(subCtx)
       if (sub === "link") return generateLinkCommand(subCtx)
-      if (sub === "extension") return generateExtensionCommand(subCtx)
-      ctx.stderr(
-        `Unknown generate subcommand: ${sub ?? "(none)"}. Expected "module", "link", or "extension".\n`,
-      )
+      ctx.stderr(`Unknown generate subcommand: ${sub ?? "(none)"}. Expected "module" or "link".\n`)
       return 1
     }
     case "config": {

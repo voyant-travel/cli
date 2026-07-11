@@ -1,5 +1,17 @@
 # @voyant-travel/cli
 
+## 0.38.0
+
+### Minor Changes
+
+- f5f3d28: Scaffold clean convention-based projects and single-entry local modules, and remove the unsupported local extension generator.
+- 3e06b43: Execute hash-bound Node schema and setup migration runners by default, with plan-only, dry-run, structured status reporting, stale-artifact rejection, and explicit source-free artifact support.
+- 3e06b43: Add deterministic package lifecycle plans, graph-aware upgrades, and idempotent remove/uninstall commands for CLI-managed project graphs.
+- 3e06b43: Deploy one validated Node application graph through Voyant Cloud, Docker, or custom targets with shared content-hash plans. Docker now executes deterministic build, migration, application start, and HTTP smoke-test phases, while `custom --emit-manifest` emits a portable Node deployment manifest without requiring adapter code. Project-specified custom adapters remain supported. Source projects re-resolve their current config before deployment and reject stale persisted artifacts, while explicitly supplied artifacts remain source-free deploy inputs.
+- 3e06b43: Resolve graph-native projects through their installed framework package and use one deterministic `.voyant` graph hash for dev preparation, doctor validation, build artifacts, and migration planning.
+
+  Generate package-owned admin routes, navigation, copy, slots, and contributions directly from target-neutral resolved graph facets. Old graphs with no admin facets retain an explicit legacy package-scanning fallback.
+
 ## 0.37.0
 
 ### Minor Changes

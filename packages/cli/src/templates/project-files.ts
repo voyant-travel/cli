@@ -29,7 +29,7 @@ export function cleanProjectFiles(name: string): Array<[string, string]> {
 }
 
 function projectConfig(): string {
-  return `import { defineConfig } from "@voyant-travel/framework/project"
+  return `import { defineConfig } from "@voyant-travel/framework"
 
 export default defineConfig({})
 `

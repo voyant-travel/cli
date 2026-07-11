@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { existsSync, mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
@@ -12,13 +12,27 @@ import { writeProjectConfig, writeProjectFixture } from "../helpers/project-fixt
 
 describe("project artifacts", () => {
   let root: string
+  let frameworkWrites: Array<{
+    projectRoot: string
+    artifacts: { files: readonly { path: string; contents: string }[] }
+    mode: string
+  }>
 
   beforeEach(() => {
+    frameworkWrites = []
+    ;(
+      globalThis as typeof globalThis & {
+        __voyantFrameworkArtifactWrites?: typeof frameworkWrites
+      }
+    ).__voyantFrameworkArtifactWrites = frameworkWrites
     root = mkdtempSync(join(tmpdir(), "voyant-project-artifacts-"))
     writeProjectFixture(root)
   })
 
   afterEach(() => {
+    delete (
+      globalThis as typeof globalThis & { __voyantFrameworkArtifactWrites?: typeof frameworkWrites }
+    ).__voyantFrameworkArtifactWrites
     rmSync(root, { recursive: true, force: true })
   })
 
@@ -41,26 +55,41 @@ describe("project artifacts", () => {
       "runtime/project-runtime.generated.ts",
     ])
     expect(existsSync(second.runtimeEntryPath)).toBe(true)
+    expect(frameworkWrites).toHaveLength(2)
+    expect(frameworkWrites[0]?.mode).toBe("write")
+    expect(frameworkWrites[0]?.projectRoot).toBe(root)
+    expect(frameworkWrites[0]?.artifacts.files.map((file) => file.path)).toEqual([
+      "deployment-artifacts.generated.json",
+      "deployment-graph.generated.json",
+      "migration-plan.generated.json",
+      "runtime/project-migrations.generated.mjs",
+      "runtime/project-runtime.generated.ts",
+    ])
   })
 
-  it("replaces .voyant as a complete artifact set", async () => {
+  it("delegates check mode and reports stale and missing framework results", async () => {
     await prepareProjectArtifacts(root)
-    const stalePath = join(root, ".voyant", "runtime", "removed.generated.ts")
-    writeFileSync(stalePath, "export const stale = true\n")
+    writeFileSync(join(root, ".voyant", PROJECT_ARTIFACT_MANIFEST), "{}\n")
+    unlinkSync(join(root, ".voyant", "runtime", "project-runtime.generated.ts"))
 
-    await prepareProjectArtifacts(root)
+    await expect(checkProjectArtifacts(root)).rejects.toMatchObject({ code: "artifact_missing" })
+    await expect(checkProjectArtifacts(root)).rejects.toThrow(
+      "missing: runtime/project-runtime.generated.ts; stale: deployment-artifacts.generated.json",
+    )
 
-    expect(existsSync(stalePath)).toBe(false)
+    expect(frameworkWrites.at(-1)?.mode).toBe("check")
   })
 
   it("detects artifacts made stale by a config change", async () => {
-    const prepared = await prepareProjectArtifacts(root)
+    await prepareProjectArtifacts(root)
     writeProjectConfig(root, { modules: ["@acme/bookings", "@acme/loyalty"] })
 
     await expect(checkProjectArtifacts(root)).rejects.toMatchObject({
       code: "artifact_stale",
     })
-    await expect(checkProjectArtifacts(root)).rejects.toThrow(prepared.manifest.graphHash)
+    await expect(checkProjectArtifacts(root)).rejects.toThrow(
+      "stale: deployment-artifacts.generated.json",
+    )
   })
 
   it("fails clearly when generated outputs are missing", async () => {

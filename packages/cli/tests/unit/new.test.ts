@@ -179,7 +179,7 @@ describe("newCommand", () => {
     expect(pkg.devDependencies["@voyant-travel/cli"]).toMatch(/^\^\d+\.\d+\.\d+/)
 
     const config = readFileSync(join(tmp, "my-app", "voyant.config.ts"), "utf8")
-    expect(config).toContain('from "@voyant-travel/framework/project"')
+    expect(config).toContain('from "@voyant-travel/framework"')
     expect(config).toContain("defineConfig({})")
     expect(config).not.toContain("presetLineage")
     expect(config).not.toContain("modules")

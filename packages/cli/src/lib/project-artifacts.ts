@@ -1,7 +1,6 @@
-import { randomUUID } from "node:crypto"
 import { existsSync } from "node:fs"
-import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises"
-import { dirname, join, resolve } from "node:path"
+import { readFile } from "node:fs/promises"
+import { join, resolve } from "node:path"
 import { DEPLOYMENT_ARTIFACT_SCHEMA_VERSION } from "./deployment-artifact-reader.js"
 import {
   computeGraphContentHash,
@@ -14,6 +13,7 @@ import {
   type ResolveProjectOptions,
   resolveProject,
   stableJson,
+  writeFrameworkProjectArtifacts,
 } from "./project-resolution.js"
 
 export const PROJECT_ARTIFACTS_SCHEMA_VERSION = DEPLOYMENT_ARTIFACT_SCHEMA_VERSION
@@ -82,27 +82,22 @@ export async function checkProjectArtifacts(
 ): Promise<CheckedProjectArtifacts> {
   const resolution = await resolveProject(cwd, options)
   assertNoGraphErrors(resolution.graph)
+  const result = await writeFrameworkProjectArtifacts(
+    resolution,
+    completeProjectArtifacts(resolution),
+    "check",
+  )
+  if (!result.ok) throw artifactCheckError(result.files)
   const loaded = await loadProjectArtifacts(resolution.projectRoot)
-  if (loaded.manifest.graphHash !== resolution.graph.contentHash) {
-    throw new ProjectArtifactError(
-      "artifact_stale",
-      `Generated project artifacts are stale: found ${loaded.manifest.graphHash}, resolved ${resolution.graph.contentHash}. Run \`voyant build\` or \`voyant dev\` to refresh .voyant/.`,
-    )
-  }
   return { ...loaded, resolution }
 }
 
 export async function writeProjectArtifacts(resolution: ResolvedProject): Promise<void> {
   assertNoGraphErrors(resolution.graph)
-  const artifactRoot = join(resolution.projectRoot, PROJECT_ARTIFACT_DIRECTORY)
-  const replacementRoot = join(
-    resolution.projectRoot,
-    `${PROJECT_ARTIFACT_DIRECTORY}.replacement-${randomUUID()}`,
-  )
-  const previousRoot = join(
-    resolution.projectRoot,
-    `${PROJECT_ARTIFACT_DIRECTORY}.previous-${randomUUID()}`,
-  )
+  await writeFrameworkProjectArtifacts(resolution, completeProjectArtifacts(resolution), "write")
+}
+
+function completeProjectArtifacts(resolution: ResolvedProject): ResolvedProject["artifacts"] {
   const frameworkFiles = resolution.artifacts.files
   for (const file of frameworkFiles) {
     if (CORE_ARTIFACT_PATHS.has(file.path)) {
@@ -138,40 +133,17 @@ export async function writeProjectArtifacts(resolution: ResolvedProject): Promis
     files,
   }
 
-  let movedPrevious = false
-  let installedReplacement = false
-  try {
-    await mkdir(replacementRoot, { recursive: true })
-    await writeDeterministicFile(
-      join(replacementRoot, PROJECT_GRAPH_ARTIFACT),
-      stableJson(resolution.graph),
-    )
-    await writeDeterministicFile(
-      join(replacementRoot, PROJECT_MIGRATION_PLAN_ARTIFACT),
-      stableJson(resolution.artifacts.migrationPlan),
-    )
-    for (const file of frameworkFiles) {
-      await writeDeterministicFile(join(replacementRoot, file.path), file.contents)
-    }
-    await writeDeterministicFile(
-      join(replacementRoot, PROJECT_ARTIFACT_MANIFEST),
-      stableJson(manifest),
-    )
-    if (existsSync(artifactRoot)) {
-      await rename(artifactRoot, previousRoot)
-      movedPrevious = true
-    }
-    await rename(replacementRoot, artifactRoot)
-    installedReplacement = true
-    if (movedPrevious) await rm(previousRoot, { recursive: true, force: true })
-  } catch (error) {
-    if (!installedReplacement && movedPrevious && !existsSync(artifactRoot)) {
-      await rename(previousRoot, artifactRoot)
-    }
-    throw error
-  } finally {
-    await rm(replacementRoot, { recursive: true, force: true })
-    if (installedReplacement) await rm(previousRoot, { recursive: true, force: true })
+  return {
+    ...resolution.artifacts,
+    files: [
+      ...frameworkFiles,
+      { path: PROJECT_GRAPH_ARTIFACT, contents: stableJson(resolution.graph) },
+      {
+        path: PROJECT_MIGRATION_PLAN_ARTIFACT,
+        contents: stableJson(resolution.artifacts.migrationPlan),
+      },
+      { path: PROJECT_ARTIFACT_MANIFEST, contents: stableJson(manifest) },
+    ].sort((left, right) => left.path.localeCompare(right.path)),
   }
 }
 
@@ -280,13 +252,6 @@ function assertNoGraphErrors(graph: ResolvedProjectGraph): void {
   )
 }
 
-async function writeDeterministicFile(path: string, contents: string): Promise<void> {
-  await mkdir(dirname(path), { recursive: true })
-  const temporary = `${path}.tmp`
-  await writeFile(temporary, contents, "utf8")
-  await rename(temporary, path)
-}
-
 async function readJson(path: string, label: string): Promise<unknown> {
   try {
     return JSON.parse(await readFile(path, "utf8"))
@@ -296,6 +261,23 @@ async function readJson(path: string, label: string): Promise<unknown> {
       `Could not read ${label} at ${path}: ${error instanceof Error ? error.message : String(error)}`,
     )
   }
+}
+
+function artifactCheckError(
+  files: readonly { path: string; status: string }[],
+): ProjectArtifactError {
+  const missing = files.filter((file) => file.status === "missing").map((file) => file.path)
+  const stale = files.filter((file) => file.status === "stale").map((file) => file.path)
+  const details = [
+    missing.length > 0 ? `missing: ${missing.join(", ")}` : undefined,
+    stale.length > 0 ? `stale: ${stale.join(", ")}` : undefined,
+  ].filter((detail): detail is string => detail !== undefined)
+  const summary =
+    missing.length > 0 ? (stale.length > 0 ? "are missing or stale" : "are missing") : "are stale"
+  return new ProjectArtifactError(
+    missing.length > 0 ? "artifact_missing" : "artifact_stale",
+    `Generated project artifacts ${summary} (${details.join("; ")}). Run \`voyant build\` or \`voyant dev\` to refresh .voyant/.`,
+  )
 }
 
 function parseManifest(value: unknown): ProjectArtifactManifest {

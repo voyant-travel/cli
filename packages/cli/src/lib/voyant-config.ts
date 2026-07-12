@@ -2,13 +2,11 @@ import { existsSync } from "node:fs"
 import { isAbsolute, join, resolve as resolvePath } from "node:path"
 import { pathToFileURL } from "node:url"
 
-import type { VoyantConfig } from "@voyant-travel/core/config"
-
 import type { SchemaSeedConfig } from "./resolve-schemas.js"
 
 /**
- * The manifest shape the schema tooling consumes. Extends the published
- * {@link VoyantConfig} with two fields that are not yet part of core's type:
+ * The config shape the schema tooling consumes across legacy configs and
+ * normalized project graphs, plus two schema-tooling fields:
  *
  * - `additionalSchemas` — schema-owning packages migrated but not mounted as
  *   modules (plugins, FK targets). Seeded into the resolution closure.
@@ -38,9 +36,7 @@ export async function loadVoyantConfig(
 
   for (const candidate of candidates) {
     if (!existsSync(candidate)) continue
-    const mod = (await import(pathToFileURL(candidate).href)) as {
-      default?: VoyantConfig
-    }
+    const mod = (await import(pathToFileURL(candidate).href)) as { default?: unknown }
     return (mod.default ?? mod) as SchemaManifestConfig
   }
   return null

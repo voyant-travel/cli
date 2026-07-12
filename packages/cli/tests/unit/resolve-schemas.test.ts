@@ -3,7 +3,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 
-import { resolveSchemas } from "../../src/lib/resolve-schemas.js"
+import { resolvePackageJson, resolveSchemas } from "../../src/lib/resolve-schemas.js"
 
 /**
  * Build a fake module by writing a `packages/<basename>/package.json` with the
@@ -38,6 +38,10 @@ describe("resolveSchemas", () => {
 
   afterEach(() => {
     rmSync(tmp, { recursive: true, force: true })
+  })
+
+  it("does not pass an undefined package name to path resolution", () => {
+    expect(resolvePackageJson(undefined as never, tmp)).toBeNull()
   })
 
   it("returns the listed modules in dependency order with deps inserted first", () => {
@@ -105,6 +109,20 @@ describe("resolveSchemas", () => {
   it("uses ./schema as the default subpath when manifest lacks `schema`", () => {
     seedModule(tmp, "@voyant-travel/db", null)
     const result = resolveSchemas({ modules: ["@voyant-travel/db"] }, { cwd: tmp })
+    expect(result).toEqual(["@voyant-travel/db/schema"])
+  })
+
+  it("skips normalized graph units whose package metadata declares no schema", () => {
+    seedModule(tmp, "@voyant-travel/db", { schema: "./schema" })
+    seedModule(tmp, "@voyant-travel/mcp", null)
+
+    const result = resolveSchemas(
+      {
+        modules: [{ packageName: "@voyant-travel/db" }, { packageName: "@voyant-travel/mcp" }],
+      },
+      { cwd: tmp },
+    )
+
     expect(result).toEqual(["@voyant-travel/db/schema"])
   })
 

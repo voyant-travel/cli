@@ -2,10 +2,8 @@ import { existsSync, readdirSync, readFileSync, realpathSync } from "node:fs"
 import { createRequire } from "node:module"
 import { isAbsolute, join, relative, resolve as resolvePath } from "node:path"
 
-import { resolveEntry } from "@voyant-travel/core/config"
-
 import { parseArgs } from "../lib/args.js"
-import { resolvePackageJson } from "../lib/resolve-schemas.js"
+import { resolvePackageJson, resolveSchemaSeedPackageName } from "../lib/resolve-schemas.js"
 import {
   readSchemaManifest,
   renderSchemaManifest,
@@ -113,9 +111,20 @@ function checkManifestResolvable(
     ["extensions", config.extensions],
     ["additionalSchemas", config.additionalSchemas],
   ]
-  const entries = buckets.flatMap(([bucket, list]) =>
-    (list ?? []).map((entry) => ({ bucket, name: resolveEntry(entry).resolve })),
-  )
+  const entries: Array<{ bucket: string; name: string }> = []
+  const invalid: string[] = []
+  for (const [bucket, list] of buckets) {
+    for (const [index, entry] of (list ?? []).entries()) {
+      try {
+        entries.push({ bucket, name: resolveSchemaSeedPackageName(entry) })
+      } catch (error) {
+        invalid.push(`${bucket}[${index}]: ${reason(error)}`)
+      }
+    }
+  }
+  if (invalid.length > 0) {
+    issues.push({ message: "Manifest entries are invalid:", details: invalid })
+  }
   const unresolved = entries.filter(({ name }) => resolvePackageJson(name, templateDir) === null)
 
   if (unresolved.length > 0) {
@@ -126,6 +135,7 @@ function checkManifestResolvable(
     })
     return
   }
+  if (invalid.length > 0) return
   notes.push(`Manifest: all ${entries.length} module/extension/additionalSchema entr(ies) resolve.`)
 }
 

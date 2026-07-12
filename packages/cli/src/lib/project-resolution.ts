@@ -43,16 +43,23 @@ interface ProjectMigrationBase {
   order: number
   idempotencyKey: string
   owner: string
-  packageName: string
 }
 
-export interface ProjectSchemaMigration extends ProjectMigrationBase {
+export type ProjectSchemaMigration = ProjectMigrationBase & {
   migrationKind: "schema"
-  source: { kind: "package"; packageName: string; path: string }
-}
+} & (
+    | {
+        packageName: string
+        source: { kind: "package"; packageName: string; path: string }
+      }
+    | {
+        source: { kind: "deployment"; path: string }
+      }
+  )
 
 export interface ProjectSetupMigration extends ProjectMigrationBase {
   migrationKind: "setup"
+  packageName: string
   source: string
   runtime: { entry: string; export: string }
   dependsOn: readonly string[]
@@ -396,7 +403,6 @@ function parseMigration(value: unknown, index: number, all: readonly unknown[]):
   const migration = requireRecord(value, label)
   const id = requireString(migration.id, `${label}.id`)
   const owner = requireString(migration.owner, `${label}.owner`)
-  const packageName = requireString(migration.packageName, `${label}.packageName`)
   const idempotencyKey = requireString(migration.idempotencyKey, `${label}.idempotencyKey`)
   if (migration.order !== index) {
     throw contractError(`${label}.order must be ${index}, got ${String(migration.order)}`)
@@ -415,9 +421,23 @@ function parseMigration(value: unknown, index: number, all: readonly unknown[]):
       throw contractError(`${label} schema migrations must precede setup migrations`)
     }
     const source = requireRecord(migration.source, `${label}.source`)
-    if (source.kind !== "package") {
-      throw contractError(`${label}.source.kind must be package`)
+    if (source.kind === "deployment") {
+      return {
+        id,
+        migrationKind: "schema",
+        order: index,
+        idempotencyKey,
+        owner,
+        source: {
+          kind: "deployment",
+          path: requireString(source.path, `${label}.source.path`),
+        },
+      }
     }
+    if (source.kind !== "package") {
+      throw contractError(`${label}.source.kind must be package or deployment`)
+    }
+    const packageName = requireString(migration.packageName, `${label}.packageName`)
     return {
       id,
       migrationKind: "schema",
@@ -435,6 +455,7 @@ function parseMigration(value: unknown, index: number, all: readonly unknown[]):
   if (migration.migrationKind !== "setup") {
     throw contractError(`${label}.migrationKind must be schema or setup`)
   }
+  const packageName = requireString(migration.packageName, `${label}.packageName`)
   const runtime = requireRecord(migration.runtime, `${label}.runtime`)
   if (!Array.isArray(migration.dependsOn) || !migration.dependsOn.every(isNonEmptyString)) {
     throw contractError(`${label}.dependsOn must be an array of non-empty ids`)

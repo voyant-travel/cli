@@ -63,6 +63,24 @@ function fixture(tmp: string, opts: FixtureOpts): void {
   }
 }
 
+function graphConfigFixture(tmp: string): void {
+  fixture(tmp, { drizzleSchema: ["./packages/db/src/schema.ts"] })
+  writeFileSync(
+    join(tmp, "voyant.config.ts"),
+    `export default {
+  schemaVersion: "voyant.project.v1",
+  modules: [{
+    schemaVersion: "voyant.module.v1",
+    id: "@voyant-travel/db",
+    packageName: "@voyant-travel/db",
+  }],
+  extensions: [],
+  plugins: [],
+}
+`,
+  )
+}
+
 describe("dbDoctorCommand", () => {
   let tmp: string
   beforeEach(() => {
@@ -78,6 +96,40 @@ describe("dbDoctorCommand", () => {
     const code = await dbDoctorCommand(ctx)
     expect(out()).toContain("manifest-derived schema(s) match drizzle.config")
     expect(code).toBe(0)
+  })
+
+  it("supports normalized graph config returned by defineConfig", async () => {
+    graphConfigFixture(tmp)
+    const { ctx, out } = makeCtx(["--fail-on-drift"], tmp)
+
+    const code = await dbDoctorCommand(ctx)
+
+    expect(out()).toContain("Manifest: all 1 module/extension/additionalSchema entr(ies) resolve.")
+    expect(out()).toContain("manifest-derived schema(s) match drizzle.config")
+    expect(code).toBe(0)
+  })
+
+  it("reports malformed graph units without passing undefined to path resolution", async () => {
+    graphConfigFixture(tmp)
+    writeFileSync(
+      join(tmp, "voyant.config.ts"),
+      `export default {
+  schemaVersion: "voyant.project.v1",
+  modules: [{ schemaVersion: "voyant.module.v1", id: "local-module" }],
+  extensions: [],
+  plugins: [],
+}
+`,
+    )
+    const { ctx, out } = makeCtx(["--fail-on-drift"], tmp)
+
+    const code = await dbDoctorCommand(ctx)
+
+    expect(out()).toContain(
+      "Schema manifest entries must be package strings or objects with a non-empty resolve or packageName field",
+    )
+    expect(out()).not.toContain('The "path" argument must be of type string')
+    expect(code).toBe(1)
   })
 
   it("flags a manifest schema missing from drizzle.config and fails under --fail-on-drift", async () => {

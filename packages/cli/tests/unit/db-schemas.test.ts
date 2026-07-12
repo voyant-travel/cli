@@ -38,21 +38,7 @@ describe("dbSchemasCommand", () => {
 
   beforeEach(() => {
     root = mkdtempSync(join(tmpdir(), "voyant-db-schemas-"))
-    writeProjectFixture(root)
-    seedSchemaPackage(root, "@voyant-travel/zeta")
-    seedSchemaPackage(root, "@voyant-travel/alpha")
-    writeFileSync(
-      join(root, "voyant.config.mjs"),
-      `import { defineProject } from "@voyant-travel/framework/project"
-
-export default defineProject({
-  schemaVersion: "voyant.project.v1",
-  modules: ["@voyant-travel/zeta", "@voyant-travel/alpha"],
-  plugins: [],
-  meta: { testDatabaseGraph: true },
-})
-`,
-    )
+    writeDatabaseProjectFixture(root)
   })
 
   afterEach(() => {
@@ -80,4 +66,39 @@ export default defineProject({
   "alpha_records_zeta_record"`,
     )
   })
+
+  it("emits schemas when the config imports workspace TypeScript framework exports", async () => {
+    rmSync(root, { recursive: true, force: true })
+    writeDatabaseProjectFixture(root, "typescript")
+    await prepareProjectArtifacts(root)
+    const { ctx, out, err } = makeCtx(["--emit"], root)
+
+    expect(await dbSchemasCommand(ctx)).toBe(0)
+    expect(err()).toBe("")
+    expect(out()).toContain("Wrote 3 schema entrypoint(s)")
+    expect(readFileSync(join(root, "drizzle.schemas.generated.ts"), "utf8")).toContain(
+      '"./drizzle.links.generated.ts"',
+    )
+  })
 })
+
+function writeDatabaseProjectFixture(
+  root: string,
+  frameworkSource: "javascript" | "typescript" = "javascript",
+): void {
+  writeProjectFixture(root, { frameworkSource })
+  seedSchemaPackage(root, "@voyant-travel/zeta")
+  seedSchemaPackage(root, "@voyant-travel/alpha")
+  writeFileSync(
+    join(root, "voyant.config.mjs"),
+    `import { defineProject } from "@voyant-travel/framework/project"
+
+export default defineProject({
+  schemaVersion: "voyant.project.v1",
+  modules: ["@voyant-travel/zeta", "@voyant-travel/alpha"],
+  plugins: [],
+  meta: { testDatabaseGraph: true },
+})
+`,
+  )
+}

@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs"
 import { isAbsolute, join, resolve as resolvePath } from "node:path"
-import { pathToFileURL } from "node:url"
 
+import { loadProjectConfigModule } from "./project-module-loader.js"
 import type { SchemaSeedConfig } from "./resolve-schemas.js"
 
 /**
@@ -21,10 +21,9 @@ export type SchemaManifestConfig = SchemaSeedConfig & {
 const CONFIG_FILE_NAMES = ["voyant.config.ts", "voyant.config.js", "voyant.config.mjs"] as const
 
 /**
- * Locate and dynamically import a `voyant.config.{ts,js,mjs}` from `cwd` or the
- * explicit `override` path. Node (>= 22.18 / 23+) strips types from `.ts`
- * sources natively, so the TypeScript manifest imports directly. Returns
- * `null` when no config is found so callers can surface a usage error.
+ * Locate and load a `voyant.config.{ts,js,mjs}` from `cwd` or the explicit
+ * `override` path. Returns `null` when no config is found so callers can
+ * surface a usage error.
  */
 export async function loadVoyantConfig(
   cwd: string,
@@ -36,7 +35,7 @@ export async function loadVoyantConfig(
 
   for (const candidate of candidates) {
     if (!existsSync(candidate)) continue
-    const mod = (await import(pathToFileURL(candidate).href)) as { default?: unknown }
+    const mod = await loadProjectConfigModule<{ default?: unknown }>(candidate)
     return (mod.default ?? mod) as SchemaManifestConfig
   }
   return null

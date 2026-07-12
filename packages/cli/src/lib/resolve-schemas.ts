@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from "node:fs"
 import { createRequire } from "node:module"
-import { dirname, join } from "node:path"
+import { dirname, isAbsolute, join, resolve } from "node:path"
 
 /** Output mode for {@link resolveSchemas}. */
 export type SchemaResolutionStyle = "specifier" | "file"
@@ -34,6 +34,24 @@ export interface ResolveSchemasOptions {
    * Defaults to "specifier", which works with drizzle-kit's bundler-style loader.
    */
   style?: SchemaResolutionStyle
+}
+
+export function resolveSchemaSource(
+  source: string,
+  options: Required<Pick<ResolveSchemasOptions, "cwd" | "style">>,
+): string {
+  if (options.style === "specifier") return source
+  if (isAbsolute(source)) return source
+  if (source.startsWith(".")) return resolve(options.cwd, source)
+
+  const parts = source.split("/")
+  const packageParts = source.startsWith("@") ? 2 : 1
+  const packageName = parts.slice(0, packageParts).join("/")
+  const subpath = parts.slice(packageParts).join("/")
+  if (!packageName || !subpath) {
+    throw new Error(`Could not resolve graph schema source ${source}`)
+  }
+  return resolveFilePath(packageName, `./${subpath}`, options.cwd)
 }
 
 /** A package.json `voyant` field shape used by the resolver. */

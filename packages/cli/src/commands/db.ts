@@ -3,11 +3,11 @@ import { existsSync } from "node:fs"
 import { join } from "node:path"
 
 import { parseArgs } from "../lib/args.js"
-import { writeSchemaManifest } from "../lib/schema-manifest.js"
+import { resolveProjectDatabaseArtifacts } from "../lib/project-database.js"
 import { loadVoyantConfig } from "../lib/voyant-config.js"
 import type { CommandContext, CommandResult } from "../types.js"
 import { dbDoctorCommand } from "./db-doctor.js"
-import { dbSchemasCommand } from "./db-schemas.js"
+import { dbSchemasCommand, writeDatabaseSchemaArtifacts } from "./db-schemas.js"
 import { dbSyncLinksCommand } from "./db-sync-links.js"
 
 /**
@@ -72,8 +72,17 @@ export async function dbCommand(ctx: CommandContext): Promise<CommandResult> {
   if (sub === "generate") {
     const config = await loadVoyantConfig(templateDir, null)
     if (config) {
-      const generated = writeSchemaManifest(config, { cwd: templateDir })
-      ctx.stdout(`Wrote ${generated.entries.length} schema entrypoint(s) to ${generated.path}\n`)
+      try {
+        const project = await resolveProjectDatabaseArtifacts(templateDir, config)
+        const generated = await writeDatabaseSchemaArtifacts(config, {
+          cwd: project?.projectRoot ?? templateDir,
+          project,
+        })
+        ctx.stdout(`Wrote ${generated.entries.length} schema entrypoint(s) to ${generated.path}\n`)
+      } catch (error) {
+        ctx.stderr(`Could not emit database schema artifacts: ${reason(error)}\n`)
+        return 1
+      }
     }
   }
 
@@ -91,6 +100,10 @@ export async function dbCommand(ctx: CommandContext): Promise<CommandResult> {
       resolve(1)
     })
   })
+}
+
+function reason(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
 }
 
 function resolveTemplateDir(cwd: string, override: string | boolean | undefined): string | null {

@@ -4,6 +4,9 @@ import { join } from "node:path"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 
 import { dbDoctorCommand } from "../../src/commands/db-doctor.js"
+import { dbSchemasCommand } from "../../src/commands/db-schemas.js"
+import { prepareProjectArtifacts } from "../../src/lib/project-artifacts.js"
+import { writeProjectFixture } from "../helpers/project-fixture.js"
 
 function makeCtx(argv: string[], cwd: string) {
   const stdout: string[] = []
@@ -68,7 +71,6 @@ function graphConfigFixture(tmp: string): void {
   writeFileSync(
     join(tmp, "voyant.config.ts"),
     `export default {
-  schemaVersion: "voyant.project.v1",
   modules: [{
     schemaVersion: "voyant.module.v1",
     id: "@voyant-travel/db",
@@ -79,6 +81,47 @@ function graphConfigFixture(tmp: string): void {
 }
 `,
   )
+}
+
+async function unifiedGraphFixture(tmp: string): Promise<void> {
+  writeProjectFixture(tmp)
+  for (const packageName of ["alpha", "zeta"]) {
+    const packageRoot = join(tmp, "packages", packageName)
+    mkdirSync(join(packageRoot, "src"), { recursive: true })
+    writeFileSync(
+      join(packageRoot, "package.json"),
+      JSON.stringify({
+        name: `@voyant-travel/${packageName}`,
+        version: "0.0.0",
+        voyant: { schema: "./schema" },
+      }),
+    )
+    writeFileSync(join(packageRoot, "src", "schema.ts"), "export const table = 1\n")
+  }
+  writeFileSync(
+    join(tmp, "voyant.config.mjs"),
+    `import { defineProject } from "@voyant-travel/framework/project"
+export default defineProject({
+  schemaVersion: "voyant.project.v1",
+  modules: ["@voyant-travel/zeta", "@voyant-travel/alpha"],
+  plugins: [],
+  meta: { testDatabaseGraph: true },
+})
+`,
+  )
+  writeFileSync(
+    join(tmp, "drizzle.config.ts"),
+    `import { schema } from "./drizzle.schemas.generated.ts"
+export default { schema: [...schema], out: "./migrations", dialect: "postgresql" }
+`,
+  )
+  const migrations = join(tmp, "migrations", "meta")
+  mkdirSync(migrations, { recursive: true })
+  writeFileSync(join(migrations, "0000_snapshot.json"), JSON.stringify({ tables: {} }))
+  writeFileSync(join(tmp, "drizzle.links.generated.ts"), "export const placeholder = true\n")
+  await prepareProjectArtifacts(tmp)
+  const emitted = makeCtx(["--emit"], tmp)
+  expect(await dbSchemasCommand(emitted.ctx)).toBe(0)
 }
 
 describe("dbDoctorCommand", () => {
@@ -114,7 +157,6 @@ describe("dbDoctorCommand", () => {
     writeFileSync(
       join(tmp, "voyant.config.ts"),
       `export default {
-  schemaVersion: "voyant.project.v1",
   modules: [{ schemaVersion: "voyant.module.v1", id: "local-module" }],
   extensions: [],
   plugins: [],
@@ -129,6 +171,18 @@ describe("dbDoctorCommand", () => {
       "Schema manifest entries must be package strings or objects with a non-empty resolve or packageName field",
     )
     expect(out()).not.toContain('The "path" argument must be of type string')
+    expect(code).toBe(1)
+  })
+
+  it("fails when a selected graph link is missing from the Drizzle snapshot", async () => {
+    await unifiedGraphFixture(tmp)
+    const { ctx, out } = makeCtx(["--fail-on-drift"], tmp)
+
+    const code = await dbDoctorCommand(ctx)
+
+    expect(out()).toContain("Link tables are MISSING from the latest Drizzle snapshot")
+    expect(out()).toContain("alpha_records_zeta_record")
+    expect(out()).not.toContain("Links: no link definitions found")
     expect(code).toBe(1)
   })
 

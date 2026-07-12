@@ -2,4 +2,4 @@
 "@voyant-travel/cli": patch
 ---
 
-Support deployment-local migration plan entries and normalized project graph configs in doctor commands.
+Support deployment-local migrations and derive database schema and link checks from current project graph artifacts.

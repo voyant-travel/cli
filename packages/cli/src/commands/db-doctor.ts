@@ -3,6 +3,11 @@ import { createRequire } from "node:module"
 import { isAbsolute, join, relative, resolve as resolvePath } from "node:path"
 
 import { parseArgs } from "../lib/args.js"
+import { renderLinkDrizzleSchema } from "../lib/link-schema.js"
+import {
+  type ProjectDatabaseArtifacts,
+  resolveProjectDatabaseArtifacts,
+} from "../lib/project-database.js"
 import { resolvePackageJson, resolveSchemaSeedPackageName } from "../lib/resolve-schemas.js"
 import {
   readSchemaManifest,
@@ -40,12 +45,12 @@ interface DoctorIssue {
  * existing drift is paid down; pass `--fail-on-drift` to gate CI once clean.
  *
  * Checks:
- *  1. every manifest entry (modules + extensions + additionalSchemas) resolves
- *     to an installed package (catches typos / missing deps)
- *  2. manifest-derived schemas vs `drizzle.config` `schema` entries (missing/extra)
+ *  1. every resolved graph package (or legacy manifest entry) resolves
+ *  2. graph-derived schemas vs `drizzle.config` `schema` entries (missing/extra)
  *  3. the committed `drizzle.schemas.generated.ts` exists and is up to date
  *  4. no duplicate migration sequence prefixes in the `out` directory
- *  5. every materialized link table is present in the latest Drizzle snapshot
+ *  5. generated selected-graph links are fresh and every materialized link
+ *     table is present in the latest Drizzle snapshot
  *
  * `drizzle.config.ts` is parsed statically (its `schema`/`out` literals are
  * extracted from source) so the check needs no database, dotenv, or TS loader.
@@ -84,12 +89,19 @@ export async function dbDoctorCommand(ctx: CommandContext): Promise<CommandResul
   const parsed = parseDrizzleConfig(readFileSync(drizzleConfigPath, "utf8"))
   const issues: DoctorIssue[] = []
   const notes: string[] = []
+  let project: ProjectDatabaseArtifacts | null
+  try {
+    project = await resolveProjectDatabaseArtifacts(templateDir, config, configPath ?? undefined)
+  } catch (error) {
+    ctx.stderr(`Could not derive database inputs from project artifacts: ${reason(error)}\n`)
+    return 1
+  }
 
-  checkManifestResolvable(config, templateDir, issues, notes)
-  checkSchemaParity(config, templateDir, parsed, issues, notes)
-  checkGeneratedManifest(config, templateDir, issues, notes)
+  checkManifestResolvable(config, templateDir, issues, notes, project)
+  checkSchemaParity(config, templateDir, parsed, issues, notes, project)
+  checkGeneratedManifest(config, templateDir, issues, notes, project)
   checkDuplicatePrefixes(templateDir, parsed.out, issues, notes)
-  await checkLinkSnapshot(templateDir, parsed.out, issues, notes)
+  await checkLinkSnapshot(templateDir, parsed.out, issues, notes, project)
 
   const failOnDrift = flags["fail-on-drift"] === true
   printReport(ctx, { templateDir, drizzleConfigPath, issues, notes, failOnDrift })
@@ -105,7 +117,23 @@ function checkManifestResolvable(
   templateDir: string,
   issues: DoctorIssue[],
   notes: string[],
+  project: ProjectDatabaseArtifacts | null,
 ): void {
+  if (project) {
+    const unresolved = project.packageNames.filter(
+      (packageName) => resolvePackageJson(packageName, templateDir) === null,
+    )
+    if (unresolved.length > 0) {
+      issues.push({
+        message: "Resolved graph packages do not resolve from the project:",
+        details: unresolved,
+      })
+      return
+    }
+    notes.push(`Resolved graph: all ${project.packageNames.length} package record(s) resolve.`)
+    return
+  }
+
   const buckets: Array<[string, SchemaManifestConfig["modules"]]> = [
     ["modules", config.modules],
     ["extensions", config.extensions],
@@ -145,10 +173,20 @@ function checkSchemaParity(
   parsed: ParsedDrizzleConfig,
   issues: DoctorIssue[],
   notes: string[],
+  project: ProjectDatabaseArtifacts | null,
 ): void {
   let expected: string[]
   try {
-    expected = resolveSchemaManifest(config, { cwd: templateDir, style: "file" }).map(canon)
+    expected = resolveSchemaManifest(config, {
+      cwd: templateDir,
+      style: "file",
+      project: project
+        ? {
+            schemaSources: project.schemaSources,
+            includeGeneratedLinks: project.projectLinkCount > 0,
+          }
+        : undefined,
+    }).map(canon)
   } catch (err) {
     issues.push({ message: `Failed to resolve manifest schemas: ${reason(err)}` })
     return
@@ -209,10 +247,19 @@ function checkGeneratedManifest(
   templateDir: string,
   issues: DoctorIssue[],
   notes: string[],
+  project: ProjectDatabaseArtifacts | null,
 ): void {
   let generated: ReturnType<typeof renderSchemaManifest>
   try {
-    generated = renderSchemaManifest(config, { cwd: templateDir })
+    generated = renderSchemaManifest(config, {
+      cwd: templateDir,
+      project: project
+        ? {
+            schemaSources: project.schemaSources,
+            includeGeneratedLinks: project.projectLinkCount > 0,
+          }
+        : undefined,
+    })
   } catch (err) {
     issues.push({ message: `Failed to render generated schema manifest: ${reason(err)}` })
     return
@@ -312,10 +359,15 @@ async function checkLinkSnapshot(
   outRel: string,
   issues: DoctorIssue[],
   notes: string[],
+  project: ProjectDatabaseArtifacts | null,
 ): Promise<void> {
-  const linksPath = resolveLinksPath(templateDir, {})
+  const linksPath = project?.projectLinksPath ?? resolveLinksPath(templateDir, {})
   if (!linksPath) {
-    notes.push("Links: no link definitions found.")
+    notes.push(
+      project
+        ? "Links: selected graph contains no materialized project links."
+        : "Links: no link definitions found.",
+    )
     return
   }
 
@@ -325,6 +377,22 @@ async function checkLinkSnapshot(
   } catch (err) {
     issues.push({ message: `Could not load link definitions: ${reason(err)}` })
     return
+  }
+
+  if (project) {
+    const generatedLinksPath = resolvePath(templateDir, "drizzle.links.generated.ts")
+    const expected = renderLinkDrizzleSchema(links)
+    const current = existsSync(generatedLinksPath) ? readFileSync(generatedLinksPath, "utf8") : null
+    if (current !== expected) {
+      issues.push({
+        message: `Generated project link schema is ${current === null ? "MISSING" : "STALE"}: ${rel(templateDir, generatedLinksPath)}.`,
+        details: ["Run `voyant db schemas --emit` to refresh it from the selected graph."],
+      })
+    } else {
+      notes.push(
+        `Generated project link schema: ${rel(templateDir, generatedLinksPath)} is up to date.`,
+      )
+    }
   }
 
   const materialized = links.filter((l) => !l.readOnly).map((l) => l.tableName)

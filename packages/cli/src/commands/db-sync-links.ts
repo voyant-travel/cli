@@ -152,7 +152,9 @@ export async function loadLinks(absPath: string): Promise<LinkDefinition[]> {
     : await loadLinksViaImport(absPath)
 
   if (!Array.isArray(raw)) {
-    throw new Error("expected a named export `links` or a default-exported array of LinkDefinition")
+    throw new Error(
+      "expected a named export `links` or `projectLinks`, or a default-exported array of LinkDefinition",
+    )
   }
 
   // Shape-check each entry so we fail with a useful message.
@@ -173,8 +175,8 @@ export async function loadLinks(absPath: string): Promise<LinkDefinition[]> {
 
 async function loadLinksViaImport(absPath: string): Promise<unknown> {
   const href = pathToFileURL(absPath).href
-  const mod = (await import(href)) as { links?: unknown; default?: unknown }
-  return mod.links ?? mod.default
+  const mod = (await import(href)) as { links?: unknown; projectLinks?: unknown; default?: unknown }
+  return mod.links ?? mod.projectLinks ?? mod.default
 }
 
 /**
@@ -244,7 +246,7 @@ async function loadLinksViaSubprocess(absPath: string): Promise<unknown> {
   const marker = "__VOYANT_LINKS_JSON__:"
   const script =
     `import(${JSON.stringify(href)}).then((m)=>{` +
-    `const v=m.links??m.default;` +
+    `const v=m.links??m.projectLinks??m.default;` +
     `process.stdout.write(${JSON.stringify(marker)}+JSON.stringify(v??null));` +
     `}).catch((e)=>{` +
     `process.stderr.write(e?.stack??String(e));` +

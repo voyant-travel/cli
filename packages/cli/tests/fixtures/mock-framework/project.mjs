@@ -7,8 +7,9 @@ export function defineProject(project) {
 }
 
 export async function resolveProject({ project }) {
-  const modules = normalizeUnits(project.modules ?? [], "module")
-  const plugins = normalizeUnits(project.plugins ?? [], "plugin")
+  const testDatabaseGraph = project.meta?.testDatabaseGraph === true
+  const modules = normalizeUnits(project.modules ?? [], "module", testDatabaseGraph)
+  const plugins = normalizeUnits(project.plugins ?? [], "plugin", false)
   const graphWithoutHash = {
     schemaVersion: "voyant.resolved-graph.v1",
     project: project.presetLineage ? { presetLineage: project.presetLineage } : {},
@@ -44,6 +45,14 @@ export async function resolveProject({ project }) {
           path: "runtime/project-runtime.generated.ts",
           contents: `// GENERATED test runtime for ${contentHash}\nexport const contentHash = ${JSON.stringify(contentHash)}\n`,
         },
+        ...(testDatabaseGraph
+          ? [
+              {
+                path: "runtime/project-links.generated.ts",
+                contents: `export const projectLinks = [{ left: { linkable: { module: "alpha", entity: "record", table: "alpha" }, isList: false }, right: { linkable: { module: "zeta", entity: "record", table: "zeta" }, isList: true }, tableName: "alpha_records_zeta_record", leftColumn: "alpha_record_id", rightColumn: "zeta_record_id", cardinality: "one-to-many", deleteCascade: false }]\n`,
+              },
+            ]
+          : []),
       ],
       migrationPlan: {
         schemaVersion: "voyant.migration-plan.v1",
@@ -92,7 +101,7 @@ export async function writeProjectArtifacts({ projectRoot, artifacts, mode = "wr
   }
 }
 
-function normalizeUnits(selections, kind) {
+function normalizeUnits(selections, kind, testDatabaseGraph) {
   return selections
     .map((selection) => {
       const specifier = typeof selection === "string" ? selection : selection.resolve
@@ -104,9 +113,13 @@ function normalizeUnits(selections, kind) {
         provides: { capabilities: [], ports: [] },
         requires: { capabilities: [], ports: [] },
         api: [],
-        schema: [],
+        schema: testDatabaseGraph
+          ? [{ id: `${specifier}#schema`, source: `${specifier}/schema` }]
+          : [],
         migrations: [],
-        links: [],
+        links: testDatabaseGraph
+          ? [{ id: `${specifier}#link.standard`, source: `${specifier}/links`, export: "link" }]
+          : [],
         subscribers: [],
         events: [],
         workflows: [],

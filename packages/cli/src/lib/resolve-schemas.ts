@@ -96,7 +96,7 @@ export function resolveSchemas(
   ]
   const seeds = seedEntries.flatMap((entry) => {
     const packageName = resolveSchemaSeedPackageName(entry)
-    if (isNormalizedGraphUnit(entry) && !isNonEmptyString(readManifest(packageName, cwd).schema)) {
+    if (isNormalizedGraphUnit(entry) && !packageOwnsSchema(packageName, cwd)) {
       return []
     }
     return [packageName]
@@ -248,4 +248,14 @@ function isNonEmptyString(value: unknown): value is string {
 
 function isNormalizedGraphUnit(entry: SchemaSeedEntry): entry is { packageName: string } {
   return typeof entry === "object" && entry !== null && "packageName" in entry
+}
+
+function packageOwnsSchema(packageName: string, cwd: string): boolean {
+  if (isNonEmptyString(readManifest(packageName, cwd).schema)) return true
+  try {
+    resolveFilePath(packageName, "./schema", cwd)
+    return true
+  } catch {
+    return false
+  }
 }

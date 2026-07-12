@@ -16,6 +16,7 @@ function seedModule(
   cwd: string,
   name: string,
   voyant: { schema?: string; requiresSchemas?: string[] } | null,
+  options: { defaultSchema?: boolean } = {},
 ): void {
   const basename = name.startsWith("@voyant-travel/") ? name.slice("@voyant-travel/".length) : name
   const dir = join(cwd, "packages", basename)
@@ -23,6 +24,10 @@ function seedModule(
   const pkg: Record<string, unknown> = { name, version: "0.0.0" }
   if (voyant) pkg.voyant = voyant
   writeFileSync(join(dir, "package.json"), JSON.stringify(pkg, null, 2))
+  if (options.defaultSchema) {
+    mkdirSync(join(dir, "src"), { recursive: true })
+    writeFileSync(join(dir, "src", "schema.ts"), "export const schema = {}\n")
+  }
 }
 
 describe("resolveSchemas", () => {
@@ -124,6 +129,23 @@ describe("resolveSchemas", () => {
     )
 
     expect(result).toEqual(["@voyant-travel/db/schema"])
+  })
+
+  it("retains normalized graph units that publish the default schema entrypoint", () => {
+    seedModule(
+      tmp,
+      "@voyant-travel/facilities",
+      { requiresSchemas: ["@voyant-travel/db"] },
+      { defaultSchema: true },
+    )
+    seedModule(tmp, "@voyant-travel/db", { schema: "./schema" })
+
+    const result = resolveSchemas(
+      { modules: [{ packageName: "@voyant-travel/facilities" }] },
+      { cwd: tmp },
+    )
+
+    expect(result).toEqual(["@voyant-travel/db/schema", "@voyant-travel/facilities/schema"])
   })
 
   it("throws on circular schema dependencies", () => {

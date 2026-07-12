@@ -59,6 +59,7 @@
     "@voyant-travel/workflows-orchestrator": "^0.107.9",
     "@voyant-travel/workflows-orchestrator-node": "^0.107.9",
     "esbuild": "^0.28.0",
+    "jiti": "^2.6.1",
     "tar": "^7.4.3"
   },
   "devDependencies": {

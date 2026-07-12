@@ -1,10 +1,9 @@
 import { createHash } from "node:crypto"
-import { readFile } from "node:fs/promises"
 import { createRequire } from "node:module"
 import { dirname, relative, resolve } from "node:path"
-import { pathToFileURL } from "node:url"
 
 import { resolveConfigPath } from "./config-loader.js"
+import { loadProjectConfigModule, loadProjectModule } from "./project-module-loader.js"
 
 export const FRAMEWORK_PROJECT_RESOLVER_EXPORT = "resolveProject" as const
 export const RESOLVED_GRAPH_SCHEMA_VERSION = "voyant.resolved-graph.v1" as const
@@ -138,9 +137,9 @@ export async function resolveProject(
 
   const projectRoot = dirname(configPath)
   const frameworkProjectModulePath = resolveFrameworkProjectModule(projectRoot)
-  const frameworkModule = (await import(pathToFileURL(frameworkProjectModulePath).href)) as
-    | FrameworkProjectResolverModule
-    | undefined
+  const frameworkModule = await loadProjectModule<FrameworkProjectResolverModule | undefined>(
+    frameworkProjectModulePath,
+  )
   const resolver = frameworkModule?.[FRAMEWORK_PROJECT_RESOLVER_EXPORT]
   if (typeof resolver !== "function") {
     throw new ProjectResolutionError(
@@ -175,9 +174,9 @@ export async function writeFrameworkProjectArtifacts(
   artifacts: ResolvedProject["artifacts"],
   mode: ProjectArtifactWriteMode,
 ): Promise<ProjectArtifactWriteResult> {
-  const frameworkModule = (await import(
-    pathToFileURL(resolution.frameworkProjectModulePath).href
-  )) as FrameworkProjectResolverModule
+  const frameworkModule = await loadProjectModule<FrameworkProjectResolverModule>(
+    resolution.frameworkProjectModulePath,
+  )
   const writer = frameworkModule.writeProjectArtifacts
   if (typeof writer !== "function") {
     throw new ProjectResolutionError(
@@ -227,11 +226,7 @@ function resolveFrameworkProjectModule(projectRoot: string): string {
 
 async function loadProjectConfig(configPath: string): Promise<unknown> {
   try {
-    const source = await readFile(configPath, "utf8")
-    const cacheKey = createHash("sha256").update(source).digest("hex")
-    const imported = (await import(
-      `${pathToFileURL(configPath).href}?voyant_config=${cacheKey}`
-    )) as { default?: unknown }
+    const imported = await loadProjectConfigModule<{ default?: unknown }>(configPath)
     if (imported.default === undefined) {
       throw new Error("config has no default export")
     }

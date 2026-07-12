@@ -6,7 +6,11 @@ const MOCK_FRAMEWORK = fileURLToPath(new URL("../fixtures/mock-framework", impor
 
 export function writeProjectFixture(
   root: string,
-  options: { modules?: readonly string[]; plugins?: readonly string[] } = {},
+  options: {
+    modules?: readonly string[]
+    plugins?: readonly string[]
+    frameworkSource?: "javascript" | "typescript"
+  } = {},
 ): void {
   mkdirSync(root, { recursive: true })
   writeFileSync(
@@ -16,7 +20,29 @@ export function writeProjectFixture(
   const frameworkRoot = join(root, "node_modules", "@voyant-travel", "framework")
   mkdirSync(frameworkRoot, { recursive: true })
   cpSync(MOCK_FRAMEWORK, frameworkRoot, { recursive: true })
+  if (options.frameworkSource === "typescript") {
+    writeTypeScriptFrameworkExports(frameworkRoot)
+  }
   writeProjectConfig(root, options)
+}
+
+function writeTypeScriptFrameworkExports(frameworkRoot: string): void {
+  writeFileSync(
+    join(frameworkRoot, "package.json"),
+    `${JSON.stringify(
+      {
+        name: "@voyant-travel/framework",
+        version: "0.0.0-workspace-test",
+        type: "module",
+        exports: { ".": "./src/project.ts", "./project": "./src/project.ts" },
+      },
+      null,
+      2,
+    )}\n`,
+  )
+  mkdirSync(join(frameworkRoot, "src"), { recursive: true })
+  writeFileSync(join(frameworkRoot, "src", "project.ts"), `export * from "./project-api.js"\n`)
+  writeFileSync(join(frameworkRoot, "src", "project-api.ts"), `export * from "../project.mjs"\n`)
 }
 
 export function writeProjectConfig(

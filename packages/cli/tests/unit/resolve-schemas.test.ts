@@ -3,7 +3,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 
-import { resolveSchemas } from "../../src/lib/resolve-schemas.js"
+import { resolvePackageJson, resolveSchemas } from "../../src/lib/resolve-schemas.js"
 
 /**
  * Build a fake module by writing a `packages/<basename>/package.json` with the
@@ -16,6 +16,7 @@ function seedModule(
   cwd: string,
   name: string,
   voyant: { schema?: string; requiresSchemas?: string[] } | null,
+  options: { defaultSchema?: boolean } = {},
 ): void {
   const basename = name.startsWith("@voyant-travel/") ? name.slice("@voyant-travel/".length) : name
   const dir = join(cwd, "packages", basename)
@@ -23,6 +24,10 @@ function seedModule(
   const pkg: Record<string, unknown> = { name, version: "0.0.0" }
   if (voyant) pkg.voyant = voyant
   writeFileSync(join(dir, "package.json"), JSON.stringify(pkg, null, 2))
+  if (options.defaultSchema) {
+    mkdirSync(join(dir, "src"), { recursive: true })
+    writeFileSync(join(dir, "src", "schema.ts"), "export const schema = {}\n")
+  }
 }
 
 describe("resolveSchemas", () => {
@@ -38,6 +43,10 @@ describe("resolveSchemas", () => {
 
   afterEach(() => {
     rmSync(tmp, { recursive: true, force: true })
+  })
+
+  it("does not pass an undefined package name to path resolution", () => {
+    expect(resolvePackageJson(undefined as never, tmp)).toBeNull()
   })
 
   it("returns the listed modules in dependency order with deps inserted first", () => {
@@ -106,6 +115,37 @@ describe("resolveSchemas", () => {
     seedModule(tmp, "@voyant-travel/db", null)
     const result = resolveSchemas({ modules: ["@voyant-travel/db"] }, { cwd: tmp })
     expect(result).toEqual(["@voyant-travel/db/schema"])
+  })
+
+  it("skips normalized graph units whose package metadata declares no schema", () => {
+    seedModule(tmp, "@voyant-travel/db", { schema: "./schema" })
+    seedModule(tmp, "@voyant-travel/mcp", null)
+
+    const result = resolveSchemas(
+      {
+        modules: [{ packageName: "@voyant-travel/db" }, { packageName: "@voyant-travel/mcp" }],
+      },
+      { cwd: tmp },
+    )
+
+    expect(result).toEqual(["@voyant-travel/db/schema"])
+  })
+
+  it("retains normalized graph units that publish the default schema entrypoint", () => {
+    seedModule(
+      tmp,
+      "@voyant-travel/facilities",
+      { requiresSchemas: ["@voyant-travel/db"] },
+      { defaultSchema: true },
+    )
+    seedModule(tmp, "@voyant-travel/db", { schema: "./schema" })
+
+    const result = resolveSchemas(
+      { modules: [{ packageName: "@voyant-travel/facilities" }] },
+      { cwd: tmp },
+    )
+
+    expect(result).toEqual(["@voyant-travel/db/schema", "@voyant-travel/facilities/schema"])
   })
 
   it("throws on circular schema dependencies", () => {

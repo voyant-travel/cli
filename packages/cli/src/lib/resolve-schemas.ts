@@ -1,27 +1,26 @@
 import { existsSync, readFileSync } from "node:fs"
 import { createRequire } from "node:module"
-import { dirname, join } from "node:path"
-
-import type { VoyantConfig } from "@voyant-travel/core/config"
-import { resolveEntry } from "@voyant-travel/core/config"
+import { dirname, isAbsolute, join, resolve } from "node:path"
 
 /** Output mode for {@link resolveSchemas}. */
 export type SchemaResolutionStyle = "specifier" | "file"
 
+export type SchemaSeedEntry = string | object
+
 /**
- * Config shape the resolver reads. `additionalSchemas` is not yet part of the
- * published `@voyant-travel/core` `VoyantConfig` type, so it is augmented here and
- * read off the manifest at runtime. It lists schema-owning packages a template
+ * Config shape the resolver reads across legacy configs and normalized project
+ * graphs. `additionalSchemas` lists schema-owning packages a template
  * **migrates but does not mount as a Hono module** — plugin-provided schemas
  * (e.g. catalog behind a bridge bundle) and FK-target packages (e.g.
  * accommodations). Entries seed schema resolution exactly like `modules`, so
  * their tables (and transitive `requiresSchemas`) are included — keeping
  * `modules` an honest list of what is actually mounted.
  */
-export type SchemaSeedConfig = VoyantConfig & {
+export interface SchemaSeedConfig {
+  modules?: readonly SchemaSeedEntry[]
   /** Mounted Hono extensions that own tables — seeded like `modules`. */
-  extensions?: VoyantConfig["modules"]
-  additionalSchemas?: VoyantConfig["modules"]
+  extensions?: readonly SchemaSeedEntry[]
+  additionalSchemas?: readonly SchemaSeedEntry[]
 }
 
 /** Options for {@link resolveSchemas}. */
@@ -37,6 +36,24 @@ export interface ResolveSchemasOptions {
   style?: SchemaResolutionStyle
 }
 
+export function resolveSchemaSource(
+  source: string,
+  options: Required<Pick<ResolveSchemasOptions, "cwd" | "style">>,
+): string {
+  if (options.style === "specifier") return source
+  if (isAbsolute(source)) return source
+  if (source.startsWith(".")) return resolve(options.cwd, source)
+
+  const parts = source.split("/")
+  const packageParts = source.startsWith("@") ? 2 : 1
+  const packageName = parts.slice(0, packageParts).join("/")
+  const subpath = parts.slice(packageParts).join("/")
+  if (!packageName || !subpath) {
+    throw new Error(`Could not resolve graph schema source ${source}`)
+  }
+  return resolveFilePath(packageName, `./${subpath}`, options.cwd)
+}
+
 /** A package.json `voyant` field shape used by the resolver. */
 interface VoyantPackageManifest {
   schema?: string
@@ -45,7 +62,7 @@ interface VoyantPackageManifest {
 
 /**
  * Resolve the closure of schema entrypoints required by the modules listed in a
- * {@link VoyantConfig}. Walks each module's `package.json#voyant.requiresSchemas`
+ * project config. Walks each module's `package.json#voyant.requiresSchemas`
  * transitively, dedupes, and returns the resolved entries in dependency order
  * (deps first).
  *
@@ -72,11 +89,18 @@ export function resolveSchemas(
   // Seed from mounted modules, mounted extensions, AND non-mounted
   // schema-owning packages (`additionalSchemas`). All are walked for their
   // `requiresSchemas` closure.
-  const seeds = [
+  const seedEntries = [
     ...(config.modules ?? []),
     ...(config.extensions ?? []),
     ...(config.additionalSchemas ?? []),
-  ].map((entry) => resolveEntry(entry).resolve)
+  ]
+  const seeds = seedEntries.flatMap((entry) => {
+    const packageName = resolveSchemaSeedPackageName(entry)
+    if (isNormalizedGraphUnit(entry) && !packageOwnsSchema(packageName, cwd)) {
+      return []
+    }
+    return [packageName]
+  })
   const order = expandClosure(seeds, cwd)
   return order.map((mod) => {
     const manifest = readManifest(mod, cwd)
@@ -86,6 +110,18 @@ export function resolveSchemas(
     }
     return resolveFilePath(mod, sub, cwd)
   })
+}
+
+/** Resolve legacy config entries and normalized graph units to package names. */
+export function resolveSchemaSeedPackageName(entry: SchemaSeedEntry): string {
+  if (typeof entry === "string" && entry.length > 0) return entry
+  if (entry && typeof entry === "object") {
+    if ("packageName" in entry && isNonEmptyString(entry.packageName)) return entry.packageName
+    if ("resolve" in entry && isNonEmptyString(entry.resolve)) return entry.resolve
+  }
+  throw new Error(
+    "Schema manifest entries must be package strings or objects with a non-empty resolve or packageName field",
+  )
 }
 
 /**
@@ -142,6 +178,8 @@ function readManifest(mod: string, cwd: string): VoyantPackageManifest {
  * voyant monorepo where modules may not be installed under `node_modules/`.
  */
 export function resolvePackageJson(mod: string, cwd: string): string | null {
+  if (!isNonEmptyString(mod)) return null
+
   // 1. Conventional install layout: <cwd>/node_modules/<mod>/package.json.
   const direct = join(cwd, "node_modules", mod, "package.json")
   if (existsSync(direct)) return direct
@@ -202,4 +240,22 @@ function joinSubpath(mod: string, sub: string): string {
   if (sub.startsWith("./")) return `${mod}/${sub.slice(2)}`
   if (sub.startsWith("/")) return `${mod}${sub}`
   return `${mod}/${sub}`
+}
+
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === "string" && value.length > 0
+}
+
+function isNormalizedGraphUnit(entry: SchemaSeedEntry): entry is { packageName: string } {
+  return typeof entry === "object" && entry !== null && "packageName" in entry
+}
+
+function packageOwnsSchema(packageName: string, cwd: string): boolean {
+  if (isNonEmptyString(readManifest(packageName, cwd).schema)) return true
+  try {
+    resolveFilePath(packageName, "./schema", cwd)
+    return true
+  } catch {
+    return false
+  }
 }

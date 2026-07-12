@@ -1,10 +1,9 @@
 import { createHash } from "node:crypto"
-import { readFile } from "node:fs/promises"
 import { createRequire } from "node:module"
 import { dirname, relative, resolve } from "node:path"
-import { pathToFileURL } from "node:url"
 
 import { resolveConfigPath } from "./config-loader.js"
+import { loadProjectConfigModule, loadProjectModule } from "./project-module-loader.js"
 
 export const FRAMEWORK_PROJECT_RESOLVER_EXPORT = "resolveProject" as const
 export const RESOLVED_GRAPH_SCHEMA_VERSION = "voyant.resolved-graph.v1" as const
@@ -43,16 +42,23 @@ interface ProjectMigrationBase {
   order: number
   idempotencyKey: string
   owner: string
-  packageName: string
 }
 
-export interface ProjectSchemaMigration extends ProjectMigrationBase {
+export type ProjectSchemaMigration = ProjectMigrationBase & {
   migrationKind: "schema"
-  source: { kind: "package"; packageName: string; path: string }
-}
+} & (
+    | {
+        packageName: string
+        source: { kind: "package"; packageName: string; path: string }
+      }
+    | {
+        source: { kind: "deployment"; path: string }
+      }
+  )
 
 export interface ProjectSetupMigration extends ProjectMigrationBase {
   migrationKind: "setup"
+  packageName: string
   source: string
   runtime: { entry: string; export: string }
   dependsOn: readonly string[]
@@ -131,9 +137,9 @@ export async function resolveProject(
 
   const projectRoot = dirname(configPath)
   const frameworkProjectModulePath = resolveFrameworkProjectModule(projectRoot)
-  const frameworkModule = (await import(pathToFileURL(frameworkProjectModulePath).href)) as
-    | FrameworkProjectResolverModule
-    | undefined
+  const frameworkModule = await loadProjectModule<FrameworkProjectResolverModule | undefined>(
+    frameworkProjectModulePath,
+  )
   const resolver = frameworkModule?.[FRAMEWORK_PROJECT_RESOLVER_EXPORT]
   if (typeof resolver !== "function") {
     throw new ProjectResolutionError(
@@ -168,9 +174,9 @@ export async function writeFrameworkProjectArtifacts(
   artifacts: ResolvedProject["artifacts"],
   mode: ProjectArtifactWriteMode,
 ): Promise<ProjectArtifactWriteResult> {
-  const frameworkModule = (await import(
-    pathToFileURL(resolution.frameworkProjectModulePath).href
-  )) as FrameworkProjectResolverModule
+  const frameworkModule = await loadProjectModule<FrameworkProjectResolverModule>(
+    resolution.frameworkProjectModulePath,
+  )
   const writer = frameworkModule.writeProjectArtifacts
   if (typeof writer !== "function") {
     throw new ProjectResolutionError(
@@ -220,11 +226,7 @@ function resolveFrameworkProjectModule(projectRoot: string): string {
 
 async function loadProjectConfig(configPath: string): Promise<unknown> {
   try {
-    const source = await readFile(configPath, "utf8")
-    const cacheKey = createHash("sha256").update(source).digest("hex")
-    const imported = (await import(
-      `${pathToFileURL(configPath).href}?voyant_config=${cacheKey}`
-    )) as { default?: unknown }
+    const imported = await loadProjectConfigModule<{ default?: unknown }>(configPath)
     if (imported.default === undefined) {
       throw new Error("config has no default export")
     }
@@ -396,7 +398,6 @@ function parseMigration(value: unknown, index: number, all: readonly unknown[]):
   const migration = requireRecord(value, label)
   const id = requireString(migration.id, `${label}.id`)
   const owner = requireString(migration.owner, `${label}.owner`)
-  const packageName = requireString(migration.packageName, `${label}.packageName`)
   const idempotencyKey = requireString(migration.idempotencyKey, `${label}.idempotencyKey`)
   if (migration.order !== index) {
     throw contractError(`${label}.order must be ${index}, got ${String(migration.order)}`)
@@ -415,9 +416,23 @@ function parseMigration(value: unknown, index: number, all: readonly unknown[]):
       throw contractError(`${label} schema migrations must precede setup migrations`)
     }
     const source = requireRecord(migration.source, `${label}.source`)
-    if (source.kind !== "package") {
-      throw contractError(`${label}.source.kind must be package`)
+    if (source.kind === "deployment") {
+      return {
+        id,
+        migrationKind: "schema",
+        order: index,
+        idempotencyKey,
+        owner,
+        source: {
+          kind: "deployment",
+          path: requireString(source.path, `${label}.source.path`),
+        },
+      }
     }
+    if (source.kind !== "package") {
+      throw contractError(`${label}.source.kind must be package or deployment`)
+    }
+    const packageName = requireString(migration.packageName, `${label}.packageName`)
     return {
       id,
       migrationKind: "schema",
@@ -435,6 +450,7 @@ function parseMigration(value: unknown, index: number, all: readonly unknown[]):
   if (migration.migrationKind !== "setup") {
     throw contractError(`${label}.migrationKind must be schema or setup`)
   }
+  const packageName = requireString(migration.packageName, `${label}.packageName`)
   const runtime = requireRecord(migration.runtime, `${label}.runtime`)
   if (!Array.isArray(migration.dependsOn) || !migration.dependsOn.every(isNonEmptyString)) {
     throw contractError(`${label}.dependsOn must be an array of non-empty ids`)

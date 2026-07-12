@@ -1,4 +1,12 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync } from "node:fs"
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
@@ -65,6 +73,20 @@ describe("project artifacts", () => {
       "runtime/project-migrations.generated.mjs",
       "runtime/project-runtime.generated.ts",
     ])
+  })
+
+  it("resolves and writes with workspace TypeScript framework exports", async () => {
+    rmSync(root, { recursive: true, force: true })
+    writeProjectFixture(root, { frameworkSource: "typescript" })
+
+    const project = await prepareProjectArtifacts(root)
+
+    expect(project.resolution.frameworkProjectModulePath).toBe(
+      realpathSync(join(root, "node_modules", "@voyant-travel", "framework", "src", "project.ts")),
+    )
+    expect(existsSync(project.runtimeEntryPath)).toBe(true)
+    expect(frameworkWrites).toHaveLength(1)
+    expect(frameworkWrites[0]?.mode).toBe("write")
   })
 
   it("delegates check mode and reports stale and missing framework results", async () => {

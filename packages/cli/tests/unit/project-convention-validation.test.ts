@@ -71,6 +71,41 @@ describe("project runtime convention validation", () => {
     await expect(validateProjectRuntimeConventions(root, graph())).resolves.toBeUndefined()
   })
 
+  it("ignores webhookRoutes properties on objects unrelated to the default deployment module", async () => {
+    const root = temporaryProject()
+    writeModule(
+      root,
+      `
+        import { defineDeploymentModule } from "@voyant-travel/framework"
+        const helperConfig = { webhookRoutes: "not a Hono module route" }
+        export default defineDeploymentModule({
+          module: { name: "qa-probe" },
+          adminRoutes: helperConfig,
+        })
+      `,
+    )
+
+    await expect(validateProjectRuntimeConventions(root, graph())).resolves.toBeUndefined()
+  })
+
+  it("detects webhookRoutes returned directly by a deployment module factory", async () => {
+    const root = temporaryProject()
+    writeModule(
+      root,
+      `
+        import { defineDeploymentModule as defineModule } from "@voyant-travel/framework"
+        const webhookRoutes = {}
+        export default defineModule(() => {
+          return { module: { name: "qa-probe" }, webhookRoutes }
+        })
+      `,
+    )
+
+    await expect(validateProjectRuntimeConventions(root, graph())).rejects.toThrow(
+      "PROJECT_WEBHOOK_DECLARATION_REQUIRED",
+    )
+  })
+
   function temporaryProject(): string {
     const root = mkdtempSync(join(tmpdir(), "voyant-project-convention-"))
     roots.push(root)

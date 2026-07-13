@@ -51,22 +51,144 @@ function declaresWebhookRoutes(source: string, fileName: string): boolean {
     true,
     ts.ScriptKind.TS,
   )
-  let found = false
-  const visit = (node: ts.Node): void => {
-    if (found) return
+  const helpers = deploymentHelperNames(sourceFile)
+  const bindings = topLevelBindings(sourceFile)
+  return sourceFile.statements.some(
+    (statement) =>
+      ts.isExportAssignment(statement) &&
+      !statement.isExportEquals &&
+      exportedDeploymentDeclaresWebhookRoutes(statement.expression, helpers, bindings, new Set()),
+  )
+}
+
+interface TopLevelBindings {
+  values: ReadonlyMap<string, ts.Expression>
+  functions: ReadonlyMap<string, ts.FunctionDeclaration>
+}
+
+function deploymentHelperNames(sourceFile: ts.SourceFile): Set<string> {
+  const helpers = new Set<string>()
+  for (const statement of sourceFile.statements) {
     if (
-      (ts.isPropertyAssignment(node) ||
-        ts.isShorthandPropertyAssignment(node) ||
-        ts.isMethodDeclaration(node)) &&
-      propertyName(node.name) === "webhookRoutes"
+      !ts.isImportDeclaration(statement) ||
+      !ts.isStringLiteralLike(statement.moduleSpecifier) ||
+      statement.moduleSpecifier.text !== "@voyant-travel/framework" ||
+      !statement.importClause?.namedBindings ||
+      !ts.isNamedImports(statement.importClause.namedBindings)
     ) {
-      found = true
-      return
+      continue
     }
-    ts.forEachChild(node, visit)
+    for (const element of statement.importClause.namedBindings.elements) {
+      const imported = element.propertyName?.text ?? element.name.text
+      if (imported === "defineDeploymentModule" || imported === "defineDeploymentExtension") {
+        helpers.add(element.name.text)
+      }
+    }
   }
-  visit(sourceFile)
-  return found
+  return helpers
+}
+
+function topLevelBindings(sourceFile: ts.SourceFile): TopLevelBindings {
+  const values = new Map<string, ts.Expression>()
+  const functions = new Map<string, ts.FunctionDeclaration>()
+  for (const statement of sourceFile.statements) {
+    if (ts.isVariableStatement(statement)) {
+      for (const declaration of statement.declarationList.declarations) {
+        if (ts.isIdentifier(declaration.name) && declaration.initializer) {
+          values.set(declaration.name.text, declaration.initializer)
+        }
+      }
+    } else if (ts.isFunctionDeclaration(statement) && statement.name) {
+      functions.set(statement.name.text, statement)
+    }
+  }
+  return { values, functions }
+}
+
+function exportedDeploymentDeclaresWebhookRoutes(
+  expression: ts.Expression,
+  helpers: ReadonlySet<string>,
+  bindings: TopLevelBindings,
+  visited: Set<string>,
+): boolean {
+  const value = unwrapExpression(expression)
+  if (ts.isIdentifier(value)) {
+    if (visited.has(value.text)) return false
+    const bound = bindings.values.get(value.text)
+    if (!bound) return false
+    visited.add(value.text)
+    return exportedDeploymentDeclaresWebhookRoutes(bound, helpers, bindings, visited)
+  }
+  if (
+    !ts.isCallExpression(value) ||
+    !ts.isIdentifier(value.expression) ||
+    !helpers.has(value.expression.text)
+  ) {
+    return false
+  }
+  const declaration = value.arguments[0]
+  return Boolean(
+    declaration && declarationReturnsWebhookRoutes(declaration, bindings, new Set(visited)),
+  )
+}
+
+function declarationReturnsWebhookRoutes(
+  expression: ts.Expression,
+  bindings: TopLevelBindings,
+  visited: Set<string>,
+): boolean {
+  const value = unwrapExpression(expression)
+  if (ts.isObjectLiteralExpression(value)) return objectDeclaresWebhookRoutes(value)
+  if (ts.isArrowFunction(value) || ts.isFunctionExpression(value)) {
+    return functionBodyReturnsWebhookRoutes(value.body, bindings, visited)
+  }
+  if (!ts.isIdentifier(value) || visited.has(value.text)) return false
+  visited.add(value.text)
+  const bound = bindings.values.get(value.text)
+  if (bound) return declarationReturnsWebhookRoutes(bound, bindings, visited)
+  const declaration = bindings.functions.get(value.text)
+  return declaration?.body
+    ? functionBodyReturnsWebhookRoutes(declaration.body, bindings, visited)
+    : false
+}
+
+function functionBodyReturnsWebhookRoutes(
+  body: ts.ConciseBody,
+  bindings: TopLevelBindings,
+  visited: Set<string>,
+): boolean {
+  if (!ts.isBlock(body)) return declarationReturnsWebhookRoutes(body, bindings, visited)
+  return body.statements.some(
+    (statement) =>
+      ts.isReturnStatement(statement) &&
+      Boolean(
+        statement.expression &&
+          declarationReturnsWebhookRoutes(statement.expression, bindings, new Set(visited)),
+      ),
+  )
+}
+
+function objectDeclaresWebhookRoutes(object: ts.ObjectLiteralExpression): boolean {
+  return object.properties.some(
+    (property) =>
+      (ts.isPropertyAssignment(property) ||
+        ts.isShorthandPropertyAssignment(property) ||
+        ts.isMethodDeclaration(property)) &&
+      propertyName(property.name) === "webhookRoutes",
+  )
+}
+
+function unwrapExpression(expression: ts.Expression): ts.Expression {
+  let current = expression
+  while (
+    ts.isParenthesizedExpression(current) ||
+    ts.isAsExpression(current) ||
+    ts.isSatisfiesExpression(current) ||
+    ts.isNonNullExpression(current)
+  ) {
+    current = current.expression
+  }
+  return current
 }
 
 function propertyName(name: ts.PropertyName | undefined): string | undefined {

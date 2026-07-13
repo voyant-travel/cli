@@ -22,6 +22,7 @@
     "./commands/exec": "./src/commands/exec.ts",
     "./commands/new": "./src/commands/new.ts",
     "./commands/dev": "./src/commands/dev.ts",
+    "./commands/develop": "./src/commands/develop.ts",
     "./commands/start": "./src/commands/start.ts",
     "./commands/build": "./src/commands/build-command.ts",
     "./commands/migrate": "./src/commands/migrate-command.ts",
@@ -59,6 +60,7 @@
     "@voyant-travel/workflows": "^0.107.9",
     "@voyant-travel/workflows-orchestrator": "^0.107.9",
     "@voyant-travel/workflows-orchestrator-node": "^0.107.9",
+    "dotenv": "^17.4.2",
     "esbuild": "^0.28.0",
     "jiti": "^2.6.1",
     "tar": "^7.4.3"
@@ -145,6 +147,11 @@
         "types": "./dist/commands/dev.d.ts",
         "import": "./dist/commands/dev.js",
         "default": "./dist/commands/dev.js"
+      },
+      "./commands/develop": {
+        "types": "./dist/commands/develop.d.ts",
+        "import": "./dist/commands/develop.js",
+        "default": "./dist/commands/develop.js"
       },
       "./commands/start": {
         "types": "./dist/commands/start.d.ts",

@@ -1,7 +1,7 @@
-import { mkdtempSync, rmSync } from "node:fs"
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { afterEach, beforeEach, describe, expect, it } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { migrateCommand } from "../../src/commands/migrate-command.js"
 import { prepareProjectArtifacts } from "../../src/lib/project-artifacts.js"
@@ -65,7 +65,16 @@ describe("voyant migrate", () => {
     expect(calls).toBe(1)
   })
 
-  it("rejects stale source-project artifacts before loading the runner", async () => {
+  it("loads .env without overriding platform values", async () => {
+    writeFileSync(join(root, ".env"), "DATABASE_URL=project\nMIGRATION_ENV=loaded\n")
+    const env = { DATABASE_URL: "platform" } as Record<string, string | undefined>
+    const run = context(["--plan"])
+
+    expect(await migrateCommand(run.ctx, { env })).toBe(0)
+    expect(env).toEqual({ DATABASE_URL: "platform", MIGRATION_ENV: "loaded" })
+  })
+
+  it("refreshes stale source-project artifacts before loading the runner", async () => {
     writeProjectConfig(root, { modules: ["@acme/bookings", "@acme/finance"] })
     let called = false
     ;(globalThis as Record<string, unknown>).__runVoyantMigrations = () => {
@@ -73,10 +82,15 @@ describe("voyant migrate", () => {
       return result({ applied: [], skipped: [], failed: [] })
     }
     const run = context(["--json"])
+    const prepareArtifacts = vi.fn(async (...args: Parameters<typeof prepareProjectArtifacts>) => {
+      const prepared = await prepareProjectArtifacts(...args)
+      currentHash = prepared.manifest.graphHash
+      return prepared
+    })
 
-    expect(await migrateCommand(run.ctx)).toBe(1)
-    expect(JSON.parse(run.stderr.join("")).error.code).toBe("artifact_stale")
-    expect(called).toBe(false)
+    expect(await migrateCommand(run.ctx, { prepareArtifacts })).toBe(0)
+    expect(prepareArtifacts).toHaveBeenCalledOnce()
+    expect(called).toBe(true)
   })
 
   it("returns failure while preserving the runner's structured report", async () => {
@@ -111,8 +125,10 @@ describe("voyant migrate", () => {
       ".voyant/deployment-artifacts.generated.json",
       "--json",
     ])
+    const prepareArtifacts = vi.fn()
 
-    expect(await migrateCommand(run.ctx)).toBe(0)
+    expect(await migrateCommand(run.ctx, { prepareArtifacts })).toBe(0)
+    expect(prepareArtifacts).not.toHaveBeenCalled()
     expect(JSON.parse(run.stdout.join("")).applied).toHaveLength(1)
   })
 

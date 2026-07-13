@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest"
 
 import { newCommand } from "../../src/commands/new.js"
 
-import { VOYANT_FRAMEWORK_VERSION } from "../../src/lib/voyant-version.js"
+import { VOYANT_FRAMEWORK_VERSION, VOYANT_RUNTIME_VERSION } from "../../src/lib/voyant-version.js"
 
 const expectedVoyantVersionRange = `^${VOYANT_FRAMEWORK_VERSION}`
 
@@ -34,6 +34,14 @@ function seedStarter(root: string) {
       {
         name: "template-operator",
         version: "1.2.3",
+        scripts: {
+          dev: "legacy dev",
+          build: "legacy build",
+          start: "legacy start",
+          seed: "tsx scripts/seed.ts",
+          "db:migrate": "legacy migrate",
+          lint: "biome check .",
+        },
         dependencies: {
           "@voyant-travel/core": "workspace:*",
           "@voyant-travel/db": "workspace:*",
@@ -161,7 +169,7 @@ describe("newCommand", () => {
     expect(existsSync(join(tmp, "my-app", "package.json"))).toBe(true)
     for (const directory of [
       "src/api/admin",
-      "src/api/store",
+      "src/api/public",
       "src/admin",
       "src/workflows",
       "src/jobs",
@@ -177,6 +185,13 @@ describe("newCommand", () => {
 
     const pkg = JSON.parse(readFileSync(join(tmp, "my-app", "package.json"), "utf8"))
     expect(pkg.devDependencies["@voyant-travel/cli"]).toMatch(/^\^\d+\.\d+\.\d+/)
+    expect(pkg.dependencies["@voyant-travel/runtime"]).toBe(`^${VOYANT_RUNTIME_VERSION}`)
+    expect(pkg.scripts).toMatchObject({
+      dev: "voyant develop",
+      build: "voyant build",
+      start: "voyant start",
+      "db:migrate": "voyant migrate",
+    })
 
     const config = readFileSync(join(tmp, "my-app", "voyant.config.ts"), "utf8")
     expect(config).toContain('from "@voyant-travel/framework"')
@@ -226,6 +241,14 @@ describe("newCommand", () => {
     expect(pkg.dependencies["@voyant-travel/bookings"]).toBe("^1.4.0")
     expect(pkg.dependencies["@voyant-travel/legal"]).toBe("^1.5.0")
     expect(pkg.devDependencies["@voyant-travel/voyant-typescript-config"]).toBe("^1.6.0")
+    expect(pkg.scripts).toMatchObject({
+      dev: "voyant develop",
+      build: "voyant build",
+      start: "voyant start",
+      seed: "tsx scripts/seed.ts",
+      "db:migrate": "voyant migrate",
+      lint: "biome check .",
+    })
   })
 
   it("rewrites package.json name + version + private", async () => {

@@ -5,6 +5,7 @@ import { pathToFileURL } from "node:url"
 
 import { getBooleanFlag, getStringFlag, parseArgs } from "../lib/args.js"
 import { errorMessage } from "../lib/output.js"
+import { loadProjectEnv } from "../lib/project-env.js"
 import { waitForShutdownSignal } from "../lib/shutdown.js"
 import type { CommandContext, CommandResult } from "../types.js"
 
@@ -25,8 +26,9 @@ interface VoyantRuntimeModule {
 }
 
 export interface StartCommandDeps {
-  env?: Readonly<Record<string, string | undefined>>
+  env?: Record<string, string | undefined>
   fetch?: typeof globalThis.fetch
+  loadEnv?: typeof loadProjectEnv
   loadRuntime?: (cwd: string) => Promise<VoyantRuntimeModule>
   waitForShutdown?: (cleanup: () => Promise<void>) => Promise<void>
 }
@@ -42,6 +44,12 @@ export async function startCommand(
   }
 
   const env = deps.env ?? process.env
+  try {
+    await (deps.loadEnv ?? loadProjectEnv)(ctx.cwd, env)
+  } catch (error) {
+    ctx.stderr(`voyant start: failed to load project environment: ${errorMessage(error)}\n`)
+    return 1
+  }
   const port = Number.parseInt(getStringFlag(args, "port") ?? env.PORT ?? "8080", 10)
 
   let runtime: VoyantRuntimeModule
@@ -117,14 +125,14 @@ export async function loadProjectRuntime(cwd: string): Promise<VoyantRuntimeModu
       )
     }
     const tsxApi = (await import(pathToFileURL(tsxApiEntry).href)) as {
-      tsImport(
-        specifier: string,
-        options: { parentURL: string },
-      ): Promise<Partial<VoyantRuntimeModule>>
+      register(): (() => Promise<void>) | Promise<() => Promise<void>>
     }
-    runtime = await tsxApi.tsImport(pathToFileURL(runtimeEntry).href, {
-      parentURL: pathToFileURL(resolve(cwd, "package.json")).href,
-    })
+    const unregister = await tsxApi.register()
+    try {
+      runtime = (await import(pathToFileURL(runtimeEntry).href)) as Partial<VoyantRuntimeModule>
+    } finally {
+      await unregister()
+    }
   } else {
     runtime = (await import(pathToFileURL(runtimeEntry).href)) as Partial<VoyantRuntimeModule>
   }

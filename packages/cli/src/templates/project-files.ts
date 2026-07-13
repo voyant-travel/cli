@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs"
 
-import { VOYANT_FRAMEWORK_VERSION } from "../lib/voyant-version.js"
+import { VOYANT_FRAMEWORK_VERSION, VOYANT_RUNTIME_VERSION } from "../lib/voyant-version.js"
 
 export const DEFAULT_PROJECT_PRESET = "operator-standard"
 
@@ -18,7 +18,7 @@ export function cleanProjectFiles(name: string): Array<[string, string]> {
     ["tsconfig.json", projectTsconfig()],
     [".gitignore", projectGitignore()],
     ["src/api/admin/.gitkeep", ""],
-    ["src/api/store/.gitkeep", ""],
+    ["src/api/public/.gitkeep", ""],
     ["src/admin/.gitkeep", ""],
     ["src/workflows/.gitkeep", ""],
     ["src/jobs/.gitkeep", ""],
@@ -43,11 +43,15 @@ function projectPackageJson(name: string): string {
       private: true,
       type: "module",
       scripts: {
-        dev: "voyant dev",
+        dev: "voyant develop",
+        build: "voyant build",
+        start: "voyant start",
+        "db:migrate": "voyant migrate",
         doctor: "voyant doctor",
       },
       dependencies: {
         "@voyant-travel/framework": `^${VOYANT_FRAMEWORK_VERSION}`,
+        "@voyant-travel/runtime": `^${VOYANT_RUNTIME_VERSION}`,
       },
       devDependencies: {
         "@voyant-travel/cli": `^${readCliPackageVersion()}`,

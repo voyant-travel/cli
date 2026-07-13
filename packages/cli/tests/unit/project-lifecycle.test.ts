@@ -24,7 +24,7 @@ describe("unified project graph lifecycle", () => {
   })
 
   it("uses one contentHash across project resolution and every deployment target", async () => {
-    const build = io(["--json"], root)
+    const build = io(["--artifacts-only", "--json"], root)
     expect(await buildCommand(build.ctx)).toBe(0)
     const buildReport = JSON.parse(build.stdout.join("")) as { contentHash: string }
 
@@ -93,8 +93,8 @@ describe("unified project graph lifecycle", () => {
     expect(customHash).toBe(buildReport.contentHash)
   }, 15_000)
 
-  it("doctor and migrate fail with machine-readable stale artifact errors", async () => {
-    const build = io([], root)
+  it("doctor and deploy reject stale artifacts while migrate refreshes them", async () => {
+    const build = io(["--artifacts-only"], root)
     expect(await buildCommand(build.ctx)).toBe(0)
     writeProjectConfig(root, { modules: ["@acme/bookings"], plugins: ["@acme/payments"] })
 
@@ -108,11 +108,10 @@ describe("unified project graph lifecycle", () => {
     )
 
     const migrate = io(["--json"], root)
-    expect(await migrateCommand(migrate.ctx)).toBe(1)
-    expect(JSON.parse(migrate.stderr.join(""))).toMatchObject({
-      error: { code: "artifact_stale" },
-    })
+    expect(await migrateCommand(migrate.ctx)).toBe(0)
+    expect(JSON.parse(migrate.stdout.join(""))).toMatchObject({ ok: true })
 
+    writeProjectConfig(root, { modules: ["@acme/bookings"], plugins: [] })
     const deploy = io(["fixture", "--dry-run", "--json"], root)
     expect(await deployCommand(deploy.ctx)).toBe(1)
     expect(JSON.parse(deploy.stderr.join(""))).toMatchObject({

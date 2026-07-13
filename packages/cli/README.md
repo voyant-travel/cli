@@ -22,10 +22,12 @@ voyant --help
 | `voyant db <generate\|migrate\|studio\|push\|check>` | Proxy drizzle-kit to the project root |
 | `voyant db sync-links [--out <file>]` | Emit DDL for cross-module link tables |
 | `voyant exec <script.ts> [args…]` | Run a TS/JS script with native strip-types |
-| `voyant dev [--config <path>]` | Resolve the project, refresh `.voyant/`, and watch + serve its generated runtime |
+| `voyant dev [--file <path>]` | Watch and serve workflows locally |
+| `voyant develop [--host <h>] [--port <n>]` | Keep `.voyant/` refreshed and run the full app through project-installed runtime tooling |
 | `voyant start [--port <n>] [--probe]` | Start the project through its installed `@voyant-travel/runtime` |
-| `voyant build [--json]` | Resolve one target-neutral graph and write deterministic `.voyant/` outputs |
-| `voyant migrate [--json]` | Validate `.voyant/` and report the framework-authored migration plan |
+| `voyant build [--json]` | Refresh `.voyant/` and build the full app through project-installed runtime tooling |
+| `voyant build --artifacts-only [--json]` | Write deterministic `.voyant/` outputs without building the app |
+| `voyant migrate [--json]` | Refresh `.voyant/` and execute the framework-authored migration plan |
 | `voyant workflows <subcommand>` | Build, serve, inspect, and self-host workflows |
 | `voyant --version` | Print the CLI version |
 
@@ -44,6 +46,14 @@ voyant --help
 | `voyant secrets rm <vault> <key>` | Delete a secret |
 
 ## Configuration
+
+`voyant develop`, `build`, `start`, and `migrate` load `.env` from the project
+root. Variables already supplied by the shell or hosting platform take
+precedence. App development and builds require the project-installed
+`@voyant-travel/runtime/tooling` export; update `@voyant-travel/runtime` when an
+older installation does not provide it.
+
+## Cloud configuration
 
 Cloud commands accept these inputs in priority order:
 

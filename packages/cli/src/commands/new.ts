@@ -13,7 +13,7 @@ import { dirname, isAbsolute, join, resolve } from "node:path"
 import { x } from "tar"
 
 import { parseArgs } from "../lib/args.js"
-import { VOYANT_FRAMEWORK_VERSION } from "../lib/voyant-version.js"
+import { VOYANT_FRAMEWORK_VERSION, VOYANT_RUNTIME_VERSION } from "../lib/voyant-version.js"
 import {
   cleanProjectFiles,
   DEFAULT_PROJECT_PRESET,
@@ -181,6 +181,7 @@ export async function newCommand(ctx: CommandContext): Promise<CommandResult> {
         schemaImports,
         readLocalVoyantPackageVersions(starterSource.path),
       )
+      normalizeLifecycleScripts(pkg)
       if (needsDefaultConfig) {
         ensureObjectRecord(pkg, "dependencies")["@voyant-travel/framework"] = `^${voyantVersion}`
       }
@@ -369,6 +370,14 @@ function ensureVoyantDependencyVersions(
   normalizeWorkspaceRanges(dependencies, voyantVersion, packageVersions)
   normalizeWorkspaceRanges(devDependencies, voyantVersion, packageVersions)
 
+  if (!dependencies["@voyant-travel/runtime"] && !devDependencies["@voyant-travel/runtime"]) {
+    dependencies["@voyant-travel/runtime"] = voyantPackageRange(
+      "@voyant-travel/runtime",
+      voyantVersion,
+      packageVersions,
+    )
+  }
+
   for (const pkgName of schemaImports.map(getPackageNameFromImport)) {
     if (!dependencies[pkgName] && !devDependencies[pkgName]) {
       dependencies[pkgName] = voyantPackageRange(pkgName, voyantVersion, packageVersions)
@@ -397,7 +406,9 @@ function voyantPackageRange(
   fallbackVersion: string,
   packageVersions: Map<string, string>,
 ): string {
-  return `^${packageVersions.get(packageName) ?? fallbackVersion}`
+  const packageFallback =
+    packageName === "@voyant-travel/runtime" ? VOYANT_RUNTIME_VERSION : fallbackVersion
+  return `^${packageVersions.get(packageName) ?? packageFallback}`
 }
 
 function readLocalVoyantPackageVersions(starterRoot: string): Map<string, string> {
@@ -460,6 +471,14 @@ function ensureObjectRecord(target: Record<string, unknown>, key: string): Recor
   const next: Record<string, unknown> = {}
   target[key] = next
   return next
+}
+
+function normalizeLifecycleScripts(pkg: Record<string, unknown>): void {
+  const scripts = ensureObjectRecord(pkg, "scripts")
+  scripts.dev = "voyant develop"
+  scripts.build = "voyant build"
+  scripts.start = "voyant start"
+  scripts["db:migrate"] = "voyant migrate"
 }
 
 function inferSchemaImports(rawConfig: string): string[] {

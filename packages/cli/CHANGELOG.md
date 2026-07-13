@@ -1,5 +1,118 @@
 # @voyant-travel/cli
 
+## 0.40.0
+
+### Minor Changes
+
+- b7f76af: Add full-application `voyant develop` and `voyant build` commands backed by project-installed runtime tooling, keep development artifacts refreshed as project inputs change, retain artifact-only builds through `--artifacts-only`, refresh artifacts before implicit migrations, load project `.env` files across lifecycle commands, and update generated project scripts.
+
+## 0.39.0
+
+### Minor Changes
+
+- 3e8a4ee: Add `voyant start`, which loads the current project's installed Voyant runtime and starts its generated application.
+
+## 0.38.2
+
+### Patch Changes
+
+- b93fda8: Teach `voyant db doctor` to validate graph-native project and migration artifacts without requiring a template-local `drizzle.config`, while preserving legacy template and managed-profile checks.
+
+## 0.38.1
+
+### Patch Changes
+
+- 6f205dd: Support deployment-local migrations, derive database schema and link checks from current project graph artifacts, and load workspace TypeScript framework exports in project lifecycle commands.
+
+## 0.38.0
+
+### Minor Changes
+
+- f5f3d28: Scaffold clean convention-based projects and single-entry local modules, and remove the unsupported local extension generator.
+- 3e06b43: Execute hash-bound Node schema and setup migration runners by default, with plan-only, dry-run, structured status reporting, stale-artifact rejection, and explicit source-free artifact support.
+- 3e06b43: Add deterministic package lifecycle plans, graph-aware upgrades, and idempotent remove/uninstall commands for CLI-managed project graphs.
+- 3e06b43: Deploy one validated Node application graph through Voyant Cloud, Docker, or custom targets with shared content-hash plans. Docker now executes deterministic build, migration, application start, and HTTP smoke-test phases, while `custom --emit-manifest` emits a portable Node deployment manifest without requiring adapter code. Project-specified custom adapters remain supported. Source projects re-resolve their current config before deployment and reject stale persisted artifacts, while explicitly supplied artifacts remain source-free deploy inputs.
+- 3e06b43: Resolve graph-native projects through their installed framework package and use one deterministic `.voyant` graph hash for dev preparation, doctor validation, build artifacts, and migration planning.
+
+  Generate package-owned admin routes, navigation, copy, slots, and contributions directly from target-neutral resolved graph facets. Old graphs with no admin facets retain an explicit legacy package-scanning fallback.
+
+## 0.37.0
+
+### Minor Changes
+
+- 0674cb5: Add graph-native project authoring: expand the `operator-standard` preset into a clean explicit project, scaffold selectable local modules with optional facets, and install/select package or path dependencies with idempotent `add` and `install` commands.
+
+## 0.36.1
+
+### Patch Changes
+
+- 62942d5: Load compiled framework profile entries when a workspace deployment exports TypeScript source, so `voyant db doctor --fail-on-drift` works on Node 20.
+
+## 0.36.0
+
+### Minor Changes
+
+- 2adf822: Add `voyant admin generate --graph <artifact>` to derive packaged admin entries from the selected module and plugin packages in a resolved deployment graph.
+
+## 0.35.2
+
+### Patch Changes
+
+- b7cd8c1: Extract deployment graph doctor report parsing into a shared CLI helper and keep
+  explicit graph doctor reports ahead of legacy artifact validation.
+
+## 0.35.1
+
+### Patch Changes
+
+- 758de8f: Allow `voyant dev` to use the managed Node runtime entry from
+  `deployment-artifacts.generated.json` when `--file` is omitted.
+
+## 0.35.0
+
+### Minor Changes
+
+- b1a8312: Wire `voyant doctor` to consume deployment graph doctor reports and include graph diagnostics in JSON output.
+
+## 0.34.2
+
+### Patch Changes
+
+- fe5f8c3: Validate deployment graph resource environment requirements in `voyant doctor`.
+
+## 0.34.1
+
+### Patch Changes
+
+- 8f10a4d: Add `voyant doctor --json` to emit a machine-readable `voyant.doctor.v1` report while preserving the existing human-readable doctor output. The top-level doctor now also validates generated deployment graph artifacts when present.
+
+## 0.34.0
+
+### Minor Changes
+
+- 1a71e19: Teach managed-profile `voyant db doctor` to consume the installed framework deployment graph, report graph diagnostics, and distinguish absent graph support from broken graph exports.
+
+## 0.33.0
+
+### Minor Changes
+
+- 8d7798a: `voyant db doctor` now supports source-free managed profiles.
+
+  When a `managed-profile.json` snapshot is present at the cwd (or `--snapshot <path>`
+  is passed), `voyant db doctor` runs managed-profile checks instead of requiring a
+  `drizzle.config`/`voyant.config` template. It loads the deployment's own
+  `@voyant-travel/framework` (not a bundled copy) and verifies, statically and
+  DB-free, that the managed migration path will apply:
+
+  - the snapshot is a valid Voyant project (the deployment framework's validator)
+  - the installed `@voyant-travel/framework` version matches the snapshot's pinned
+    `frameworkVersion`
+  - every declared custom-source module resolves to an installed package and, if
+    schema-owning, ships a committed `migrations/` folder
+
+  Report-by-default (exit 0); pass `--fail-on-drift` to gate CI. The source-backed
+  mode is unchanged and used when no snapshot is present.
+
 ## 0.32.2
 
 ### Patch Changes

@@ -12,4 +12,7 @@
  * resolves to `https://github.com/voyant-travel/voyant/releases/download/v<X>/voyant-starter-<name>-<X>.tar.gz`.
  * That release tag must exist with the matching starter assets attached.
  */
-export const VOYANT_FRAMEWORK_VERSION = "0.18.0"
+export const VOYANT_FRAMEWORK_VERSION = "0.36.2"
+
+/** Version of the independently-versioned generic Node runtime used by clean scaffolds. */
+export const VOYANT_RUNTIME_VERSION = "0.7.0"

@@ -11,15 +11,23 @@ voyant --help
 
 | Command | What it does |
 | --- | --- |
-| `voyant new <name> [--starter <name\|path>]` | Clone a starter into `<name>/` |
-| `voyant generate module <name>` | Scaffold a module package under `packages/<name>` |
-| `voyant generate extension <name> --module <target>` | Scaffold a deployment extension under `src/extensions/<name>` that attaches to an existing module (`--public`, `--with-schema`, `--dir`, `--force`) |
+| `voyant new <name> [--preset operator-standard]` | Scaffold a clean convention-based project under `<name>/` |
+| `voyant new <name> --starter <name\|path>` | Explicitly copy a legacy or custom starter into `<name>/` |
+| `voyant generate module <name>` | Scaffold a conventional local module under `src/modules/<name>` |
+| `voyant add\|install <package\|path>` | Install and explicitly select a module or plugin in `voyant.config.ts` |
 | `voyant generate link <a> <b>` | Print a `defineLink` snippet — `<a>` and `<b>` as `<module>.<entity>` |
 | `voyant config <show\|validate\|path>` | Inspect the nearest `voyant.config.*` |
+| `voyant admin generate [--graph <artifact>]` | Emit packaged admin composition from config or a resolved deployment graph |
+| `voyant doctor [--json]` | Validate that `.voyant/` represents the current project graph, then run env, database, and admin preflight checks |
 | `voyant db <generate\|migrate\|studio\|push\|check>` | Proxy drizzle-kit to the project root |
 | `voyant db sync-links [--out <file>]` | Emit DDL for cross-module link tables |
 | `voyant exec <script.ts> [args…]` | Run a TS/JS script with native strip-types |
-| `voyant dev --file <path>` | Watch + serve workflows locally |
+| `voyant dev [--file <path>]` | Watch and serve workflows locally |
+| `voyant develop [--host <h>] [--port <n>]` | Keep `.voyant/` refreshed and run the full app through project-installed runtime tooling |
+| `voyant start [--port <n>] [--probe]` | Start the project through its installed `@voyant-travel/runtime` |
+| `voyant build [--json]` | Refresh `.voyant/` and build the full app through project-installed runtime tooling |
+| `voyant build --artifacts-only [--json]` | Write deterministic `.voyant/` outputs without building the app |
+| `voyant migrate [--json]` | Refresh `.voyant/` and execute the framework-authored migration plan |
 | `voyant workflows <subcommand>` | Build, serve, inspect, and self-host workflows |
 | `voyant --version` | Print the CLI version |
 
@@ -38,6 +46,14 @@ voyant --help
 | `voyant secrets rm <vault> <key>` | Delete a secret |
 
 ## Configuration
+
+`voyant develop`, `build`, `start`, and `migrate` load `.env` from the project
+root. Variables already supplied by the shell or hosting platform take
+precedence. App development and builds require the project-installed
+`@voyant-travel/runtime/tooling` export; update `@voyant-travel/runtime` when an
+older installation does not provide it.
+
+## Cloud configuration
 
 Cloud commands accept these inputs in priority order:
 
@@ -60,6 +76,35 @@ load during manifest extraction and in the self-hosted Node runner.
 Use `--platform neutral` or `--platform browser` for runtimes that do not load
 workflow bundles from the filesystem.
 
+## Framework project resolver contract
+
+Project lifecycle commands resolve `@voyant-travel/framework/project` relative
+to the project, never from the CLI's dependencies. That export must provide:
+
+```ts
+resolveProject({ project, projectRoot, configPath }): Promise<{
+  graph: {
+    schemaVersion: "voyant.resolved-graph.v1"
+    contentHash: `sha256:${string}`
+    diagnostics: readonly unknown[]
+    deployment?: { target?: undefined }
+  }
+  artifacts: {
+    runtimeEntry: string
+    files: readonly { path: string; contents: string }[]
+    migrationPlan: {
+      schemaVersion: "voyant.migration-plan.v1"
+      contentHash: string
+      migrations: readonly unknown[]
+    }
+  }
+}>
+```
+
+`project` is the default export loaded from the single `voyant.config.*` input.
+Generated paths are relative to `.voyant/`, must not escape it, and the runtime
+entry and migration plan must carry the graph's canonical `contentHash`.
+
 ## Programmatic use
 
 `@voyant-travel/cli` exposes its lib helpers and command handlers for embedding
@@ -70,6 +115,7 @@ import { resolveSchemas } from "@voyant-travel/cli/drizzle"
 import { runDeviceCodeFlow } from "@voyant-travel/cli/lib/device-code"
 import { resolveCloudAuth } from "@voyant-travel/cli/lib/cloud-client"
 import { setCredential } from "@voyant-travel/cli/lib/credentials"
+import { addCommand } from "@voyant-travel/cli/commands/add"
 import { newCommand } from "@voyant-travel/cli/commands/new"
 ```
 

@@ -1,0 +1,9 @@
+{
+  "name": "@voyant-travel/framework",
+  "version": "0.0.0-test",
+  "type": "module",
+  "exports": {
+    ".": "./project.mjs",
+    "./project": "./project.mjs"
+  }
+}

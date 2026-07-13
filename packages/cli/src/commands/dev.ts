@@ -48,12 +48,15 @@ export interface DevHandle {
   close: () => Promise<void>
   /** Current serve URL (changes are no-ops; the URL stays on the same port). */
   url: string
+  /** Resolved project graph hash when dev was prepared from voyant.config.*. */
+  contentHash?: string
 }
 
 export interface DevArgs {
   entryFile: string
   outDir: string
   options: ServeOptions
+  contentHash?: string
 }
 
 export async function runDev(args: DevArgs, deps: DevDeps): Promise<DevHandle> {
@@ -123,6 +126,7 @@ export async function runDev(args: DevArgs, deps: DevDeps): Promise<DevHandle> {
 
   return {
     url: serve?.url ?? `http://${args.options.host}:${args.options.port}`,
+    ...(args.contentHash ? { contentHash: args.contentHash } : {}),
     close: async () => {
       closed = true
       try {

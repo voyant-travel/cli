@@ -13,7 +13,12 @@ import { dirname, isAbsolute, join, resolve } from "node:path"
 import { x } from "tar"
 
 import { parseArgs } from "../lib/args.js"
-import { VOYANT_FRAMEWORK_VERSION } from "../lib/voyant-version.js"
+import { VOYANT_FRAMEWORK_VERSION, VOYANT_RUNTIME_VERSION } from "../lib/voyant-version.js"
+import {
+  cleanProjectFiles,
+  DEFAULT_PROJECT_PRESET,
+  UNAVAILABLE_PROJECT_PRESETS,
+} from "../templates/project-files.js"
 import type { CommandContext, CommandResult } from "../types.js"
 
 /**
@@ -43,30 +48,29 @@ const BUILT_IN_STARTERS = new Set(["operator"])
 const STARTER_RELEASE_BASE_URL =
   process.env.VOYANT_STARTER_BASE_URL ?? "https://github.com/voyant-travel/voyant/releases/download"
 
-/** The starter used when `voyant new <name>` is run without `--starter`. */
-const DEFAULT_STARTER = "operator"
-
 /**
- * `voyant new <name> [--starter <name|path>] [--force]`
+ * `voyant new <name> [--preset operator-standard | --starter <name|path>] [--force]`
  *
- * Scaffold a new Voyant project by cloning a starter directory into
- * `<cwd>/<name>` and rewriting the package.json name. A minimal
- * `voyant.config.ts` is generated if the starter doesn't already
- * provide one.
+ * Scaffold a new Voyant project at `<cwd>/<name>`. The default path writes a
+ * clean convention-based project; the compatibility starter path copies a
+ * directory and rewrites its package metadata.
  *
- * Run without `--starter`, it scaffolds from the `operator` starter.
+ * The normal path writes a clean project using the standard Operator defaults.
+ * `--starter` is an explicit compatibility path
+ * for copying the legacy operator application or another starter directory.
  * The starter source is resolved (in priority order):
  *   1. `--starter <path>` — absolute or cwd-relative path
  *   2. `--starter <name>` — built-in / discoverable starter alias
  *   3. repo-local `starters/<name>` or sibling `voyant/starters/<name>`
  *   4. version-matched starter tarball from GitHub Releases
- *   5. `operator` as the default starter when none is given
  */
 export async function newCommand(ctx: CommandContext): Promise<CommandResult> {
   const { positionals, flags } = parseArgs(ctx.argv)
   const [name] = positionals
   if (!name) {
-    ctx.stderr("Usage: voyant new <name> [--starter <name|path>] [--force]\n")
+    ctx.stderr(
+      "Usage: voyant new <name> [--preset operator-standard | --starter <name|path>] [--force]\n",
+    )
     return 1
   }
 
@@ -84,11 +88,47 @@ export async function newCommand(ctx: CommandContext): Promise<CommandResult> {
   }
 
   if ("template" in flags) {
-    ctx.stderr("Unknown option for voyant new: --template. Use --starter <name|path>.\n")
+    ctx.stderr("Unknown option for voyant new: --template. Use --preset or --starter.\n")
     return 1
   }
 
   const starterFlag = flags.starter
+  const presetFlag = flags.preset
+  if (starterFlag !== undefined && presetFlag !== undefined) {
+    ctx.stderr("voyant new: --preset and --starter cannot be used together.\n")
+    return 1
+  }
+
+  if (starterFlag === undefined) {
+    const preset = typeof presetFlag === "string" ? presetFlag : DEFAULT_PROJECT_PRESET
+    const unavailable =
+      UNAVAILABLE_PROJECT_PRESETS[preset as keyof typeof UNAVAILABLE_PROJECT_PRESETS]
+    if (unavailable) {
+      writeUnavailablePresetDiagnostic(ctx, flags, preset, unavailable)
+      return 1
+    }
+    if (presetFlag === true || preset !== DEFAULT_PROJECT_PRESET) {
+      ctx.stderr(
+        `Unknown preset: ${presetFlag === true ? "(missing)" : preset}. Expected ${DEFAULT_PROJECT_PRESET}.\n`,
+      )
+      return 1
+    }
+
+    try {
+      for (const [relPath, content] of cleanProjectFiles(name)) {
+        const file = join(target, relPath)
+        mkdirSync(dirname(file), { recursive: true })
+        writeFileSync(file, content)
+      }
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err)
+      ctx.stderr(`Failed to write ${preset} preset: ${reason}\n`)
+      return 1
+    }
+
+    printNextSteps(ctx, name, target)
+    return 0
+  }
 
   let starterSource: StarterSource | null
   try {
@@ -119,6 +159,8 @@ export async function newCommand(ctx: CommandContext): Promise<CommandResult> {
   }
 
   const voyantVersion = resolveVoyantVersion()
+  const configPath = join(target, "voyant.config.ts")
+  const needsDefaultConfig = !existsSync(configPath)
   const drizzleConfigPath = join(target, "drizzle.config.ts")
   const schemaImports = existsSync(drizzleConfigPath)
     ? inferSchemaImports(readFileSync(drizzleConfigPath, "utf8"))
@@ -139,6 +181,10 @@ export async function newCommand(ctx: CommandContext): Promise<CommandResult> {
         schemaImports,
         readLocalVoyantPackageVersions(starterSource.path),
       )
+      normalizeLifecycleScripts(pkg)
+      if (needsDefaultConfig) {
+        ensureObjectRecord(pkg, "dependencies")["@voyant-travel/framework"] = `^${voyantVersion}`
+      }
       writeFileSync(pkgPath, `${JSON.stringify(pkg, null, 2)}\n`)
     } catch (err) {
       const reason = err instanceof Error ? err.message : String(err)
@@ -159,17 +205,20 @@ export async function newCommand(ctx: CommandContext): Promise<CommandResult> {
   }
 
   // Write a minimal voyant.config.ts if the starter didn't ship one.
-  const configPath = join(target, "voyant.config.ts")
-  if (!existsSync(configPath)) {
+  if (needsDefaultConfig) {
     writeFileSync(configPath, defaultConfigSource())
   }
 
+  printNextSteps(ctx, name, target)
+  return 0
+}
+
+function printNextSteps(ctx: CommandContext, name: string, target: string): void {
   ctx.stdout(`Created ${name} at ${target}\n`)
   ctx.stdout("Next steps:\n")
   ctx.stdout(`  cd ${name}\n`)
   ctx.stdout("  pnpm install\n")
   ctx.stdout("  pnpm dev\n")
-  return 0
 }
 
 type StarterSource = {
@@ -186,7 +235,7 @@ async function resolveStarter(
     if (existsSync(abs)) return { path: abs }
   }
 
-  const requested = typeof override === "string" ? override : DEFAULT_STARTER
+  const requested = typeof override === "string" ? override : "operator"
 
   for (const localCandidate of localStarterCandidates(cwd, requested)) {
     if (existsSync(localCandidate)) {
@@ -272,19 +321,37 @@ function ancestorDirs(start: string): string[] {
 }
 
 function defaultConfigSource(): string {
-  return `import { defineVoyantConfig } from "@voyant-travel/core/config"
+  return `import { defineProject } from "@voyant-travel/framework/project"
 
-export default defineVoyantConfig({
-  deployment: "cloudflare-worker",
-  projectConfig: {
-    database: { urlEnv: "DATABASE_URL", adapter: "edge" },
-  },
-  admin: { enabled: true, path: "/app" },
+export default defineProject({
+  schemaVersion: "voyant.project.v1",
   modules: [],
   plugins: [],
-  featureFlags: {},
+  deployment: {
+    target: "node",
+  },
 })
 `
+}
+
+function writeUnavailablePresetDiagnostic(
+  ctx: CommandContext,
+  flags: Record<string, string | boolean>,
+  preset: string,
+  diagnostic: { code: string; reason: string },
+): void {
+  if (flags.json === true || flags.output === "json") {
+    ctx.stderr(
+      `${JSON.stringify({
+        schemaVersion: "voyant.cli-diagnostic.v1",
+        code: diagnostic.code,
+        preset,
+        message: diagnostic.reason,
+      })}\n`,
+    )
+    return
+  }
+  ctx.stderr(`${diagnostic.code}: Preset ${preset} is unavailable. ${diagnostic.reason}\n`)
 }
 
 function resolveVoyantVersion(): string {
@@ -302,6 +369,14 @@ function ensureVoyantDependencyVersions(
 
   normalizeWorkspaceRanges(dependencies, voyantVersion, packageVersions)
   normalizeWorkspaceRanges(devDependencies, voyantVersion, packageVersions)
+
+  if (!dependencies["@voyant-travel/runtime"] && !devDependencies["@voyant-travel/runtime"]) {
+    dependencies["@voyant-travel/runtime"] = voyantPackageRange(
+      "@voyant-travel/runtime",
+      voyantVersion,
+      packageVersions,
+    )
+  }
 
   for (const pkgName of schemaImports.map(getPackageNameFromImport)) {
     if (!dependencies[pkgName] && !devDependencies[pkgName]) {
@@ -331,7 +406,9 @@ function voyantPackageRange(
   fallbackVersion: string,
   packageVersions: Map<string, string>,
 ): string {
-  return `^${packageVersions.get(packageName) ?? fallbackVersion}`
+  const packageFallback =
+    packageName === "@voyant-travel/runtime" ? VOYANT_RUNTIME_VERSION : fallbackVersion
+  return `^${packageVersions.get(packageName) ?? packageFallback}`
 }
 
 function readLocalVoyantPackageVersions(starterRoot: string): Map<string, string> {
@@ -394,6 +471,14 @@ function ensureObjectRecord(target: Record<string, unknown>, key: string): Recor
   const next: Record<string, unknown> = {}
   target[key] = next
   return next
+}
+
+function normalizeLifecycleScripts(pkg: Record<string, unknown>): void {
+  const scripts = ensureObjectRecord(pkg, "scripts")
+  scripts.dev = "voyant develop"
+  scripts.build = "voyant build"
+  scripts.start = "voyant start"
+  scripts["db:migrate"] = "voyant migrate"
 }
 
 function inferSchemaImports(rawConfig: string): string[] {

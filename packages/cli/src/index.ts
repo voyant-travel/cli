@@ -1,27 +1,31 @@
 import { readFile } from "node:fs/promises"
 import { dirname, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
-
+import { addCommand } from "./commands/add.js"
 import { adminCommand } from "./commands/admin.js"
 import { appsCommand } from "./commands/apps.js"
+import { buildCommand } from "./commands/build-command.js"
 import { configCommand } from "./commands/config.js"
 import { databasesCommand } from "./commands/databases.js"
 import { dbCommand } from "./commands/db.js"
 import { deployCommand } from "./commands/deploy.js"
 import { devCommand } from "./commands/dev-command.js"
+import { developCommand } from "./commands/develop.js"
 import { doctorCommand } from "./commands/doctor.js"
 import { envCommand } from "./commands/env.js"
 import { execCommand } from "./commands/exec.js"
-import { generateExtensionCommand } from "./commands/generate-extension.js"
 import { generateLinkCommand } from "./commands/generate-link.js"
 import { generateModuleCommand } from "./commands/generate-module.js"
 import { helpCommand } from "./commands/help.js"
 import { loginCommand } from "./commands/login.js"
 import { logoutCommand } from "./commands/logout.js"
 import { logsCommand } from "./commands/logs.js"
+import { migrateCommand } from "./commands/migrate-command.js"
 import { newCommand } from "./commands/new.js"
 import { orgCommand } from "./commands/org.js"
+import { removeCommand } from "./commands/remove.js"
 import { secretsCommand } from "./commands/secrets.js"
+import { startCommand } from "./commands/start.js"
 import { storageCommand } from "./commands/storage.js"
 import { upgradeCommand } from "./commands/upgrade.js"
 import { vaultsCommand } from "./commands/vaults.js"
@@ -29,6 +33,23 @@ import { whoamiCommand } from "./commands/whoami.js"
 import { workflowsCommand } from "./commands/workflows-command.js"
 import type { CommandContext, CommandResult } from "./types.js"
 
+export type {
+  DeploymentArtifactManifest,
+  DeploymentGraphArtifact,
+  DeploymentRuntimeEntry,
+  ResolvedDeploymentGraph,
+} from "./lib/deployment-artifact-reader.js"
+export {
+  createDeploymentPlan,
+  DEPLOYMENT_PLAN_SCHEMA_VERSION,
+  DEPLOYMENT_RESULT_SCHEMA_VERSION,
+  type DeploymentPlan,
+  type DeploymentPlanOperation,
+  type DeploymentResult,
+  type DeploymentTargetAdapter,
+  type DeploymentTargetContext,
+  deploymentResult,
+} from "./lib/deployment-target.js"
 export type { CommandContext, CommandResult } from "./types.js"
 
 export interface MainOptions {
@@ -66,15 +87,20 @@ export async function main(
   }
 
   switch (head) {
+    case "add":
+    case "install": {
+      return addCommand({ ...ctx, argv: rest })
+    }
+    case "remove":
+    case "uninstall": {
+      return removeCommand({ ...ctx, argv: rest })
+    }
     case "generate": {
       const [sub, ...subArgs] = rest
       const subCtx = { ...ctx, argv: subArgs }
       if (sub === "module") return generateModuleCommand(subCtx)
       if (sub === "link") return generateLinkCommand(subCtx)
-      if (sub === "extension") return generateExtensionCommand(subCtx)
-      ctx.stderr(
-        `Unknown generate subcommand: ${sub ?? "(none)"}. Expected "module", "link", or "extension".\n`,
-      )
+      ctx.stderr(`Unknown generate subcommand: ${sub ?? "(none)"}. Expected "module" or "link".\n`)
       return 1
     }
     case "config": {
@@ -97,6 +123,12 @@ export async function main(
     }
     case "dev": {
       return devCommand({ ...ctx, argv: rest })
+    }
+    case "develop": {
+      return developCommand({ ...ctx, argv: rest })
+    }
+    case "start": {
+      return startCommand({ ...ctx, argv: rest })
     }
     case "workflows": {
       return workflowsCommand({ ...ctx, argv: rest })
@@ -141,10 +173,10 @@ export async function main(
       return storageCommand({ ...ctx, argv: rest })
     }
     case "build": {
-      ctx.stderr(
-        "voyant: use `voyant workflows build`. The top-level `voyant build` entry will wrap multiple build targets once the app/runtime layer is merged.\n",
-      )
-      return 1
+      return buildCommand({ ...ctx, argv: rest })
+    }
+    case "migrate": {
+      return migrateCommand({ ...ctx, argv: rest })
     }
     case "db:generate":
     case "db:migrate":

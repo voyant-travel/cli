@@ -2,10 +2,20 @@ import { existsSync, readdirSync, readFileSync, realpathSync } from "node:fs"
 import { createRequire } from "node:module"
 import { isAbsolute, join, relative, resolve as resolvePath } from "node:path"
 
-import { resolveEntry } from "@voyant-travel/core/config"
-
 import { parseArgs } from "../lib/args.js"
-import { resolvePackageJson } from "../lib/resolve-schemas.js"
+import { CONFIG_FILENAMES } from "../lib/config-loader.js"
+import { renderLinkDrizzleSchema } from "../lib/link-schema.js"
+import {
+  checkProjectArtifacts,
+  PROJECT_ARTIFACT_DIRECTORY,
+  PROJECT_MIGRATION_PLAN_ARTIFACT,
+  ProjectArtifactError,
+} from "../lib/project-artifacts.js"
+import {
+  type ProjectDatabaseArtifacts,
+  resolveProjectDatabaseArtifacts,
+} from "../lib/project-database.js"
+import { resolvePackageJson, resolveSchemaSeedPackageName } from "../lib/resolve-schemas.js"
 import {
   readSchemaManifest,
   renderSchemaManifest,
@@ -13,6 +23,7 @@ import {
 } from "../lib/schema-manifest.js"
 import { loadVoyantConfig, type SchemaManifestConfig } from "../lib/voyant-config.js"
 import type { CommandContext, CommandResult } from "../types.js"
+import { managedDbDoctorCommand, resolveManagedSnapshotPath } from "./db-doctor-managed.js"
 import { loadLinks, resolveLinksPath } from "./db-sync-links.js"
 
 const DRIZZLE_CONFIG_NAMES = [
@@ -27,28 +38,53 @@ interface DoctorIssue {
 }
 
 /**
- * `voyant db doctor [--template <path>] [--config <path>] [--fail-on-drift]`
+ * `voyant db doctor [--template <path>] [--config <path>] [--snapshot <path>]
+ *   [--fail-on-drift]`
  *
- * Cross-checks the manifest (`voyant.config.ts`) against the migration setup
- * and reports drift. It is a **report by default** (exit 0) so it can run
- * informationally while existing drift is paid down; pass `--fail-on-drift`
- * to gate CI once the report is clean.
+ * Three modes, auto-detected:
+ *  - **Managed profile** (source-free): when a `managed-profile.json` snapshot is
+ *    present at the cwd (or `--snapshot <path>`), delegates to
+ *    {@link managedDbDoctorCommand} — there is no `drizzle.config`/`voyant.config`.
+ *  - **Graph-native project**: when `voyant.config.*` and generated `.voyant/`
+ *    artifacts are authoritative, validates artifact freshness and the generated
+ *    migration plan without requiring a template-local Drizzle config.
+ *  - **Source-backed** (below): cross-checks the manifest (`voyant.config.ts`)
+ *    against the migration setup and reports drift.
+ *
+ * It is a **report by default** (exit 0) so it can run informationally while
+ * existing drift is paid down; pass `--fail-on-drift` to gate CI once clean.
  *
  * Checks:
- *  1. every manifest entry (modules + extensions + additionalSchemas) resolves
- *     to an installed package (catches typos / missing deps)
- *  2. manifest-derived schemas vs `drizzle.config` `schema` entries (missing/extra)
+ *  1. every resolved graph package (or legacy manifest entry) resolves
+ *  2. graph-derived schemas vs `drizzle.config` `schema` entries (missing/extra)
  *  3. the committed `drizzle.schemas.generated.ts` exists and is up to date
  *  4. no duplicate migration sequence prefixes in the `out` directory
- *  5. every materialized link table is present in the latest Drizzle snapshot
+ *  5. generated selected-graph links are fresh and every materialized link
+ *     table is present in the latest Drizzle snapshot
  *
  * `drizzle.config.ts` is parsed statically (its `schema`/`out` literals are
  * extracted from source) so the check needs no database, dotenv, or TS loader.
  */
 export async function dbDoctorCommand(ctx: CommandContext): Promise<CommandResult> {
   const { flags } = parseArgs(ctx.argv)
+
+  // Source-free managed profile: a serialized `managed-profile.json` snapshot
+  // (or `--snapshot <path>`) instead of a drizzle.config template. Falls through
+  // to the source-backed checks below when no snapshot is present.
+  const snapshotPath = resolveManagedSnapshotPath(ctx.cwd, flags.snapshot)
+  if (snapshotPath) {
+    return managedDbDoctorCommand(ctx, { snapshotPath })
+  }
+
   const templateDir = resolveTemplateDir(ctx.cwd, flags.template)
   if (!templateDir) {
+    const projectDir = resolveProjectDir(ctx.cwd, flags.template)
+    if (isGraphNativeProject(projectDir, flags.config)) {
+      return graphNativeDbDoctorCommand(ctx, {
+        projectDir,
+        configPath: typeof flags.config === "string" ? flags.config : undefined,
+      })
+    }
     ctx.stderr(
       "Could not find a template with drizzle.config.{ts,js,mjs}. " +
         "Run from a template directory or pass --template <path>.\n",
@@ -70,15 +106,67 @@ export async function dbDoctorCommand(ctx: CommandContext): Promise<CommandResul
   const parsed = parseDrizzleConfig(readFileSync(drizzleConfigPath, "utf8"))
   const issues: DoctorIssue[] = []
   const notes: string[] = []
+  let project: ProjectDatabaseArtifacts | null
+  try {
+    project = await resolveProjectDatabaseArtifacts(templateDir, config, configPath ?? undefined)
+  } catch (error) {
+    ctx.stderr(`Could not derive database inputs from project artifacts: ${reason(error)}\n`)
+    return 1
+  }
 
-  checkManifestResolvable(config, templateDir, issues, notes)
-  checkSchemaParity(config, templateDir, parsed, issues, notes)
-  checkGeneratedManifest(config, templateDir, issues, notes)
+  checkManifestResolvable(config, templateDir, issues, notes, project)
+  checkSchemaParity(config, templateDir, parsed, issues, notes, project)
+  checkGeneratedManifest(config, templateDir, issues, notes, project)
   checkDuplicatePrefixes(templateDir, parsed.out, issues, notes)
-  await checkLinkSnapshot(templateDir, parsed.out, issues, notes)
+  await checkLinkSnapshot(templateDir, parsed.out, issues, notes, project)
 
   const failOnDrift = flags["fail-on-drift"] === true
   printReport(ctx, { templateDir, drizzleConfigPath, issues, notes, failOnDrift })
+  return failOnDrift && issues.length > 0 ? 1 : 0
+}
+
+async function graphNativeDbDoctorCommand(
+  ctx: CommandContext,
+  options: { projectDir: string; configPath?: string },
+): Promise<CommandResult> {
+  const { flags } = parseArgs(ctx.argv)
+  const failOnDrift = flags["fail-on-drift"] === true
+  const issues: DoctorIssue[] = []
+  const notes: string[] = []
+
+  try {
+    const checked = await checkProjectArtifacts(options.projectDir, {
+      configPath: options.configPath,
+    })
+    notes.push(
+      `Generated project artifacts match the current project graph ${checked.manifest.graphHash}.`,
+    )
+    notes.push(
+      `Migration plan: ${checked.migrationPlan.migrations.length} migration(s), validated against the generated graph.`,
+    )
+  } catch (error) {
+    if (!(error instanceof ProjectArtifactError)) {
+      ctx.stderr(`Could not validate graph-native project: ${reason(error)}\n`)
+      return 1
+    }
+    const classification =
+      error.code === "artifact_missing"
+        ? "are missing"
+        : error.code === "artifact_stale"
+          ? "are stale"
+          : "are invalid"
+    issues.push({
+      message: `Generated project artifacts ${classification}.`,
+      details: [reason(error)],
+    })
+  }
+
+  printGraphNativeReport(ctx, {
+    projectDir: options.projectDir,
+    issues,
+    notes,
+    failOnDrift,
+  })
   return failOnDrift && issues.length > 0 ? 1 : 0
 }
 
@@ -91,15 +179,42 @@ function checkManifestResolvable(
   templateDir: string,
   issues: DoctorIssue[],
   notes: string[],
+  project: ProjectDatabaseArtifacts | null,
 ): void {
+  if (project) {
+    const unresolved = project.packageNames.filter(
+      (packageName) => resolvePackageJson(packageName, templateDir) === null,
+    )
+    if (unresolved.length > 0) {
+      issues.push({
+        message: "Resolved graph packages do not resolve from the project:",
+        details: unresolved,
+      })
+      return
+    }
+    notes.push(`Resolved graph: all ${project.packageNames.length} package record(s) resolve.`)
+    return
+  }
+
   const buckets: Array<[string, SchemaManifestConfig["modules"]]> = [
     ["modules", config.modules],
     ["extensions", config.extensions],
     ["additionalSchemas", config.additionalSchemas],
   ]
-  const entries = buckets.flatMap(([bucket, list]) =>
-    (list ?? []).map((entry) => ({ bucket, name: resolveEntry(entry).resolve })),
-  )
+  const entries: Array<{ bucket: string; name: string }> = []
+  const invalid: string[] = []
+  for (const [bucket, list] of buckets) {
+    for (const [index, entry] of (list ?? []).entries()) {
+      try {
+        entries.push({ bucket, name: resolveSchemaSeedPackageName(entry) })
+      } catch (error) {
+        invalid.push(`${bucket}[${index}]: ${reason(error)}`)
+      }
+    }
+  }
+  if (invalid.length > 0) {
+    issues.push({ message: "Manifest entries are invalid:", details: invalid })
+  }
   const unresolved = entries.filter(({ name }) => resolvePackageJson(name, templateDir) === null)
 
   if (unresolved.length > 0) {
@@ -110,6 +225,7 @@ function checkManifestResolvable(
     })
     return
   }
+  if (invalid.length > 0) return
   notes.push(`Manifest: all ${entries.length} module/extension/additionalSchema entr(ies) resolve.`)
 }
 
@@ -119,10 +235,20 @@ function checkSchemaParity(
   parsed: ParsedDrizzleConfig,
   issues: DoctorIssue[],
   notes: string[],
+  project: ProjectDatabaseArtifacts | null,
 ): void {
   let expected: string[]
   try {
-    expected = resolveSchemaManifest(config, { cwd: templateDir, style: "file" }).map(canon)
+    expected = resolveSchemaManifest(config, {
+      cwd: templateDir,
+      style: "file",
+      project: project
+        ? {
+            schemaSources: project.schemaSources,
+            includeGeneratedLinks: project.projectLinkCount > 0,
+          }
+        : undefined,
+    }).map(canon)
   } catch (err) {
     issues.push({ message: `Failed to resolve manifest schemas: ${reason(err)}` })
     return
@@ -183,10 +309,19 @@ function checkGeneratedManifest(
   templateDir: string,
   issues: DoctorIssue[],
   notes: string[],
+  project: ProjectDatabaseArtifacts | null,
 ): void {
   let generated: ReturnType<typeof renderSchemaManifest>
   try {
-    generated = renderSchemaManifest(config, { cwd: templateDir })
+    generated = renderSchemaManifest(config, {
+      cwd: templateDir,
+      project: project
+        ? {
+            schemaSources: project.schemaSources,
+            includeGeneratedLinks: project.projectLinkCount > 0,
+          }
+        : undefined,
+    })
   } catch (err) {
     issues.push({ message: `Failed to render generated schema manifest: ${reason(err)}` })
     return
@@ -286,10 +421,15 @@ async function checkLinkSnapshot(
   outRel: string,
   issues: DoctorIssue[],
   notes: string[],
+  project: ProjectDatabaseArtifacts | null,
 ): Promise<void> {
-  const linksPath = resolveLinksPath(templateDir, {})
+  const linksPath = project?.projectLinksPath ?? resolveLinksPath(templateDir, {})
   if (!linksPath) {
-    notes.push("Links: no link definitions found.")
+    notes.push(
+      project
+        ? "Links: selected graph contains no materialized project links."
+        : "Links: no link definitions found.",
+    )
     return
   }
 
@@ -299,6 +439,22 @@ async function checkLinkSnapshot(
   } catch (err) {
     issues.push({ message: `Could not load link definitions: ${reason(err)}` })
     return
+  }
+
+  if (project) {
+    const generatedLinksPath = resolvePath(templateDir, "drizzle.links.generated.ts")
+    const expected = renderLinkDrizzleSchema(links)
+    const current = existsSync(generatedLinksPath) ? readFileSync(generatedLinksPath, "utf8") : null
+    if (current !== expected) {
+      issues.push({
+        message: `Generated project link schema is ${current === null ? "MISSING" : "STALE"}: ${rel(templateDir, generatedLinksPath)}.`,
+        details: ["Run `voyant db schemas --emit` to refresh it from the selected graph."],
+      })
+    } else {
+      notes.push(
+        `Generated project link schema: ${rel(templateDir, generatedLinksPath)} is up to date.`,
+      )
+    }
   }
 
   const materialized = links.filter((l) => !l.readOnly).map((l) => l.tableName)
@@ -469,6 +625,53 @@ function rel(baseDir: string, p: string): string {
 
 function reason(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
+}
+
+function resolveProjectDir(cwd: string, templateFlag: string | boolean | undefined): string {
+  if (typeof templateFlag !== "string") return cwd
+  return isAbsolute(templateFlag) ? templateFlag : resolvePath(cwd, templateFlag)
+}
+
+function isGraphNativeProject(
+  projectDir: string,
+  configFlag: string | boolean | undefined,
+): boolean {
+  if (typeof configFlag === "string") return true
+  if (CONFIG_FILENAMES.some((name) => existsSync(join(projectDir, name)))) {
+    return true
+  }
+  return existsSync(join(projectDir, PROJECT_ARTIFACT_DIRECTORY, PROJECT_MIGRATION_PLAN_ARTIFACT))
+}
+
+function printGraphNativeReport(
+  ctx: CommandContext,
+  args: {
+    projectDir: string
+    issues: DoctorIssue[]
+    notes: string[]
+    failOnDrift: boolean
+  },
+): void {
+  ctx.stdout("voyant db doctor (graph-native project)\n")
+  ctx.stdout(`  project:   ${args.projectDir}\n`)
+  ctx.stdout(`  artifacts: ${PROJECT_ARTIFACT_DIRECTORY}/\n\n`)
+
+  for (const note of args.notes) ctx.stdout(`  OK    ${note}\n`)
+  for (const issue of args.issues) {
+    ctx.stdout(`  WARN  ${issue.message}\n`)
+    for (const detail of issue.details ?? []) ctx.stdout(`          - ${detail}\n`)
+  }
+
+  if (args.issues.length === 0) {
+    ctx.stdout("\nNo drift detected.\n")
+    return
+  }
+  ctx.stdout(
+    `\n${args.issues.length} issue(s) reported. ` +
+      (args.failOnDrift
+        ? "Exiting non-zero (--fail-on-drift).\n"
+        : "Report mode exits 0; pass --fail-on-drift to gate CI.\n"),
+  )
 }
 
 function printReport(

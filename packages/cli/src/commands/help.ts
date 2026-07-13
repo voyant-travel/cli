@@ -6,14 +6,15 @@ USAGE
   voyant <command> [...args]
 
 OPEN-SOURCE COMMANDS
-  new <name> [--starter <name|path>]  Scaffold a new project (defaults to the operator starter)
-  generate module <name>             Scaffold a new module package under packages/<name>
-  generate extension <name> --module <target>
-                                     Scaffold a deployment extension under src/extensions/<name>
-                                     that attaches to an existing module's surface
+  new <name> [--preset <name>]       Scaffold a clean project with standard defaults
+  new <name> --starter <name|path>   Copy a legacy or custom starter explicitly
+  generate module <name>             Scaffold a local module under src/modules/<name>
+  add|install <package|path>         Install and explicitly select a module or plugin
+  remove|uninstall <package|path>    Remove a selected module or plugin and its dependency
   generate link <a> <b>              Emit a defineLink snippet (a, b as <module>.<entity>)
   config <show|validate|path>        Inspect the nearest voyant.config.* manifest
   admin generate [--check]           Emit admin.extensions.generated.ts from the manifest
+                                     (--graph <artifact> derives selected admin packages from a resolved graph)
   admin generate --routes [--check]  Emit the code-assembled admin route module (--files: legacy thin files)
                                      (auto-includes the built-in core entry @voyant-travel/admin-app/core-extension
                                      when the package resolves with a ./core-extension export;
@@ -21,15 +22,21 @@ OPEN-SOURCE COMMANDS
   admin generate --destinations [--check]  Emit the generated destination resolver map (RFC 4.7)
   admin doctor                       Check manifest <-> admin extension <-> route/destination parity
                                      (generated-destination drift gates: exit 1; the rest reports)
-  doctor [--strict] [--skip-*]       Preflight: env/bindings (env.d.ts <-> wrangler.jsonc +
-                                     placeholders) + db doctor + admin doctor (exit 1 on any gate)
-  upgrade [--to <version>] [--dry-run]  Bump the @voyant-travel/framework BOM + install
+  doctor [--config <path>] [--strict] [--skip-*] [--json]
+                                     Preflight: env/bindings (env.d.ts <-> wrangler.jsonc +
+                                     placeholders) + current .voyant graph artifacts +
+                                     db doctor + admin doctor (exit 1 on any gate)
+  upgrade [package] [--to <version>] [--plan]  Bump a dependency with a graph-aware plan
                                      (then run: voyant db migrate && voyant doctor)
-  dev --file <path>                  Watch and serve workflows locally with hot reload
+  dev [--file <path>]                Watch and serve workflows locally
+  develop [--host <h>] [--port <n>] Prepare and run the full application in development mode
+  start [--port <n>] [--probe]       Start with the project's installed Voyant runtime
+  build [--artifacts-only] [--json]  Prepare artifacts and build the full application
+  migrate [--plan|--dry-run] [--json] Refresh and execute the graph's Node migration runner
   db <generate|migrate|studio|push>  Proxy drizzle-kit commands (generate defaults to --prefix timestamp)
   db schemas [--emit]                Print/emit the manifest-derived schema list
   db sync-links [--emit-drizzle]     Emit link-table DDL, or a generated Drizzle schema
-  db doctor [--fail-on-drift]        Report migration drift (manifest/schema/prefix/link checks)
+  db doctor [--fail-on-drift]        Report graph artifacts or legacy migration drift
   exec <script.ts> [args...]         Run a TS/JS script with the voyant loader hook
   workflows <subcommand>             Build, serve, inspect, and self-host workflows
 
@@ -67,17 +74,20 @@ The CLI cannot decrypt secrets (no 'secrets get'): CLI tokens lack the
 vault:read scope. Reveal values in the dashboard or with a server token.
 
 EXAMPLES
-  voyant new my-app                           # scaffolds from the operator starter
-  voyant new my-app --starter operator        # explicit starter (same as the default)
+  voyant new my-app --preset operator-standard
+  voyant new my-app --starter operator        # explicit legacy compatibility path
   voyant generate module invoices
-  voyant generate extension booking-notes --module bookings
-  voyant generate extension loyalty-offers --module bookings --public --with-schema
   voyant generate link crm.person products.product --right-list
   voyant config show
   voyant admin generate --check
+  voyant admin generate --graph deployment-graph.generated.json
   voyant admin generate --routes
   voyant admin generate --destinations
   voyant admin doctor
+  voyant develop --port 3300
+  voyant build --artifacts-only --json
+  voyant start --port 8080
+  voyant migrate --plan --json
   voyant db generate
   voyant exec ./scripts/backfill.ts --dry-run
   voyant login                                # browser device flow

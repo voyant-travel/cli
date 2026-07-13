@@ -23,6 +23,8 @@ describe("main", () => {
     expect(code).toBe(0)
     expect(stdout.join("")).toContain("voyant — Voyant CLI")
     expect(stdout.join("")).toContain("generate module")
+    expect(stdout.join("")).toContain("start [--port <n>] [--probe]")
+    expect(stdout.join("")).not.toContain("generate extension")
   })
 
   it("prints usage with -h", async () => {
@@ -60,6 +62,14 @@ describe("main", () => {
     expect(stderr.join("")).toContain("Unknown generate subcommand: nothing")
   })
 
+  it("rejects the removed extension generator", async () => {
+    const { stderr, opts } = makeIo()
+    const code = await main(["generate", "extension", "booking-notes"], opts)
+    expect(code).toBe(1)
+    expect(stderr.join("")).toContain("Unknown generate subcommand: extension")
+    expect(stderr.join("")).toContain('Expected "module" or "link"')
+  })
+
   it("dispatches generate link to the link command", async () => {
     const { stdout, opts } = makeIo()
     const code = await main(["generate", "link", "crm.person", "products.product"], opts)
@@ -91,11 +101,48 @@ describe("main", () => {
     expect(stderr.join("")).toContain("Usage: voyant new <name>")
   })
 
+  it("dispatches `add` and `install` to the authoring command", async () => {
+    const add = makeIo()
+    expect(await main(["add"], add.opts)).toBe(1)
+    expect(add.stderr.join("")).toContain("Usage: voyant add")
+
+    const install = makeIo()
+    expect(await main(["install"], install.opts)).toBe(1)
+    expect(install.stderr.join("")).toContain("Usage: voyant add")
+  })
+
+  it("dispatches `remove` and `uninstall` to the lifecycle command", async () => {
+    const remove = makeIo()
+    expect(await main(["remove"], remove.opts)).toBe(1)
+    expect(remove.stderr.join("")).toContain("Usage: voyant remove")
+
+    const uninstall = makeIo()
+    expect(await main(["uninstall"], uninstall.opts)).toBe(1)
+    expect(uninstall.stderr.join("")).toContain("Usage: voyant remove")
+  })
+
   it("dispatches `exec` to the exec command", async () => {
     const { stderr, opts } = makeIo()
     const code = await main(["exec"], opts)
     // No script provided — expect the exec-specific usage message.
     expect(code).toBe(1)
     expect(stderr.join("")).toContain("Usage: voyant exec")
+  })
+
+  it("dispatches top-level build and migrate commands", async () => {
+    const build = makeIo()
+    expect(await main(["build"], build.opts)).toBe(1)
+    expect(build.stderr.join("")).toContain("voyant build: No voyant.config.* found")
+
+    const migrate = makeIo()
+    expect(await main(["migrate"], migrate.opts)).toBe(1)
+    expect(migrate.stderr.join("")).toContain("voyant migrate: No voyant.config.* found")
+  })
+
+  it("dispatches the full-app develop command separately from dev", async () => {
+    const develop = makeIo()
+
+    expect(await main(["develop"], develop.opts)).toBe(1)
+    expect(develop.stderr.join("")).toContain("voyant develop: No voyant.config.* found")
   })
 })

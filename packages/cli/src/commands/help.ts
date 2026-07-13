@@ -34,7 +34,7 @@ OPEN-SOURCE COMMANDS
   db <generate|migrate|studio|push>  Proxy drizzle-kit commands (generate defaults to --prefix timestamp)
   db schemas [--emit]                Print/emit the manifest-derived schema list
   db sync-links [--emit-drizzle]     Emit link-table DDL, or a generated Drizzle schema
-  db doctor [--fail-on-drift]        Report migration drift (manifest/schema/prefix/link checks)
+  db doctor [--fail-on-drift]        Report graph artifacts or legacy migration drift
   exec <script.ts> [args...]         Run a TS/JS script with the voyant loader hook
   workflows <subcommand>             Build, serve, inspect, and self-host workflows
 

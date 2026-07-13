@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
+import { mkdirSync, mkdtempSync, renameSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import { dbDoctorCommand } from "../../src/commands/db-doctor.js"
 import { dbSchemasCommand } from "../../src/commands/db-schemas.js"
 import { prepareProjectArtifacts } from "../../src/lib/project-artifacts.js"
-import { writeProjectFixture } from "../helpers/project-fixture.js"
+import { writeProjectConfig, writeProjectFixture } from "../helpers/project-fixture.js"
 
 function makeCtx(argv: string[], cwd: string) {
   const stdout: string[] = []
@@ -131,6 +131,96 @@ describe("dbDoctorCommand", () => {
   })
   afterEach(() => {
     rmSync(tmp, { recursive: true, force: true })
+  })
+
+  it("validates a clean graph-native project without drizzle.config", async () => {
+    writeProjectFixture(tmp)
+    renameSync(join(tmp, "voyant.config.mjs"), join(tmp, "voyant.config.ts"))
+    await prepareProjectArtifacts(tmp)
+    const { ctx, out, err } = makeCtx(["--fail-on-drift"], tmp)
+
+    const code = await dbDoctorCommand(ctx)
+
+    expect(out()).toContain("voyant db doctor (graph-native project)")
+    expect(out()).toContain("Generated project artifacts match the current project graph")
+    expect(out()).toContain("Migration plan:")
+    expect(out()).toContain("No drift detected.")
+    expect(err()).toBe("")
+    expect(code).toBe(0)
+  })
+
+  it("reports stale graph-native artifacts without failing in report mode", async () => {
+    writeProjectFixture(tmp)
+    await prepareProjectArtifacts(tmp)
+    writeProjectConfig(tmp, { modules: ["@acme/bookings", "@acme/loyalty"] })
+    const { ctx, out, err } = makeCtx([], tmp)
+
+    const code = await dbDoctorCommand(ctx)
+
+    expect(out()).toContain("Generated project artifacts are stale")
+    expect(out()).toContain("Run `voyant build` or `voyant dev`")
+    expect(out()).toContain("Report mode exits 0")
+    expect(err()).toBe("")
+    expect(code).toBe(0)
+  })
+
+  it("reports missing graph-native artifacts with build guidance", async () => {
+    writeProjectFixture(tmp)
+    const { ctx, out, err } = makeCtx(["--fail-on-drift"], tmp)
+
+    const code = await dbDoctorCommand(ctx)
+
+    expect(out()).toContain("Generated project artifacts are missing")
+    expect(out()).toContain("Run `voyant build` or `voyant dev` to refresh .voyant/")
+    expect(err()).not.toContain("Could not find a template with drizzle.config")
+    expect(code).toBe(1)
+  })
+
+  it.each([
+    "mts",
+    "cjs",
+  ])("detects a graph-native voyant.config.%s project before artifacts exist", async (extension) => {
+    writeProjectFixture(tmp)
+    rmSync(join(tmp, "voyant.config.mjs"))
+    writeFileSync(
+      join(tmp, `voyant.config.${extension}`),
+      extension === "cjs"
+        ? "module.exports = { modules: [], plugins: [] }\n"
+        : "export default { modules: [], plugins: [] }\n",
+    )
+    const { ctx, out, err } = makeCtx(["--fail-on-drift"], tmp)
+
+    const code = await dbDoctorCommand(ctx)
+
+    expect(out()).toContain("voyant db doctor (graph-native project)")
+    expect(out()).toContain("Generated project artifacts are missing")
+    expect(err()).not.toContain("Could not find a template with drizzle.config")
+    expect(code).toBe(1)
+  })
+
+  it("keeps graph-native resolution failures fatal in report mode", async () => {
+    writeProjectFixture(tmp)
+    const { ctx, out, err } = makeCtx(["--config", "missing.config.ts"], tmp)
+
+    const code = await dbDoctorCommand(ctx)
+
+    expect(out()).toBe("")
+    expect(err()).toContain("Could not validate graph-native project")
+    expect(err()).toContain("missing.config.ts")
+    expect(code).toBe(1)
+  })
+
+  it("fails on stale graph-native artifacts under --fail-on-drift", async () => {
+    writeProjectFixture(tmp)
+    await prepareProjectArtifacts(tmp)
+    writeProjectConfig(tmp, { modules: ["@acme/bookings", "@acme/loyalty"] })
+    const { ctx, out } = makeCtx(["--fail-on-drift"], tmp)
+
+    const code = await dbDoctorCommand(ctx)
+
+    expect(out()).toContain("Generated project artifacts are stale")
+    expect(out()).toContain("Exiting non-zero (--fail-on-drift)")
+    expect(code).toBe(1)
   })
 
   it("reports clean parity when drizzle.config matches the manifest (report mode exits 0)", async () => {

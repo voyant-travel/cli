@@ -1,5 +1,11 @@
 # @voyant-travel/cli
 
+## 0.40.1
+
+### Patch Changes
+
+- fbd2f90: Show `voyant workflows serve --help` without starting the local server.
+
 ## 0.40.0
 
 ### Minor Changes

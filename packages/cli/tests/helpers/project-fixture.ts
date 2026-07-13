@@ -10,6 +10,7 @@ export function writeProjectFixture(
     modules?: readonly string[]
     plugins?: readonly string[]
     frameworkSource?: "javascript" | "typescript"
+    meta?: Record<string, unknown>
   } = {},
 ): void {
   mkdirSync(root, { recursive: true })
@@ -47,7 +48,11 @@ function writeTypeScriptFrameworkExports(frameworkRoot: string): void {
 
 export function writeProjectConfig(
   root: string,
-  options: { modules?: readonly string[]; plugins?: readonly string[] } = {},
+  options: {
+    modules?: readonly string[]
+    plugins?: readonly string[]
+    meta?: Record<string, unknown>
+  } = {},
 ): void {
   writeFileSync(
     join(root, "voyant.config.mjs"),
@@ -58,6 +63,7 @@ export default defineProject(${JSON.stringify(
         schemaVersion: "voyant.project.v1",
         modules: options.modules ?? ["@acme/bookings"],
         plugins: options.plugins ?? [],
+        ...(options.meta ? { meta: options.meta } : {}),
       },
       null,
       2,

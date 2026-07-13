@@ -1,5 +1,11 @@
 # @voyant-travel/cli
 
+## 0.39.0
+
+### Minor Changes
+
+- 3e8a4ee: Add `voyant start`, which loads the current project's installed Voyant runtime and starts its generated application.
+
 ## 0.38.2
 
 ### Patch Changes

@@ -138,4 +138,11 @@ describe("main", () => {
     expect(await main(["migrate"], migrate.opts)).toBe(1)
     expect(migrate.stderr.join("")).toContain("voyant migrate: No voyant.config.* found")
   })
+
+  it("dispatches the full-app develop command separately from dev", async () => {
+    const develop = makeIo()
+
+    expect(await main(["develop"], develop.opts)).toBe(1)
+    expect(develop.stderr.join("")).toContain("voyant develop: No voyant.config.* found")
+  })
 })

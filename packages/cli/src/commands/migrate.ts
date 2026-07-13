@@ -6,7 +6,7 @@ import {
   DeploymentArtifactError,
   readDeploymentGraphArtifact,
 } from "../lib/deployment-artifact-reader.js"
-import { type CheckedProjectArtifacts, checkProjectArtifacts } from "../lib/project-artifacts.js"
+import { type CheckedProjectArtifacts, prepareProjectArtifacts } from "../lib/project-artifacts.js"
 import { type ProjectMigrationPlan, parseMigrationPlan } from "../lib/project-resolution.js"
 
 export interface PlanMigrationsOptions {
@@ -45,7 +45,7 @@ interface MigrationRunnerModule {
 }
 
 export interface PlanMigrationsDeps {
-  checkArtifacts?: typeof checkProjectArtifacts
+  prepareArtifacts?: typeof prepareProjectArtifacts
   loadRunner?: (path: string, contentHash: string) => Promise<MigrationRunnerModule>
 }
 
@@ -57,7 +57,7 @@ export async function planMigrations(
   if (options.deploymentArtifactsPath) {
     return loadExplicitMigrationArtifacts(options.cwd, options.deploymentArtifactsPath)
   }
-  const checked: CheckedProjectArtifacts = await (deps.checkArtifacts ?? checkProjectArtifacts)(
+  const checked: CheckedProjectArtifacts = await (deps.prepareArtifacts ?? prepareProjectArtifacts)(
     options.cwd,
     { configPath: options.configPath },
   )

@@ -10,6 +10,7 @@ import { databasesCommand } from "./commands/databases.js"
 import { dbCommand } from "./commands/db.js"
 import { deployCommand } from "./commands/deploy.js"
 import { devCommand } from "./commands/dev-command.js"
+import { developCommand } from "./commands/develop.js"
 import { doctorCommand } from "./commands/doctor.js"
 import { envCommand } from "./commands/env.js"
 import { execCommand } from "./commands/exec.js"
@@ -122,6 +123,9 @@ export async function main(
     }
     case "dev": {
       return devCommand({ ...ctx, argv: rest })
+    }
+    case "develop": {
+      return developCommand({ ...ctx, argv: rest })
     }
     case "start": {
       return startCommand({ ...ctx, argv: rest })

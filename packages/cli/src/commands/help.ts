@@ -28,10 +28,11 @@ OPEN-SOURCE COMMANDS
                                      db doctor + admin doctor (exit 1 on any gate)
   upgrade [package] [--to <version>] [--plan]  Bump a dependency with a graph-aware plan
                                      (then run: voyant db migrate && voyant doctor)
-  dev [--config <path>]              Resolve, generate, watch, and serve the project graph
+  dev [--file <path>]                Watch and serve workflows locally
+  develop [--host <h>] [--port <n>] Prepare and run the full application in development mode
   start [--port <n>] [--probe]       Start with the project's installed Voyant runtime
-  build [--config <path>] [--json]   Write deterministic project outputs beneath .voyant/
-  migrate [--plan|--dry-run] [--json] Execute the current graph's Node migration runner
+  build [--artifacts-only] [--json]  Prepare artifacts and build the full application
+  migrate [--plan|--dry-run] [--json] Refresh and execute the graph's Node migration runner
   db <generate|migrate|studio|push>  Proxy drizzle-kit commands (generate defaults to --prefix timestamp)
   db schemas [--emit]                Print/emit the manifest-derived schema list
   db sync-links [--emit-drizzle]     Emit link-table DDL, or a generated Drizzle schema
@@ -83,7 +84,8 @@ EXAMPLES
   voyant admin generate --routes
   voyant admin generate --destinations
   voyant admin doctor
-  voyant build --json
+  voyant develop --port 3300
+  voyant build --artifacts-only --json
   voyant start --port 8080
   voyant migrate --plan --json
   voyant db generate

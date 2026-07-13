@@ -1,5 +1,6 @@
 import { getBooleanFlag, getStringFlag, parseArgs } from "../lib/args.js"
 import { errorMessage, fail, printJson, wantsJson } from "../lib/output.js"
+import { loadProjectEnv, resolveProjectEnvRoot } from "../lib/project-env.js"
 import type { CommandContext, CommandResult } from "../types.js"
 import {
   executeMigrations,
@@ -10,7 +11,10 @@ import {
 
 export async function migrateCommand(
   ctx: CommandContext,
-  deps: PlanMigrationsDeps = {},
+  deps: PlanMigrationsDeps & {
+    env?: Record<string, string | undefined>
+    loadEnv?: typeof loadProjectEnv
+  } = {},
 ): Promise<CommandResult> {
   const args = parseArgs(ctx.argv, { booleanFlags: ["plan", "dry-run", "json", "help"] })
   if (args.flags.help === true || args.flags.h === true) {
@@ -24,6 +28,10 @@ export async function migrateCommand(
     deploymentArtifactsPath: getStringFlag(args, "deployment-artifacts"),
   }
   try {
+    await (deps.loadEnv ?? loadProjectEnv)(
+      resolveProjectEnvRoot(ctx.cwd, options.configPath),
+      deps.env ?? process.env,
+    )
     if (getBooleanFlag(args, "plan")) {
       const planned = await planMigrations(options, deps)
       const report = {

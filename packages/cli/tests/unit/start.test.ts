@@ -60,6 +60,24 @@ describe("startCommand", () => {
     }
   })
 
+  it("loads .env while preserving a platform PORT value", async () => {
+    writeFileSync(join(root, ".env"), "PORT=3300\nDATABASE_URL=project-db\n")
+    const env = { PORT: "4400" } as Record<string, string | undefined>
+    const startVoyantProject = vi.fn(async () => serverHandle(4400))
+    const { ctx } = io([], root)
+
+    expect(
+      await startCommand(ctx, {
+        env,
+        loadRuntime: async () => ({ startVoyantProject }),
+        waitForShutdown: async (cleanup) => cleanup(),
+      }),
+    ).toBe(0)
+
+    expect(env).toEqual({ PORT: "4400", DATABASE_URL: "project-db" })
+    expect(startVoyantProject).toHaveBeenCalledWith(expect.objectContaining({ port: 4400 }))
+  })
+
   it("probes the started host and closes it", async () => {
     const handle = serverHandle(8080)
     handle.server.listening = false

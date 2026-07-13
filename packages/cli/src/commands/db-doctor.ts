@@ -3,6 +3,7 @@ import { createRequire } from "node:module"
 import { isAbsolute, join, relative, resolve as resolvePath } from "node:path"
 
 import { parseArgs } from "../lib/args.js"
+import { CONFIG_FILENAMES } from "../lib/config-loader.js"
 import { renderLinkDrizzleSchema } from "../lib/link-schema.js"
 import {
   checkProjectArtifacts,
@@ -144,14 +145,16 @@ async function graphNativeDbDoctorCommand(
       `Migration plan: ${checked.migrationPlan.migrations.length} migration(s), validated against the generated graph.`,
     )
   } catch (error) {
+    if (!(error instanceof ProjectArtifactError)) {
+      ctx.stderr(`Could not validate graph-native project: ${reason(error)}\n`)
+      return 1
+    }
     const classification =
-      error instanceof ProjectArtifactError
-        ? error.code === "artifact_missing"
-          ? "are missing"
-          : error.code === "artifact_stale"
-            ? "are stale"
-            : "are invalid"
-        : "could not be validated"
+      error.code === "artifact_missing"
+        ? "are missing"
+        : error.code === "artifact_stale"
+          ? "are stale"
+          : "are invalid"
     issues.push({
       message: `Generated project artifacts ${classification}.`,
       details: [reason(error)],
@@ -634,11 +637,7 @@ function isGraphNativeProject(
   configFlag: string | boolean | undefined,
 ): boolean {
   if (typeof configFlag === "string") return true
-  if (
-    ["voyant.config.ts", "voyant.config.js", "voyant.config.mjs"].some((name) =>
-      existsSync(join(projectDir, name)),
-    )
-  ) {
+  if (CONFIG_FILENAMES.some((name) => existsSync(join(projectDir, name)))) {
     return true
   }
   return existsSync(join(projectDir, PROJECT_ARTIFACT_DIRECTORY, PROJECT_MIGRATION_PLAN_ARTIFACT))

@@ -1,6 +1,7 @@
 import { getBooleanFlag, getStringFlag, parseArgs } from "../lib/args.js"
 import { errorMessage, fail, printJson, wantsJson } from "../lib/output.js"
 import { loadProjectEnv, resolveProjectEnvRoot } from "../lib/project-env.js"
+import type { ProjectLinkMigrationReport } from "../lib/project-link-migration.js"
 import type { CommandContext, CommandResult } from "../types.js"
 import {
   executeMigrations,
@@ -39,10 +40,16 @@ export async function migrateCommand(
         ok: true,
         contentHash: planned.contentHash,
         migrationCount: planned.migrationPlan.migrations.length,
+        linkCount: planned.projectLinkCount,
         plan: planned.migrationPlan,
       }
       if (wantsJson(args)) return printJson(ctx, report)
-      printPlan(ctx, planned.contentHash, planned.migrationPlan.migrations.length)
+      printPlan(
+        ctx,
+        planned.contentHash,
+        planned.migrationPlan.migrations.length,
+        planned.projectLinkCount,
+      )
       return 0
     }
 
@@ -55,6 +62,7 @@ export async function migrateCommand(
       ok: executed.report.failed.length === 0,
       migrationCount: executed.plan.migrations.length,
       dryRun: getBooleanFlag(args, "dry-run"),
+      links: executed.links,
     }
     if (wantsJson(args)) {
       printJson(ctx, report)
@@ -74,19 +82,26 @@ usage:
   voyant migrate --deployment-artifacts <path> [--plan | --dry-run] [--json]
 `
 
-function printPlan(ctx: CommandContext, contentHash: string, migrationCount: number): void {
+function printPlan(
+  ctx: CommandContext,
+  contentHash: string,
+  migrationCount: number,
+  linkCount: number,
+): void {
   ctx.stdout(`voyant migrate: plan ${contentHash}\n`)
   ctx.stdout(`  migrations ${migrationCount}\n`)
+  ctx.stdout(`  links      ${linkCount}\n`)
 }
 
 function printExecution(
   ctx: CommandContext,
-  report: MigrationExecutionReport & { dryRun: boolean },
+  report: MigrationExecutionReport & { dryRun: boolean; links: ProjectLinkMigrationReport },
 ): void {
   ctx.stdout(`voyant migrate: ${report.dryRun ? "dry-run" : "apply"} ${report.contentHash}\n`)
   ctx.stdout(`  applied ${report.applied.length}\n`)
   ctx.stdout(`  skipped ${report.skipped.length}\n`)
   ctx.stdout(`  failed  ${report.failed.length}\n`)
+  ctx.stdout(`  links   ${report.links.materialized}/${report.links.discovered}\n`)
   for (const failure of report.failed) {
     ctx.stderr(`  ${failure.id}: ${failure.detail ?? "migration failed"}\n`)
   }

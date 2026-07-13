@@ -23,7 +23,8 @@ voyant generate module invoices           # add a conventional local module
 voyant generate link crm.person products.product --right-list
 voyant config show                         # inspect voyant.config.ts
 voyant db generate                         # drizzle-kit pass-through
-voyant db sync-links                       # SQL DDL for module links
+voyant migrate                             # migrations plus selected link pivots
+voyant db sync-links                       # inspect/emit link DDL explicitly
 voyant exec ./scripts/backfill.ts          # run a TS script with native strip-types
 voyant workflows build --file ./src/workflows.ts
 voyant dev --file ./src/workflows.ts

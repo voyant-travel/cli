@@ -9,6 +9,27 @@ export function defineProject(project) {
 export async function resolveProject({ project }) {
   const testDatabaseGraph = project.meta?.testDatabaseGraph === true
   const modules = normalizeUnits(project.modules ?? [], "module", testDatabaseGraph)
+  if (project.meta?.testWebhookConvention === true) {
+    modules.push({
+      id: "fixture-project#qa-probe",
+      kind: "module",
+      packageName: "fixture-project",
+      order: modules.length,
+      provides: { capabilities: [], ports: [] },
+      requires: { capabilities: [], ports: [] },
+      api: [],
+      schema: [],
+      migrations: [],
+      links: [],
+      subscribers: [],
+      events: [],
+      workflows: [],
+      meta: {
+        source: "project-convention",
+        sourcePath: "src/modules/qa-probe/index.ts",
+      },
+    })
+  }
   const plugins = normalizeUnits(project.plugins ?? [], "plugin", false)
   const graphWithoutHash = {
     schemaVersion: "voyant.resolved-graph.v1",

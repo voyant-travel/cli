@@ -63,12 +63,12 @@
     "dotenv": "^17.4.2",
     "esbuild": "^0.28.0",
     "jiti": "^2.6.1",
-    "tar": "^7.4.3"
+    "tar": "^7.4.3",
+    "typescript": "5.9.2"
   },
   "devDependencies": {
     "@types/node": "^22.10.1",
     "@voyant-travel/cli-tsconfig": "workspace:*",
-    "typescript": "5.9.2",
     "vitest": "^4.1.2"
   },
   "engines": {

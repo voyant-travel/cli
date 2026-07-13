@@ -3,6 +3,7 @@ import { createRequire } from "node:module"
 import { dirname, relative, resolve } from "node:path"
 
 import { resolveConfigPath } from "./config-loader.js"
+import { validateProjectRuntimeConventions } from "./project-convention-validation.js"
 import { loadProjectConfigModule, loadProjectModule } from "./project-module-loader.js"
 
 export const FRAMEWORK_PROJECT_RESOLVER_EXPORT = "resolveProject" as const
@@ -160,6 +161,7 @@ export async function resolveProject(
   }
 
   const resolution = parseFrameworkResolution(rawResolution)
+  await validateProjectRuntimeConventions(projectRoot, resolution.graph)
   return {
     configPath,
     projectRoot,

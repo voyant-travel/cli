@@ -22,6 +22,7 @@
     "./commands/exec": "./src/commands/exec.ts",
     "./commands/new": "./src/commands/new.ts",
     "./commands/dev": "./src/commands/dev.ts",
+    "./commands/start": "./src/commands/start.ts",
     "./commands/build": "./src/commands/build-command.ts",
     "./commands/migrate": "./src/commands/migrate-command.ts",
     "./commands/workflows": "./src/commands/workflows-command.ts",
@@ -144,6 +145,11 @@
         "types": "./dist/commands/dev.d.ts",
         "import": "./dist/commands/dev.js",
         "default": "./dist/commands/dev.js"
+      },
+      "./commands/start": {
+        "types": "./dist/commands/start.d.ts",
+        "import": "./dist/commands/start.js",
+        "default": "./dist/commands/start.js"
       },
       "./commands/build": {
         "types": "./dist/commands/build-command.d.ts",

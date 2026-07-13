@@ -29,6 +29,7 @@ OPEN-SOURCE COMMANDS
   upgrade [package] [--to <version>] [--plan]  Bump a dependency with a graph-aware plan
                                      (then run: voyant db migrate && voyant doctor)
   dev [--config <path>]              Resolve, generate, watch, and serve the project graph
+  start [--port <n>] [--probe]       Start with the project's installed Voyant runtime
   build [--config <path>] [--json]   Write deterministic project outputs beneath .voyant/
   migrate [--plan|--dry-run] [--json] Execute the current graph's Node migration runner
   db <generate|migrate|studio|push>  Proxy drizzle-kit commands (generate defaults to --prefix timestamp)
@@ -83,6 +84,7 @@ EXAMPLES
   voyant admin generate --destinations
   voyant admin doctor
   voyant build --json
+  voyant start --port 8080
   voyant migrate --plan --json
   voyant db generate
   voyant exec ./scripts/backfill.ts --dry-run

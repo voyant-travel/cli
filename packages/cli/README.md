@@ -23,6 +23,7 @@ voyant --help
 | `voyant db sync-links [--out <file>]` | Emit DDL for cross-module link tables |
 | `voyant exec <script.ts> [args…]` | Run a TS/JS script with native strip-types |
 | `voyant dev [--config <path>]` | Resolve the project, refresh `.voyant/`, and watch + serve its generated runtime |
+| `voyant start [--port <n>] [--probe]` | Start the project through its installed `@voyant-travel/runtime` |
 | `voyant build [--json]` | Resolve one target-neutral graph and write deterministic `.voyant/` outputs |
 | `voyant migrate [--json]` | Validate `.voyant/` and report the framework-authored migration plan |
 | `voyant workflows <subcommand>` | Build, serve, inspect, and self-host workflows |

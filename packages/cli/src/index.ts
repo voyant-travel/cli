@@ -24,6 +24,7 @@ import { newCommand } from "./commands/new.js"
 import { orgCommand } from "./commands/org.js"
 import { removeCommand } from "./commands/remove.js"
 import { secretsCommand } from "./commands/secrets.js"
+import { startCommand } from "./commands/start.js"
 import { storageCommand } from "./commands/storage.js"
 import { upgradeCommand } from "./commands/upgrade.js"
 import { vaultsCommand } from "./commands/vaults.js"
@@ -121,6 +122,9 @@ export async function main(
     }
     case "dev": {
       return devCommand({ ...ctx, argv: rest })
+    }
+    case "start": {
+      return startCommand({ ...ctx, argv: rest })
     }
     case "workflows": {
       return workflowsCommand({ ...ctx, argv: rest })

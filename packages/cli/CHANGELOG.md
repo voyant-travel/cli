@@ -1,5 +1,12 @@
 # @voyant-travel/cli
 
+## 0.40.2
+
+### Patch Changes
+
+- a49ce6c: Materialize graph-discovered writable link pivots automatically after successful schema migrations in `voyant migrate`.
+- 7c09edd: Reject runtime-only project modules that return `webhookRoutes` without a graph-owned inbound webhook declaration, and report the supported project-owned package manifest syntax during build.
+
 ## 0.40.1
 
 ### Patch Changes

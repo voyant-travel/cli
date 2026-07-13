@@ -2,12 +2,20 @@ import { existsSync } from "node:fs"
 import { readFile } from "node:fs/promises"
 import { isAbsolute, relative, resolve } from "node:path"
 import { pathToFileURL } from "node:url"
+import type { LinkDefinition } from "@voyant-travel/core/links"
 import {
   DeploymentArtifactError,
   readDeploymentGraphArtifact,
 } from "../lib/deployment-artifact-reader.js"
 import { type CheckedProjectArtifacts, prepareProjectArtifacts } from "../lib/project-artifacts.js"
+import {
+  loadProjectLinksArtifact,
+  materializeProjectLinks,
+  type ProjectLinkMigrationReport,
+} from "../lib/project-link-migration.js"
 import { type ProjectMigrationPlan, parseMigrationPlan } from "../lib/project-resolution.js"
+
+const PROJECT_LINKS_ARTIFACT = "runtime/project-links.generated.ts"
 
 export interface PlanMigrationsOptions {
   cwd: string
@@ -34,6 +42,8 @@ interface MigrationArtifactSet {
   contentHash: string
   migrationPlan: ProjectMigrationPlan
   migrationRunnerPath: string
+  projectLinkCount: number
+  projectLinksPath?: string
 }
 
 interface MigrationRunnerModule {
@@ -47,6 +57,8 @@ interface MigrationRunnerModule {
 export interface PlanMigrationsDeps {
   prepareArtifacts?: typeof prepareProjectArtifacts
   loadRunner?: (path: string, contentHash: string) => Promise<MigrationRunnerModule>
+  loadProjectLinks?: (path: string) => Promise<readonly LinkDefinition[]>
+  syncProjectLinks?: (definitions: readonly LinkDefinition[]) => Promise<ProjectLinkMigrationReport>
 }
 
 /** Load and freshness-check the current graph's framework-authored migration plan. */
@@ -61,10 +73,16 @@ export async function planMigrations(
     options.cwd,
     { configPath: options.configPath },
   )
+  const links = resolveProjectLinkArtifacts(
+    checked.graph,
+    checked.artifactRoot,
+    checked.manifest.files,
+  )
   return {
     contentHash: checked.manifest.graphHash,
     migrationPlan: checked.migrationPlan,
     migrationRunnerPath: checked.migrationRunnerPath,
+    ...links,
   }
 }
 
@@ -72,8 +90,21 @@ export async function planMigrations(
 export async function executeMigrations(
   options: PlanMigrationsOptions & { dryRun?: boolean },
   deps: PlanMigrationsDeps = {},
-): Promise<{ plan: ProjectMigrationPlan; report: MigrationExecutionReport }> {
+): Promise<{
+  plan: ProjectMigrationPlan
+  report: MigrationExecutionReport
+  links: ProjectLinkMigrationReport
+}> {
   const planned = await planMigrations(options, deps)
+  const definitions = planned.projectLinksPath
+    ? await (deps.loadProjectLinks ?? loadProjectLinksArtifact)(planned.projectLinksPath)
+    : []
+  if (definitions.length !== planned.projectLinkCount) {
+    throw new DeploymentArtifactError(
+      "artifact_stale",
+      `${PROJECT_LINKS_ARTIFACT} exports ${definitions.length} link definition(s), but the resolved graph selects ${planned.projectLinkCount}. Run \`voyant build\` to refresh project artifacts.`,
+    )
+  }
   const runner = await (deps.loadRunner ?? importMigrationRunner)(
     planned.migrationRunnerPath,
     planned.contentHash,
@@ -81,7 +112,11 @@ export async function executeMigrations(
   assertRunnerContract(runner, planned.contentHash)
   const report = await runner.runVoyantMigrations({ dryRun: options.dryRun })
   assertExecutionReport(report, planned.contentHash)
-  return { plan: planned.migrationPlan, report }
+  const links =
+    !options.dryRun && report.failed.length === 0
+      ? await (deps.syncProjectLinks ?? materializeProjectLinks)(definitions)
+      : pendingLinkReport(definitions)
+  return { plan: planned.migrationPlan, report, links }
 }
 
 async function loadExplicitMigrationArtifacts(
@@ -131,7 +166,69 @@ async function loadExplicitMigrationArtifacts(
       `migration runner ${migrationRunnerRef} does not reference ${artifact.contentHash}`,
     )
   }
-  return { contentHash: artifact.contentHash, migrationPlan, migrationRunnerPath }
+  return {
+    contentHash: artifact.contentHash,
+    migrationPlan,
+    migrationRunnerPath,
+    ...resolveProjectLinkArtifacts(
+      artifact.graph,
+      artifact.rootDir,
+      Array.isArray(artifact.manifest.files) ? artifact.manifest.files : [],
+    ),
+  }
+}
+
+function resolveProjectLinkArtifacts(
+  graph: Record<string, unknown>,
+  artifactRoot: string,
+  files: readonly unknown[],
+): Pick<MigrationArtifactSet, "projectLinkCount" | "projectLinksPath"> {
+  const projectLinkCount = countProjectLinks(graph)
+  if (projectLinkCount === 0) return { projectLinkCount }
+  if (!files.includes(PROJECT_LINKS_ARTIFACT)) {
+    throw new DeploymentArtifactError(
+      "artifact_invalid",
+      `Resolved graph selects ${projectLinkCount} link definition(s), but ${PROJECT_LINKS_ARTIFACT} is absent. Run \`voyant build\` with a current framework and retry \`voyant migrate\`; no separate link-sync command is required.`,
+    )
+  }
+  const projectLinksPath = resolve(artifactRoot, PROJECT_LINKS_ARTIFACT)
+  if (!existsSync(projectLinksPath)) {
+    throw new DeploymentArtifactError(
+      "artifact_missing",
+      `Resolved graph selects ${projectLinkCount} link definition(s), but ${PROJECT_LINKS_ARTIFACT} is missing. Run \`voyant build\` and retry \`voyant migrate\`.`,
+    )
+  }
+  return { projectLinkCount, projectLinksPath }
+}
+
+function countProjectLinks(graph: Record<string, unknown>): number {
+  let count = 0
+  for (const units of [graph.modules, graph.extensions, graph.plugins]) {
+    if (!Array.isArray(units)) continue
+    for (const value of units) {
+      if (!value || typeof value !== "object" || Array.isArray(value)) continue
+      const unit = value as Record<string, unknown>
+      const meta =
+        unit.meta && typeof unit.meta === "object" && !Array.isArray(unit.meta)
+          ? (unit.meta as Record<string, unknown>)
+          : undefined
+      const projectConvention = meta?.source === "project-convention"
+      if (!Array.isArray(unit.links)) continue
+      count += unit.links.filter((value) => {
+        if (!value || typeof value !== "object" || Array.isArray(value)) return false
+        const link = value as Record<string, unknown>
+        return (
+          typeof link.source === "string" && (projectConvention || typeof link.export === "string")
+        )
+      }).length
+    }
+  }
+  return count
+}
+
+function pendingLinkReport(definitions: readonly LinkDefinition[]): ProjectLinkMigrationReport {
+  const readOnly = definitions.filter((definition) => definition.readOnly).length
+  return { discovered: definitions.length, materialized: 0, readOnly }
 }
 
 async function importMigrationRunner(

@@ -37,7 +37,7 @@ importers:
         version: 0.107.10
       '@voyant-travel/workflows-orchestrator-node':
         specifier: ^0.107.9
-        version: 0.107.10
+        version: 0.107.10(@types/pg@8.20.0)
       dotenv:
         specifier: ^17.4.2
         version: 17.4.2
@@ -47,6 +47,9 @@ importers:
       jiti:
         specifier: ^2.6.1
         version: 2.7.0
+      pg:
+        specifier: ^8.16.3
+        version: 8.20.0
       tar:
         specifier: ^7.4.3
         version: 7.5.13
@@ -57,6 +60,9 @@ importers:
       '@types/node':
         specifier: ^22.10.1
         version: 22.19.17
+      '@types/pg':
+        specifier: ^8.15.5
+        version: 8.20.0
       '@voyant-travel/cli-tsconfig':
         specifier: workspace:*
         version: link:../typescript-config
@@ -530,6 +536,9 @@ packages:
 
   '@types/node@22.19.17':
     resolution: {integrity: sha512-wGdMcf+vPYM6jikpS/qhg6WiqSV/OhG+jeeHT/KlVqxYfD40iYJf9/AE1uQxVWFvU7MipKRkRv8NSHiCGgPr8Q==}
+
+  '@types/pg@8.20.0':
+    resolution: {integrity: sha512-bEPFOaMAHTEP1EzpvHTbmwR8UsFyHSKsRisLIHVMXnpNefSbGA1bD6CVy+qKjGSqmZqNqBDV2azOBo8TgkcVow==}
 
   '@vitest/expect@4.1.5':
     resolution: {integrity: sha512-PWBaRY5JoKuRnHlUHfpV/KohFylaDZTupcXN1H9vYryNLOnitSw60Mw9IAE2r67NbwwzBw/Cc/8q9BK3kIX8Kw==}
@@ -1737,6 +1746,12 @@ snapshots:
     dependencies:
       undici-types: 6.21.0
 
+  '@types/pg@8.20.0':
+    dependencies:
+      '@types/node': 22.19.17
+      pg-protocol: 1.13.0
+      pg-types: 2.2.0
+
   '@vitest/expect@4.1.5':
     dependencies:
       '@standard-schema/spec': 1.1.0
@@ -1782,11 +1797,11 @@ snapshots:
 
   '@voyant-travel/core@0.109.0': {}
 
-  '@voyant-travel/workflows-orchestrator-node@0.107.10':
+  '@voyant-travel/workflows-orchestrator-node@0.107.10(@types/pg@8.20.0)':
     dependencies:
       '@voyant-travel/workflows': 0.107.10
       '@voyant-travel/workflows-orchestrator': 0.107.10
-      drizzle-orm: 0.45.2(pg@8.20.0)
+      drizzle-orm: 0.45.2(@types/pg@8.20.0)(pg@8.20.0)
       pg: 8.20.0
     transitivePeerDependencies:
       - '@aws-sdk/client-rds-data'
@@ -1874,8 +1889,9 @@ snapshots:
 
   dotenv@17.4.2: {}
 
-  drizzle-orm@0.45.2(pg@8.20.0):
+  drizzle-orm@0.45.2(@types/pg@8.20.0)(pg@8.20.0):
     optionalDependencies:
+      '@types/pg': 8.20.0
       pg: 8.20.0
 
   enquirer@2.4.1:

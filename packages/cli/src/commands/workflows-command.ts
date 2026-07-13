@@ -90,6 +90,11 @@ export async function workflowsCommand(
       return 0
     }
     case "serve": {
+      if (args.flags.help === true || args.flags.h === true) {
+        ctx.stdout(`${WORKFLOWS_SERVE_USAGE}\n`)
+        return 0
+      }
+
       const parsed = parseServeOptions(args)
       if (!parsed.ok) {
         ctx.stderr(`${parsed.message}\n`)
@@ -360,4 +365,10 @@ usage:
   voyant workflows trigger <id> [--input <json>] [--input-file <path>] [--url <url>]
   voyant workflows prune [--older-than <duration>] [--keep <N>] [--workflow <id>] [--status <s>] [--dry-run] [--json]
   voyant workflows tail <run-id> [--url <url>] [--stream <streamId>] [--json]
+`
+
+const WORKFLOWS_SERVE_USAGE = `voyant workflows serve - serve workflows locally
+
+usage:
+  voyant workflows serve [--port <n>] [--host <h>] [--file <path>] [--dashboard <path>]
 `

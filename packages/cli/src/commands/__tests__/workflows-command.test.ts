@@ -18,6 +18,26 @@ function makeCtx(argv: string[]) {
 }
 
 describe("workflowsCommand", () => {
+  it("prints serve help without starting the server", async () => {
+    const { ctx, stdout, stderr } = makeCtx(["serve", "--help"])
+    const defaultServeDeps = vi.fn(async () => ({}) as ServeDeps)
+    const startServer = vi.fn(async () => ({
+      url: "http://127.0.0.1:3232",
+      close: async () => {},
+    }))
+
+    const code = await workflowsCommand(ctx, {
+      defaultServeDeps,
+      startServer,
+    })
+
+    expect(code).toBe(0)
+    expect(stdout.join("")).toContain("voyant workflows serve [--port <n>]")
+    expect(stderr.join("")).not.toContain("listening at")
+    expect(defaultServeDeps).not.toHaveBeenCalled()
+    expect(startServer).not.toHaveBeenCalled()
+  })
+
   it("keeps serve running until shutdown is released", async () => {
     const { ctx, stderr } = makeCtx(["serve", "--file", "bundle.cjs", "--port", "3310"])
     const close = vi.fn(async () => {})

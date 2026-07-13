@@ -23,6 +23,7 @@ describe("main", () => {
     expect(code).toBe(0)
     expect(stdout.join("")).toContain("voyant — Voyant CLI")
     expect(stdout.join("")).toContain("generate module")
+    expect(stdout.join("")).toContain("start [--port <n>] [--probe]")
     expect(stdout.join("")).not.toContain("generate extension")
   })
 

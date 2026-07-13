@@ -1,5 +1,11 @@
 # @voyant-travel/cli
 
+## 0.38.2
+
+### Patch Changes
+
+- b93fda8: Teach `voyant db doctor` to validate graph-native project and migration artifacts without requiring a template-local `drizzle.config`, while preserving legacy template and managed-profile checks.
+
 ## 0.38.1
 
 ### Patch Changes

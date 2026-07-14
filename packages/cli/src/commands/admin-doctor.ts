@@ -5,6 +5,7 @@ import type { VoyantConfig } from "@voyant-travel/core/config"
 import { resolveCoreAdminEntry } from "../lib/admin-core-entry.js"
 import {
   type AdminEntryScanResult,
+  adminModuleEntries,
   DEFAULT_GENERATED_RELATIVE_PATH,
   scanAdminEntries,
 } from "../lib/admin-entries.js"
@@ -97,7 +98,7 @@ export async function adminDoctorCommand(ctx: CommandContext): Promise<CommandRe
   }
 
   const configDir = dirname(configPath)
-  const results = scanAdminEntries(config.modules ?? [], configDir)
+  const results = scanAdminEntries(adminModuleEntries(config), configDir)
   const found = results.filter((result) => result.status === "found")
 
   const generatedPath = outFlag

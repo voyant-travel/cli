@@ -184,6 +184,30 @@ describe("adminGenerateCommand", () => {
     expect(stdout.join("")).toContain("2 modules, 1 admin entries, wrote")
   })
 
+  it("uses project selections when config modules contain expanded manifests", async () => {
+    writeFixture(tmp)
+    writeFileSync(
+      join(tmp, "voyant.config.ts"),
+      `export default {
+  modules: [{
+    id: "@voyant-travel/foo",
+    packageName: "@voyant-travel/foo",
+    schemaVersion: "voyant.module.v1",
+  }],
+  selections: {
+    modules: [{ id: "@voyant-travel/foo", resolve: "@voyant-travel/foo" }],
+  },
+}\n`,
+    )
+
+    const { ctx, stderr } = makeCtx([], tmp)
+    expect(await adminGenerateCommand(ctx)).toBe(0)
+    expect(stderr.join("")).toBe("")
+    expect(readFileSync(join(tmp, "src", "admin.extensions.generated.ts"), "utf8")).toContain(
+      `import { createFooAdminExtension } from "@voyant-travel/foo-react/admin"`,
+    )
+  })
+
   it("derives admin entries from a resolved deployment graph without a config file", async () => {
     writeGraphFixture(tmp)
     const { ctx, stdout } = makeCtx(["--graph", "deployment-graph.generated.json"], tmp)

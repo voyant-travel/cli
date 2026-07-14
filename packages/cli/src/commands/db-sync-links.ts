@@ -10,8 +10,8 @@ import { renderLinkDrizzleSchema } from "../lib/link-schema.js"
 import type { CommandContext, CommandResult } from "../types.js"
 
 /**
- * Candidate locations (relative to a template root) where a `links` array
- * may live. Probed in declaration order, first hit wins.
+ * Candidate locations (relative to a template or project root) where a links
+ * registry may live. Probed in declaration order, first hit wins.
  */
 const DEFAULT_LINKS_PATHS = [
   "src/links/index.ts",
@@ -22,12 +22,13 @@ const DEFAULT_LINKS_PATHS = [
   "src/links.mts",
   "src/links.mjs",
   "src/links.js",
+  ".voyant/runtime/project-links.generated.ts",
 ] as const
 
 /**
  * `voyant db sync-links [--links <path>] [--template <path>] [--out <file>]`
  *
- * Loads a template's link definitions and prints the DDL produced by
+ * Loads a template or project's link definitions and prints the DDL produced by
  * {@link generateLinkTableSql} — one `CREATE TABLE` + N indexes per link.
  *
  * MVP: prints SQL to stdout (or to `--out <file>`). Does not touch the
@@ -47,7 +48,7 @@ export async function dbSyncLinksCommand(ctx: CommandContext): Promise<CommandRe
   if (!linksPath) {
     ctx.stderr(
       "Could not find a links file. " +
-        "Pass --links <path> or --template <path>, or run this from a template directory.\n",
+        "Pass --links <path> or --template <path>, or run this from a template or project directory.\n",
     )
     return 1
   }

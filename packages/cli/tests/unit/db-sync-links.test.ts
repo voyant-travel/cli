@@ -91,6 +91,25 @@ describe("dbSyncLinksCommand", () => {
     expect(out).toContain("crm.person <-> products.product (one-to-many)")
   })
 
+  it("auto-discovers generated project links when emitting a Drizzle schema", async () => {
+    const artifactDir = join(tmp, ".voyant", "runtime")
+    mkdirSync(artifactDir, { recursive: true })
+    writeFileSync(
+      join(artifactDir, "project-links.generated.ts"),
+      SYNTHETIC_LINK.replace("export const links", "export const projectLinks"),
+    )
+
+    const { ctx, stdout, stderr } = makeCtx(["--emit-drizzle"], tmp)
+    expect(await dbSyncLinksCommand(ctx)).toBe(0)
+    expect(stderr.join("")).toBe("")
+    expect(stdout.join("")).toContain(
+      `Wrote 1 link table definition(s) to ${join(tmp, "drizzle.links.generated.ts")}`,
+    )
+    expect(readFileSync(join(tmp, "drizzle.links.generated.ts"), "utf8")).toContain(
+      "crm_person_products_product",
+    )
+  })
+
   it("honors --links with an explicit path", async () => {
     const linksFile = join(tmp, "custom-links.mjs")
     writeFileSync(linksFile, SYNTHETIC_LINK)

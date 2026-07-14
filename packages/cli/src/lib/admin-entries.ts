@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from "node:fs"
 import { dirname, join } from "node:path"
 
-import { type ModuleEntry, resolveEntry } from "@voyant-travel/core/config"
+import type { ModuleEntry } from "@voyant-travel/core/config"
 
 import { toCamelCase, toPascalCase } from "./strings.js"
 
@@ -15,6 +15,8 @@ export const DEFAULT_GENERATED_RELATIVE_PATH = "src/admin.extensions.generated.t
 export type AdminEntryStatus =
   /** Admin entry resolved (and, where verifiable, exports the expected factory). */
   | "found"
+  /** The manifest entry is not a string or descriptor with a non-empty `resolve`. */
+  | "invalid-module-entry"
   /** The module package itself could not be resolved from the config dir. */
   | "module-unresolved"
   /** No `<module>-react` package could be resolved from the config dir. */
@@ -62,7 +64,35 @@ export function scanAdminEntries(
   modules: ReadonlyArray<ModuleEntry>,
   configDir: string,
 ): AdminEntryScanResult[] {
-  return modules.map((entry) => scanOne(resolveEntry(entry).resolve, configDir))
+  return modules.map((entry, index) => {
+    const moduleName = moduleNameFromEntry(entry)
+    return moduleName === null ? invalidModuleEntry(index) : scanOne(moduleName, configDir)
+  })
+}
+
+/**
+ * Read the module specifier without assuming a config loaded at runtime still
+ * conforms to the TypeScript-only `ModuleEntry` type. `resolveEntry` is
+ * intentionally lightweight and dereferences object entries directly, which
+ * makes it unsuitable for reporting malformed manifest entries.
+ */
+function moduleNameFromEntry(entry: unknown): string | null {
+  if (typeof entry === "string") return entry.trim().length > 0 ? entry : null
+  if (entry === null || typeof entry !== "object" || !("resolve" in entry)) return null
+
+  const { resolve } = entry as { resolve?: unknown }
+  return typeof resolve === "string" && resolve.trim().length > 0 ? resolve : null
+}
+
+function invalidModuleEntry(index: number): AdminEntryScanResult {
+  return {
+    moduleName: `modules[${index}]`,
+    domain: "",
+    camel: "",
+    exportName: "",
+    status: "invalid-module-entry",
+    note: "expected a non-empty module string or an object with a non-empty `resolve` string",
+  }
 }
 
 function scanOne(moduleName: string, configDir: string): AdminEntryScanResult {

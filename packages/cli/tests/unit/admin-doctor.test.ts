@@ -91,6 +91,29 @@ describe("adminDoctorCommand", () => {
     expect(out).toContain("1 invalid module entry, exit 1")
   })
 
+  it("uses project selections when config modules contain expanded manifests", async () => {
+    writeFixture(tmp)
+    writeFileSync(
+      join(tmp, "voyant.config.ts"),
+      `export default {
+  modules: [{
+    id: "@voyant-travel/foo",
+    packageName: "@voyant-travel/foo",
+    schemaVersion: "voyant.module.v1",
+  }],
+  selections: {
+    modules: [{ id: "@voyant-travel/foo", resolve: "@voyant-travel/foo" }],
+  },
+}\n`,
+    )
+
+    const { ctx, stdout } = makeCtx([], tmp)
+    expect(await adminDoctorCommand(ctx)).toBe(0)
+    const out = stdout.join("")
+    expect(out).not.toContain("invalid module entry")
+    expect(out).toContain("1 modules, 1 admin entries")
+  })
+
   it("reports Finding A when the generated file is missing", async () => {
     writeFixture(tmp)
     const { ctx, stdout } = makeCtx([], tmp)

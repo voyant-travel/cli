@@ -5,6 +5,7 @@ import type { ModuleEntry, VoyantConfig } from "@voyant-travel/core/config"
 import { resolveCoreAdminEntry } from "../lib/admin-core-entry.js"
 import {
   type AdminEntryScanResult,
+  adminModuleEntries,
   DEFAULT_GENERATED_RELATIVE_PATH,
   scanAdminEntries,
 } from "../lib/admin-entries.js"
@@ -299,7 +300,7 @@ async function resolveAdminGenerationInput({
     return undefined
   }
 
-  const modules = config.modules ?? []
+  const modules = adminModuleEntries(config)
   return {
     config,
     dir: dirname(configPath),

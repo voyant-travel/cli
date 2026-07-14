@@ -71,6 +71,22 @@ export function scanAdminEntries(
 }
 
 /**
+ * Return the module specifiers appropriate for package-based admin scanning.
+ * Framework `defineConfig()` expands `modules` into module manifests while
+ * preserving the original package selections under `selections.modules`.
+ * The selections retain each package's resolvable entry point, which is what
+ * the legacy `<module>-react/admin` convention requires.
+ */
+export function adminModuleEntries(config: unknown): ReadonlyArray<ModuleEntry> {
+  if (!isRecord(config)) return []
+  const selections = config.selections
+  if (isRecord(selections) && Array.isArray(selections.modules)) {
+    return selections.modules as ModuleEntry[]
+  }
+  return Array.isArray(config.modules) ? (config.modules as ModuleEntry[]) : []
+}
+
+/**
  * Read the module specifier without assuming a config loaded at runtime still
  * conforms to the TypeScript-only `ModuleEntry` type. `resolveEntry` is
  * intentionally lightweight and dereferences object entries directly, which
@@ -93,6 +109,10 @@ function invalidModuleEntry(index: number): AdminEntryScanResult {
     status: "invalid-module-entry",
     note: "expected a non-empty module string or an object with a non-empty `resolve` string",
   }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
 }
 
 function scanOne(moduleName: string, configDir: string): AdminEntryScanResult {

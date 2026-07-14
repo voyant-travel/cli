@@ -1,5 +1,11 @@
 # @voyant-travel/cli
 
+## 0.40.5
+
+### Patch Changes
+
+- 2968a88: Use framework project selections when scanning admin module entries so `voyant doctor` supports current `defineConfig` operator projects.
+
 ## 0.40.4
 
 ### Patch Changes

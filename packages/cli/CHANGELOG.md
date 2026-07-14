@@ -1,5 +1,11 @@
 # @voyant-travel/cli
 
+## 0.40.3
+
+### Patch Changes
+
+- c2313dd: Report malformed module entries in `voyant admin doctor` instead of crashing, and exit with a failure status.
+
 ## 0.40.2
 
 ### Patch Changes

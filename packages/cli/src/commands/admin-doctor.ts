@@ -112,6 +112,10 @@ export async function adminDoctorCommand(ctx: CommandContext): Promise<CommandRe
     findings++
     ctx.stdout(`[admin-doctor] ${line}\n`)
   }
+  const invalidModuleEntries = results.filter((result) => result.status === "invalid-module-entry")
+  for (const entry of invalidModuleEntries) {
+    report(`invalid module entry ${entry.moduleName}: ${entry.note}`)
+  }
   // Gating findings (the GENERATED half of Finding D) additionally flip the
   // exit code to 1 — aligned with `voyant admin generate --destinations --check`.
   let gateFindings = 0
@@ -347,11 +351,18 @@ export async function adminDoctorCommand(ctx: CommandContext): Promise<CommandRe
     }
   }
 
+  const exitOne = gateFindings > 0 || invalidModuleEntries.length > 0
+  const exitSummary =
+    gateFindings > 0
+      ? `${gateFindings} gating, exit 1`
+      : invalidModuleEntries.length > 0
+        ? `${invalidModuleEntries.length} invalid module ${invalidModuleEntries.length === 1 ? "entry" : "entries"}, exit 1`
+        : ""
   ctx.stdout(
     `[admin-doctor] done: ${results.length} modules, ${found.length} admin entries, ` +
-      `${findings} finding(s)${gateFindings > 0 ? ` — ${gateFindings} gating, exit 1` : ""}\n`,
+      `${findings} finding(s)${exitSummary ? ` — ${exitSummary}` : ""}\n`,
   )
-  return gateFindings > 0 ? 1 : 0
+  return exitOne ? 1 : 0
 }
 
 /** Extract `from "<spec>"` specifiers from a generated composition file. */

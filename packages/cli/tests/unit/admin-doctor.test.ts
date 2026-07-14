@@ -76,6 +76,21 @@ describe("adminDoctorCommand", () => {
     expect(stderr.join("")).toContain("No voyant.config.* found")
   })
 
+  it("reports malformed module entries without crashing", async () => {
+    writeFixture(tmp)
+    writeFileSync(
+      join(tmp, "voyant.config.ts"),
+      `export default { modules: ["@voyant-travel/foo", { options: {} }] }\n`,
+    )
+
+    const { ctx, stdout } = makeCtx([], tmp)
+    expect(await adminDoctorCommand(ctx)).toBe(1)
+    const out = stdout.join("")
+    expect(out).toContain("invalid module entry modules[1]")
+    expect(out).toContain("object with a non-empty `resolve` string")
+    expect(out).toContain("1 invalid module entry, exit 1")
+  })
+
   it("reports Finding A when the generated file is missing", async () => {
     writeFixture(tmp)
     const { ctx, stdout } = makeCtx([], tmp)

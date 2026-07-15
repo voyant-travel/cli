@@ -6,6 +6,7 @@ import { adminCommand } from "./commands/admin.js"
 import { appsCommand } from "./commands/apps.js"
 import { buildCommand } from "./commands/build-command.js"
 import { configCommand } from "./commands/config.js"
+import { connectorCommand } from "./commands/connector.js"
 import { databasesCommand } from "./commands/databases.js"
 import { dbCommand } from "./commands/db.js"
 import { deployCommand } from "./commands/deploy.js"
@@ -14,6 +15,7 @@ import { developCommand } from "./commands/develop.js"
 import { doctorCommand } from "./commands/doctor.js"
 import { envCommand } from "./commands/env.js"
 import { execCommand } from "./commands/exec.js"
+import { extensionsCommand } from "./commands/extensions.js"
 import { generateLinkCommand } from "./commands/generate-link.js"
 import { generateModuleCommand } from "./commands/generate-module.js"
 import { helpCommand } from "./commands/help.js"
@@ -23,6 +25,7 @@ import { logsCommand } from "./commands/logs.js"
 import { migrateCommand } from "./commands/migrate-command.js"
 import { newCommand } from "./commands/new.js"
 import { orgCommand } from "./commands/org.js"
+import { publishCommand } from "./commands/publish.js"
 import { removeCommand } from "./commands/remove.js"
 import { secretsCommand } from "./commands/secrets.js"
 import { startCommand } from "./commands/start.js"
@@ -162,6 +165,15 @@ export async function main(
     }
     case "env": {
       return envCommand({ ...ctx, argv: rest })
+    }
+    case "publish": {
+      return publishCommand({ ...ctx, argv: rest })
+    }
+    case "extensions": {
+      return extensionsCommand({ ...ctx, argv: rest })
+    }
+    case "connector": {
+      return connectorCommand({ ...ctx, argv: rest })
     }
     case "deploy": {
       return deployCommand({ ...ctx, argv: rest })

@@ -46,6 +46,10 @@ voyant apps list
 voyant env list my-app --env production
 voyant env set my-app STRIPE_KEY sk_live_xyz --secret
 voyant deploy my-app                       # trigger; then deploy list/logs/rollback
+voyant publish --dir dist --yes            # publish an admin UI extension
+voyant extensions list --filter mine
+voyant connector validate ./connector.json --probe
+voyant connector register ./connector.json
 voyant logs my-app --level error --since 1h
 voyant databases list
 voyant storage buckets list

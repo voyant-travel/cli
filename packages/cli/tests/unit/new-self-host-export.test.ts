@@ -73,7 +73,7 @@ function projection(overrides: Partial<SelfHostProjection> = {}): SelfHostProjec
     sourceGraphHash: HASH_A,
     projectedGraphHash: HASH_B,
     starter: {
-      schemaVersion: "voyant.node-starter.v2",
+      schemaVersion: "voyant.node-starter.v3",
       rootFiles: [".env.example", ".gitignore", "package.json", "voyant.config.ts"],
       optionalDirectories: [
         "src/api/admin",

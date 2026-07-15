@@ -79,12 +79,6 @@ export function selfHostExportProjectFiles(
 }
 
 function validateStarter(starter: SelfHostStarter): void {
-  if (starter.schemaVersion !== "voyant.node-starter.v2") {
-    throw new Error(
-      `Unsupported starter schema ${JSON.stringify(starter.schemaVersion)}. Expected voyant.node-starter.v2.`,
-    )
-  }
-
   const rootFiles = [...starter.rootFiles].sort(compareCodeUnits)
   if (
     JSON.stringify(rootFiles) !== JSON.stringify([...REQUIRED_ROOT_FILES].sort(compareCodeUnits))

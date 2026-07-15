@@ -5,6 +5,7 @@ import type {
   VoyantSelfHostProjection,
 } from "@voyant-travel/framework/self-host-export"
 
+import { renderProjectConfig } from "../lib/project-config.js"
 import { compareCodeUnits } from "../lib/strings.js"
 
 type JsonPrimitive = boolean | null | number | string
@@ -214,18 +215,15 @@ function projectConfig(projection: SelfHostProjection): string {
     deployment,
   }
 
-  return `import { defineProject } from "@voyant-travel/framework/project"
-
-export default defineProject(${JSON.stringify(config, null, 2)})
-`
+  return renderProjectConfig(config)
 }
 
 function projectSelections(
   selections: readonly SelfHostProjectSelection[],
-): Array<{ resolve: string; config?: JsonValue }> {
+): Array<{ resolve: string; config?: Record<string, JsonValue> }> {
   return selections.map((selection) => ({
     resolve: selection.resolve,
-    ...(selection.config === undefined ? {} : { config: normalizeJson(selection.config) }),
+    ...(selection.config === undefined ? {} : { config: normalizeJsonRecord(selection.config) }),
   }))
 }
 
@@ -350,6 +348,14 @@ function normalizeJson(value: unknown): JsonValue {
     return value
   }
   throw new Error(`Projected config contains a non-JSON value of type ${typeof value}.`)
+}
+
+function normalizeJsonRecord(value: Readonly<Record<string, unknown>>): Record<string, JsonValue> {
+  return Object.fromEntries(
+    Object.entries(value)
+      .sort(([left], [right]) => compareCodeUnits(left, right))
+      .map(([key, entry]) => [key, normalizeJson(entry)]),
+  )
 }
 
 function sortedRecord<T>(record: Readonly<Record<string, T>>): Record<string, T> {

@@ -13,6 +13,7 @@ import { join, relative } from "node:path"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { newCommand, type SelfHostProjectFileSystem } from "../../src/commands/new.js"
+import { parseProjectConfig } from "../../src/lib/project-config.js"
 import type {
   SelfHostExportApi,
   SelfHostProjection,
@@ -315,6 +316,11 @@ describe("newCommand --from-export", () => {
     expect(config).toContain('"resolve": "@acme/voyant-payments/stripe"')
     expect(config).toContain('"tier": "gold"')
     expect(config).toContain('"mode": "self-hosted"')
+    expect(parseProjectConfig(config)).toMatchObject({
+      modules: [{ resolve: "@acme/voyant-loyalty/modules/rewards" }],
+      plugins: [{ resolve: "@acme/voyant-payments/stripe" }],
+      deployment: { mode: "self-hosted" },
+    })
 
     const packageJson = JSON.parse(readFileSync(join(tmp, "my-app", "package.json"), "utf8"))
     expect(packageJson.dependencies).toMatchObject({

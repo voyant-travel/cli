@@ -8,7 +8,7 @@ import { connectorCommand, validateConnectorManifest } from "../../src/commands/
 
 function manifest(overrides: Record<string, unknown> = {}) {
   return {
-    key: "acme.connector",
+    key: "acme-connector",
     displayName: "Acme Connector",
     authModel: "platform_managed",
     accessModel: "approval_required",
@@ -82,7 +82,8 @@ describe("connector command", () => {
   })
 
   it("validates connector manifests and reports field errors", () => {
-    expect(validateConnectorManifest(manifest()).key).toBe("acme.connector")
+    expect(validateConnectorManifest(manifest()).key).toBe("acme-connector")
+    expect(validateConnectorManifest(manifest({ key: "1-connector" })).key).toBe("1-connector")
     expect(() =>
       validateConnectorManifest(
         manifest({
@@ -92,6 +93,12 @@ describe("connector command", () => {
         }),
       ),
     ).toThrow(/metadata.externalAdapter: is required/)
+    expect(() => validateConnectorManifest(manifest({ key: "acme.connector" }))).toThrow(
+      /key: must use lowercase letters/,
+    )
+    expect(() => validateConnectorManifest(manifest({ key: "acme_connector" }))).toThrow(
+      /key: must use lowercase letters/,
+    )
   })
 
   it("rejects invalid external adapter URLs and hosted worker overlap", () => {
@@ -116,13 +123,39 @@ describe("connector command", () => {
     mockFetch([
       {
         match: "/.well-known/voyant-connect/manifest",
-        body: { key: "acme.connector" },
+        body: { key: "acme-connector" },
       },
     ])
 
     const { ctx, stdout } = makeCtx(root, ["validate", "connector.json", "--probe"])
     expect(await connectorCommand(ctx)).toBe(0)
-    expect(stdout.join("")).toContain("key matches acme.connector")
+    expect(stdout.join("")).toContain("key matches acme-connector")
+  })
+
+  it("preserves external adapter path prefixes when probing", async () => {
+    const root = mkdtempSync(join(tmpdir(), "voyant-connector-probe-path-"))
+    writeManifest(
+      root,
+      manifest({
+        metadata: {
+          externalAdapter: {
+            type: "external_adapter",
+            baseUrl: "https://adapter.test/connect/",
+          },
+        },
+      }),
+    )
+    const calls = mockFetch([
+      {
+        match: "/connect/.well-known/voyant-connect/manifest",
+        body: { key: "acme-connector" },
+      },
+    ])
+
+    const { ctx, stdout } = makeCtx(root, ["validate", "connector.json", "--probe"])
+    expect(await connectorCommand(ctx)).toBe(0)
+    expect(calls[0]?.url).toBe("https://adapter.test/connect/.well-known/voyant-connect/manifest")
+    expect(stdout.join("")).toContain("key matches acme-connector")
   })
 
   it("treats an absent well-known probe as non-fatal", async () => {
@@ -148,7 +181,7 @@ describe("connector command", () => {
       {
         match: "/connect/v1/connector-providers",
         method: "POST",
-        body: { key: "acme.connector", signingSecret: "signing_secret_once" },
+        body: { key: "acme-connector", signingSecret: "signing_secret_once" },
       },
     ])
 

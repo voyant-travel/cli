@@ -34,7 +34,8 @@ export const EXTENSION_TARGET_SLOTS = [
 
 const SEMVER_RE =
   /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/
-const SEMVER_RANGE_RE = /^[0-9A-Za-z.*~^<>=|&! -]+$/
+const EXTENSION_API_RANGE_RE =
+  /^(?:\*|(?:\^)?(?:0|[1-9]\d*)(?:\.(?:0|[1-9]\d*)(?:\.(?:0|[1-9]\d*))?)?|(?:0|[1-9]\d*)\.x|(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.x)$/
 
 const extensionManifestSchema = z
   .object({
@@ -43,13 +44,19 @@ const extensionManifestSchema = z
       .string()
       .min(1)
       .regex(
-        /^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$/,
-        "must use lowercase letters, numbers, ., _, or -",
+        /^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/,
+        "must use lowercase letters, numbers, and hyphens; start and end with a letter or number; max 64 characters",
       ),
     displayName: z.string().min(1),
     description: z.string().min(1).optional(),
     version: z.string().regex(SEMVER_RE, "must be a semantic version like 1.2.3"),
-    extensionApi: z.string().min(1).regex(SEMVER_RANGE_RE, "must be a semver range like ^1.0.0"),
+    extensionApi: z
+      .string()
+      .min(1)
+      .regex(
+        EXTENSION_API_RANGE_RE,
+        'must be one of: "*", "M", "M.m", "M.m.p", "M.x", "M.m.x", "^M", "^M.m", or "^M.m.p"',
+      ),
     entry: z.string().min(1),
     targets: z
       .array(
@@ -74,20 +81,6 @@ export interface ExtensionSummary {
   installedAt?: string
   appSlug?: string
   environment?: string
-}
-
-export interface ExtensionSdk {
-  create(
-    input: Pick<CloudExtensionManifest, "key" | "displayName" | "description">,
-  ): Promise<unknown>
-  publishVersion(input: { manifest: CloudExtensionManifest; bundle: Uint8Array }): Promise<unknown>
-  list(filter?: { filter?: string }): Promise<ExtensionSummary[]>
-  get(key: string): Promise<unknown>
-  update(key: string, input: Record<string, unknown>): Promise<unknown>
-  install(input: Record<string, unknown>): Promise<unknown>
-  updateInstall(id: string, input: Record<string, unknown>): Promise<unknown>
-  uninstall(id: string): Promise<unknown>
-  listInstalls(): Promise<ExtensionSummary[]>
 }
 
 const USAGE = `Usage: voyant publish [--dir <dist>] [--yes] [--json]
@@ -139,7 +132,7 @@ export async function publishCommand(ctx: CommandContext): Promise<CommandResult
       })
     }
 
-    const published = await extensions.publishVersion({ manifest, bundle })
+    const published = await extensions.publishVersion(manifest.key, { manifest, bundle })
     if (wantsJson(args)) {
       return printJson(ctx, {
         key: manifest.key,
@@ -215,7 +208,10 @@ export async function createExtensionBundleArchive(
   return archive
 }
 
-async function extensionExists(extensions: ExtensionSdk, key: string): Promise<boolean> {
+async function extensionExists(
+  extensions: VoyantCloudClient["extensions"],
+  key: string,
+): Promise<boolean> {
   try {
     await extensions.get(key)
     return true
@@ -225,59 +221,8 @@ async function extensionExists(extensions: ExtensionSdk, key: string): Promise<b
   }
 }
 
-export function extensionSdk(client: VoyantCloudClient): ExtensionSdk {
-  const maybe = client as VoyantCloudClient & { extensions?: ExtensionSdk }
-  if (maybe.extensions) return maybe.extensions
-
-  return {
-    create: (input) =>
-      client.transport.request("/cloud/v1/extensions", {
-        body: input,
-        method: "POST",
-      }),
-    publishVersion: ({ manifest, bundle }) => {
-      const form = new FormData()
-      form.append("manifest", new Blob([JSON.stringify(manifest)], { type: "application/json" }))
-      form.append(
-        "bundle",
-        new Blob([Buffer.from(bundle)], { type: "application/gzip" }),
-        "bundle.tar.gz",
-      )
-      return client.transport.request(
-        `/cloud/v1/extensions/${encodeURIComponent(manifest.key)}/versions`,
-        {
-          body: form,
-          method: "POST",
-        },
-      )
-    },
-    list: (filter) =>
-      client.transport.request("/cloud/v1/extensions", {
-        query: filter?.filter ? { filter: filter.filter } : undefined,
-      }),
-    get: (key) => client.transport.request(`/cloud/v1/extensions/${encodeURIComponent(key)}`),
-    update: (key, input) =>
-      client.transport.request(`/cloud/v1/extensions/${encodeURIComponent(key)}`, {
-        body: input,
-        method: "PATCH",
-      }),
-    install: (input) =>
-      client.transport.request("/cloud/v1/extensions/installs", {
-        body: input,
-        method: "POST",
-      }),
-    updateInstall: (id, input) =>
-      client.transport.request(`/cloud/v1/extensions/installs/${encodeURIComponent(id)}`, {
-        body: input,
-        method: "PATCH",
-      }),
-    uninstall: (id) =>
-      client.transport.request(`/cloud/v1/extensions/installs/${encodeURIComponent(id)}`, {
-        method: "DELETE",
-        responseType: "text",
-      }),
-    listInstalls: () => client.transport.request("/cloud/v1/extensions/installs"),
-  }
+export function extensionSdk(client: VoyantCloudClient): VoyantCloudClient["extensions"] {
+  return client.extensions
 }
 
 interface BundleEntry {

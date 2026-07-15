@@ -4,7 +4,27 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { gunzipSync } from "node:zlib"
 
-import { afterEach, beforeEach, describe, expect, it } from "vitest"
+import { VoyantApiError } from "@voyant-travel/cloud-sdk"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+
+const mockExtensions = vi.hoisted(() => ({
+  create: vi.fn(),
+  get: vi.fn(),
+  list: vi.fn(),
+  listInstalls: vi.fn(),
+  publishVersion: vi.fn(),
+}))
+
+vi.mock("@voyant-travel/cloud-sdk", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@voyant-travel/cloud-sdk")>()
+  return {
+    ...actual,
+    getVoyantCloudClient: vi.fn(() => ({
+      extensions: mockExtensions,
+    })),
+  }
+})
+
 import {
   createExtensionBundleArchive,
   publishCommand,
@@ -14,7 +34,7 @@ import {
 function manifest(overrides: Record<string, unknown> = {}) {
   return {
     schemaVersion: "voyant.extension-manifest.v1",
-    key: "acme.widget",
+    key: "acme-widget",
     displayName: "Acme Widget",
     version: "1.2.3",
     extensionApi: "^1.0.0",
@@ -39,32 +59,14 @@ function makeCtx(cwd: string, argv: string[]) {
   }
 }
 
-function mockFetch(
-  routes: Array<{ match: string; method?: string; status?: number; body: unknown }>,
-) {
-  const calls: Array<{ url: string; method: string; body?: BodyInit | null }> = []
-  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
-    const url = String(input)
-    const method = init?.method ?? "GET"
-    calls.push({ url, method, body: init?.body })
-    const route = routes.find((r) => url.includes(r.match) && (!r.method || r.method === method))
-    if (!route)
-      return new Response(JSON.stringify({ error: "not mocked", code: "not_found" }), {
-        status: 404,
-      })
-    return new Response(JSON.stringify({ data: route.body }), {
-      status: route.status ?? 200,
-      headers: { "content-type": "application/json" },
-    })
-  }) as typeof globalThis.fetch
-  return calls
-}
-
 describe("publish command", () => {
   let prevFetch: typeof globalThis.fetch | undefined
 
   beforeEach(() => {
     prevFetch = globalThis.fetch
+    vi.clearAllMocks()
+    mockExtensions.create.mockResolvedValue({ key: "acme-widget" })
+    mockExtensions.publishVersion.mockResolvedValue({ id: "ver_1" })
   })
 
   afterEach(() => {
@@ -72,7 +74,8 @@ describe("publish command", () => {
   })
 
   it("validates extension manifests with per-field errors", () => {
-    expect(validateExtensionManifest(manifest()).key).toBe("acme.widget")
+    expect(validateExtensionManifest(manifest()).key).toBe("acme-widget")
+    expect(validateExtensionManifest(manifest({ key: "0".repeat(64) })).key).toBe("0".repeat(64))
     expect(() =>
       validateExtensionManifest(
         manifest({
@@ -81,7 +84,27 @@ describe("publish command", () => {
           targets: [{ slot: "unknown.slot" }],
         }),
       ),
-    ).toThrow(/key: must use lowercase/)
+    ).toThrow(/key: must use lowercase letters/)
+    expect(() => validateExtensionManifest(manifest({ key: "acme.widget" }))).toThrow(
+      /key: must use lowercase letters/,
+    )
+    expect(() => validateExtensionManifest(manifest({ key: "acme_widget" }))).toThrow(
+      /key: must use lowercase letters/,
+    )
+    expect(() => validateExtensionManifest(manifest({ key: `${"a".repeat(64)}b` }))).toThrow(
+      /key: must use lowercase letters/,
+    )
+  })
+
+  it("validates supported extensionApi range forms", () => {
+    for (const extensionApi of ["*", "1", "1.2", "1.2.3", "1.x", "1.2.x", "^1", "^1.2", "^1.2.3"]) {
+      expect(validateExtensionManifest(manifest({ extensionApi })).extensionApi).toBe(extensionApi)
+    }
+    for (const extensionApi of ["~1.2.3", ">=1.0.0", "1.*", "^1.x", "v1.2.3"]) {
+      expect(() => validateExtensionManifest(manifest({ extensionApi }))).toThrow(
+        /extensionApi: must be one of/,
+      )
+    }
   })
 
   it("creates a normalized ustar gzip bundle and requires the entry", async () => {
@@ -116,20 +139,14 @@ describe("publish command", () => {
     mkdirSync(dist, { recursive: true })
     writeFileSync(join(root, "voyant-extension.json"), JSON.stringify(manifest(), null, 2))
     writeFileSync(join(dist, "index.js"), "export default {}")
-    const calls = mockFetch([
-      {
-        match: "/cloud/v1/extensions/acme.widget",
-        method: "GET",
-        status: 404,
+    mockExtensions.get.mockRejectedValue(
+      new VoyantApiError("missing", {
         body: { error: "missing", code: "not_found" },
-      },
-      { match: "/cloud/v1/extensions", method: "POST", body: { key: "acme.widget" } },
-      {
-        match: "/cloud/v1/extensions/acme.widget/versions",
-        method: "POST",
-        body: { id: "ver_1" },
-      },
-    ])
+        code: "not_found",
+        requestId: null,
+        status: 404,
+      }),
+    )
 
     const { ctx, stdout } = makeCtx(root, [
       "--token",
@@ -139,9 +156,16 @@ describe("publish command", () => {
       "--yes",
     ])
     expect(await publishCommand(ctx)).toBe(0)
-    expect(stdout.join("")).toContain("Published acme.widget@1.2.3")
-    expect(calls.map((c) => c.method)).toEqual(["GET", "POST", "POST"])
-    expect(calls[2]?.body).toBeInstanceOf(FormData)
+    expect(stdout.join("")).toContain("Published acme-widget@1.2.3")
+    expect(mockExtensions.create).toHaveBeenCalledWith({
+      key: "acme-widget",
+      displayName: "Acme Widget",
+      description: undefined,
+    })
+    expect(mockExtensions.publishVersion).toHaveBeenCalledWith("acme-widget", {
+      manifest: manifest(),
+      bundle: expect.any(Uint8Array),
+    })
   })
 })
 

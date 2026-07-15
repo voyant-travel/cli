@@ -22,7 +22,7 @@ Examples:
   voyant extensions installs --json
 `
 
-const FILTERS = new Set(["listed", "installed", "mine"])
+type ExtensionFilter = "listed" | "installed" | "mine"
 
 export function extensionsCommand(ctx: CommandContext): CommandResult | Promise<CommandResult> {
   const args = parseArgs(ctx.argv)
@@ -41,7 +41,8 @@ export function extensionsCommand(ctx: CommandContext): CommandResult | Promise<
     switch (sub) {
       case "list": {
         const filter = getStringFlag(args, "filter")
-        if (filter && !FILTERS.has(filter)) {
+        const listFilter = parseExtensionFilter(filter)
+        if (filter && !listFilter) {
           return fail(
             ctx,
             args,
@@ -49,7 +50,7 @@ export function extensionsCommand(ctx: CommandContext): CommandResult | Promise<
             "usage",
           )
         }
-        const rows = await extensions.list(filter ? { filter } : undefined)
+        const rows = await extensions.list(listFilter)
         if (wantsJson(args)) return printJson(ctx, rows)
         return printExtensions(ctx, rows, "No extensions.\n")
       }
@@ -62,6 +63,17 @@ export function extensionsCommand(ctx: CommandContext): CommandResult | Promise<
         return fail(ctx, args, `Unknown extensions subcommand: ${sub}`, "usage")
     }
   })
+}
+
+function parseExtensionFilter(value: string | undefined): ExtensionFilter | undefined {
+  switch (value) {
+    case "listed":
+    case "installed":
+    case "mine":
+      return value
+    default:
+      return undefined
+  }
 }
 
 function printExtensions(

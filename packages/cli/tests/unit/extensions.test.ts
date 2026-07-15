@@ -1,4 +1,22 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+
+const mockExtensions = vi.hoisted(() => ({
+  create: vi.fn(),
+  get: vi.fn(),
+  list: vi.fn(),
+  listInstalls: vi.fn(),
+  publishVersion: vi.fn(),
+}))
+
+vi.mock("@voyant-travel/cloud-sdk", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@voyant-travel/cloud-sdk")>()
+  return {
+    ...actual,
+    getVoyantCloudClient: vi.fn(() => ({
+      extensions: mockExtensions,
+    })),
+  }
+})
 
 import { extensionsCommand } from "../../src/commands/extensions.js"
 
@@ -17,26 +35,12 @@ function makeCtx(argv: string[]) {
   }
 }
 
-function mockFetch(routes: Array<{ match: string; method?: string; body: unknown }>) {
-  const calls: Array<{ url: string; method: string }> = []
-  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
-    const url = String(input)
-    const method = init?.method ?? "GET"
-    calls.push({ url, method })
-    const route = routes.find((r) => url.includes(r.match) && (!r.method || r.method === method))
-    if (!route) return new Response("not mocked", { status: 404 })
-    return new Response(JSON.stringify({ data: route.body }), {
-      headers: { "content-type": "application/json" },
-    })
-  }) as typeof globalThis.fetch
-  return calls
-}
-
 describe("extensions command", () => {
   let prevFetch: typeof globalThis.fetch | undefined
 
   beforeEach(() => {
     prevFetch = globalThis.fetch
+    vi.clearAllMocks()
   })
 
   afterEach(() => {
@@ -44,17 +48,12 @@ describe("extensions command", () => {
   })
 
   it("lists extensions with a filter", async () => {
-    const calls = mockFetch([
+    mockExtensions.list.mockResolvedValue([
       {
-        match: "/cloud/v1/extensions",
-        body: [
-          {
-            key: "acme.widget",
-            latestVersion: "1.2.3",
-            visibility: "private",
-            displayName: "Acme Widget",
-          },
-        ],
+        key: "acme-widget",
+        latestVersion: "1.2.3",
+        visibility: "private",
+        displayName: "Acme Widget",
       },
     ])
     const { ctx, stdout } = makeCtx([
@@ -68,18 +67,13 @@ describe("extensions command", () => {
     ])
 
     expect(await extensionsCommand(ctx)).toBe(0)
-    expect(stdout.join("")).toContain("acme.widget")
-    expect(calls[0]?.url).toContain("filter=mine")
+    expect(stdout.join("")).toContain("acme-widget")
+    expect(mockExtensions.list).toHaveBeenCalledWith("mine")
   })
 
   it("prints extension installs", async () => {
-    mockFetch([
-      {
-        match: "/cloud/v1/extensions/installs",
-        body: [
-          { key: "acme.widget", appSlug: "web", environment: "production", latestVersion: "1.2.3" },
-        ],
-      },
+    mockExtensions.listInstalls.mockResolvedValue([
+      { key: "acme-widget", appSlug: "web", environment: "production", latestVersion: "1.2.3" },
     ])
     const { ctx, stdout } = makeCtx(["installs", "--token", "tok", "--api-url", "https://api.test"])
 

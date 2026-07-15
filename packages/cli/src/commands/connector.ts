@@ -36,8 +36,8 @@ const connectorManifestSchema = z
       .string()
       .min(1)
       .regex(
-        /^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$/,
-        "must use lowercase letters, numbers, ., _, or -",
+        /^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/,
+        "must use lowercase letters, numbers, and hyphens; start and end with a letter or number; max 64 characters",
       ),
     displayName: z.string().min(1),
     authModel: z.enum(["platform_managed", "bring_your_own_credentials", "hybrid"]),
@@ -251,7 +251,9 @@ export async function probeConnectorManifest(manifest: ConnectorManifest): Promi
     }
   }
 
-  const url = new URL("/.well-known/voyant-connect/manifest", baseUrl).toString()
+  const parsedBaseUrl = new URL(baseUrl)
+  parsedBaseUrl.pathname = `${parsedBaseUrl.pathname.replace(/\/$/, "")}/.well-known/voyant-connect/manifest`
+  const url = parsedBaseUrl.toString()
   try {
     const response = await fetch(url)
     if (response.status === 404) {

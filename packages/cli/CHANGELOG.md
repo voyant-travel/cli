@@ -1,5 +1,13 @@
 # @voyant-travel/cli
 
+## 0.42.1
+
+### Patch Changes
+
+- cdc8288: Raise the cloud-sdk floor to 0.12.0 — the release that actually carries the
+  `extensions` namespace (0.11.0 predates it), fixing `voyant publish` and
+  `voyant extensions` crashing on an undefined client namespace.
+
 ## 0.42.0
 
 ### Minor Changes

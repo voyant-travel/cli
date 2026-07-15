@@ -176,6 +176,8 @@ function readManifest(mod: string, cwd: string): VoyantPackageManifest {
  * package.json. Falls back to a workspace-style lookup at
  * `<cwd>/packages/<basename>/package.json` so the resolver also works in the
  * voyant monorepo where modules may not be installed under `node_modules/`.
+ * Project-local workspace packages take precedence over dependencies inherited
+ * from the CLI process so commands always inspect the consumer's package graph.
  */
 export function resolvePackageJson(mod: string, cwd: string): string | null {
   if (!isNonEmptyString(mod)) return null
@@ -184,7 +186,12 @@ export function resolvePackageJson(mod: string, cwd: string): string | null {
   const direct = join(cwd, "node_modules", mod, "package.json")
   if (existsSync(direct)) return direct
 
-  // 2. Resolve the entrypoint and walk up.
+  // 2. Workspace fallback: project-local monorepo package.
+  const base = mod.startsWith("@voyant-travel/") ? mod.slice("@voyant-travel/".length) : mod
+  const ws = join(cwd, "packages", base, "package.json")
+  if (existsSync(ws)) return ws
+
+  // 3. Resolve the installed entrypoint and walk up.
   try {
     const require = createRequire(join(cwd, "package.json"))
     const entry = require.resolve(mod)
@@ -202,13 +209,8 @@ export function resolvePackageJson(mod: string, cwd: string): string | null {
       dir = dirname(dir)
     }
   } catch {
-    // ignore — try workspace fallback
+    // ignore — package is not available from this project
   }
-
-  // 3. Workspace fallback: monorepo-relative location.
-  const base = mod.startsWith("@voyant-travel/") ? mod.slice("@voyant-travel/".length) : mod
-  const ws = join(cwd, "packages", base, "package.json")
-  if (existsSync(ws)) return ws
 
   return null
 }
@@ -216,6 +218,16 @@ export function resolvePackageJson(mod: string, cwd: string): string | null {
 /** Resolve `<mod>/<sub>` to an absolute file via Node's exports map. */
 function resolveFilePath(mod: string, sub: string, cwd: string): string {
   const subpath = sub.startsWith("./") ? sub.slice(1) : `/${sub}`
+  const base = mod.startsWith("@voyant-travel/") ? mod.slice("@voyant-travel/".length) : mod
+  const workspaceSource = join(
+    cwd,
+    "packages",
+    base,
+    "src",
+    `${subpath.replace(/^\//, "").replace(/^\.\//, "")}.ts`,
+  )
+  if (existsSync(workspaceSource)) return workspaceSource
+
   try {
     const require = createRequire(join(cwd, "package.json"))
     return require.resolve(`${mod}${subpath}`)

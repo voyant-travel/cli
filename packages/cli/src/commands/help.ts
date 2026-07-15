@@ -8,6 +8,8 @@ USAGE
 OPEN-SOURCE COMMANDS
   new <name> [--preset <name>]       Scaffold a clean project with standard defaults
   new <name> --starter <name|path>   Copy a legacy or custom starter explicitly
+  new <name> --from-export <bundle>  Generate a self-hosted project from a Cloud export
+                                     (--provider <role>=<provider> may be repeated)
   generate module <name>             Scaffold a local module under src/modules/<name>
   add|install <package|path>         Install and explicitly select a module or plugin
   remove|uninstall <package|path>    Remove a selected module or plugin and its dependency
@@ -76,6 +78,7 @@ vault:read scope. Reveal values in the dashboard or with a server token.
 EXAMPLES
   voyant new my-app --preset operator-standard
   voyant new my-app --starter operator        # explicit legacy compatibility path
+  voyant new my-app --from-export ./voyant-export.json --provider sms=twilio
   voyant generate module invoices
   voyant generate link crm.person products.product --right-list
   voyant config show

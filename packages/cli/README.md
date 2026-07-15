@@ -13,6 +13,7 @@ voyant --help
 | --- | --- |
 | `voyant new <name> [--preset operator-standard]` | Scaffold a clean convention-based project under `<name>/` |
 | `voyant new <name> --starter <name\|path>` | Explicitly copy a legacy or custom starter into `<name>/` |
+| `voyant new <name> --from-export <bundle.json> [--provider role=provider]` | Validate a Voyant Cloud export and generate its self-hosted Node project |
 | `voyant generate module <name>` | Scaffold a conventional local module under `src/modules/<name>` |
 | `voyant add\|install <package\|path>` | Install and explicitly select a module or plugin in `voyant.config.ts` |
 | `voyant generate link <a> <b>` | Print a `defineLink` snippet — `<a>` and `<b>` as `<module>.<entity>` |
@@ -30,6 +31,29 @@ voyant --help
 | `voyant migrate [--json]` | Refresh `.voyant/` and execute the framework-authored migration plan |
 | `voyant workflows <subcommand>` | Build, serve, inspect, and self-host workflows |
 | `voyant --version` | Print the CLI version |
+
+### Generate from a self-host export
+
+Use the framework-owned export contract to validate and project a Voyant Cloud
+bundle into the standard small Node starter:
+
+```sh
+voyant new operator-self-hosted \
+  --from-export ./voyant-self-host-export.json \
+  --provider sms=twilio
+```
+
+Repeat `--provider role=provider` for each provider that needs an explicit
+self-host override. The command refuses invalid bundles, unsupported providers,
+and non-portable package sources before writing the target. `--force` replaces
+an existing target only after validation and projection succeed.
+
+Generated `package.json` dependencies preserve exact admitted registry versions
+and installable git references from the projected graph. The explicit
+`defineProject` config retains module, extension, and plugin subpaths plus their
+JSON config and projected self-host provider selections. Review
+`SELF_HOST_PROVISIONING.md` before restoring the database and object storage;
+the checklist and `.env.example` contain requirement names but no secret values.
 
 ## Cloud commands (Voyant Cloud login)
 

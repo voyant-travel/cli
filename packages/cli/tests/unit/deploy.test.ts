@@ -185,6 +185,18 @@ describe("deploy target adapters", () => {
     expect(run.stderr).toEqual([])
   })
 
+  it("points extension projects to publish before resolving deployment artifacts", async () => {
+    const root = mkdtempSync(join(tmpdir(), "voyant-deploy-extension-"))
+    tempRoots.push(root)
+    writeFileSync(join(root, "voyant-extension.json"), JSON.stringify({ key: "acme.widget" }))
+
+    const run = makeContext(root, ["--dry-run", "--json"])
+    expect(await deployCommand(run.ctx)).toBe(1)
+    const error = JSON.parse(run.stderr.join("")).error
+    expect(error.code).toBe("extension_project")
+    expect(error.message).toContain("voyant publish")
+  })
+
   it("rejects unsupported and stale graph artifacts before target planning", async () => {
     const unsupported = writeDeploymentFixture({ project: {} })
     const unsupportedManifestPath = join(

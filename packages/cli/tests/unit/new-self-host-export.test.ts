@@ -67,7 +67,7 @@ function makeCtx(argv: string[], cwd: string) {
 
 function projection(overrides: Partial<SelfHostProjection> = {}): SelfHostProjection {
   return {
-    schemaVersion: "voyant.self-host-projection.v1",
+    schemaVersion: "voyant.self-host-projection.v2",
     ready: true,
     frameworkVersion: "0.45.0",
     sourceGraphHash: HASH_A,
@@ -108,7 +108,22 @@ function projection(overrides: Partial<SelfHostProjection> = {}): SelfHostProjec
         "react-dom",
         "pg",
       ],
+      runtimeDependencyCoordinates: {
+        "@voyant-travel/framework": "0.45.0",
+        "@voyant-travel/runtime": "0.11.0",
+        "@voyant-travel/operator-standard": "0.5.0",
+        "@tanstack/react-query": "5.101.2",
+        "@tanstack/react-router": "1.170.17",
+        react: "19.2.7",
+        "react-dom": "19.2.7",
+        pg: "8.22.0",
+      },
       developmentDependencies: ["@voyant-travel/cli", "tsx", "typescript"],
+      developmentDependencyCoordinates: {
+        "@voyant-travel/cli": "0.40.5",
+        tsx: "4.22.4",
+        typescript: "6.0.3",
+      },
       gitignoreEntries: [".voyant/", "dist/", "node_modules/", ".env", ".env.*", "!.env.example"],
     },
     project: {

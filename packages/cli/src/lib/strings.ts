@@ -28,6 +28,13 @@ export function toPascalCase(input: string): string {
   return toKebabCase(input).split("-").filter(Boolean).map(capitalize).join("")
 }
 
+/** Locale-independent UTF-16 code-unit ordering for deterministic artifacts. */
+export function compareCodeUnits(left: string, right: string): number {
+  if (left < right) return -1
+  if (left > right) return 1
+  return 0
+}
+
 function capitalize(word: string): string {
   if (word.length === 0) return word
   return word.charAt(0).toUpperCase() + word.slice(1)

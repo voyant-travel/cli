@@ -1,14 +1,16 @@
 import { readFileSync } from "node:fs"
 
+import type {
+  VoyantSelfHostExportValidationIssue,
+  VoyantSelfHostProjection,
+} from "@voyant-travel/framework/self-host-export"
+
+import { compareCodeUnits } from "../lib/strings.js"
+
 type JsonPrimitive = boolean | null | number | string
 type JsonValue = JsonPrimitive | JsonValue[] | { [key: string]: JsonValue }
 
-export interface SelfHostExportValidationIssue {
-  code: string
-  path: string
-  message: string
-}
-
+export type SelfHostExportValidationIssue = VoyantSelfHostExportValidationIssue
 export type SelfHostExportValidationResult =
   | { ok: true; value: unknown; issues: readonly [] }
   | { ok: false; issues: readonly SelfHostExportValidationIssue[] }
@@ -21,110 +23,25 @@ export interface SelfHostExportApi {
   ): Promise<SelfHostProjection>
 }
 
-interface SelfHostProjectSelection {
-  id: string
-  resolve: string
-  packageName: string
-  version?: string
-  config?: Record<string, JsonValue>
-}
+type SelfHostProjectSelection = VoyantSelfHostProjection["project"]["modules"][number]
+type SelfHostPackageRecord = VoyantSelfHostProjection["graph"]["packageRecords"][number]
+type SelfHostStarter = VoyantSelfHostProjection["starter"]
 
-interface SelfHostPackageRecord {
-  packageName: string
-  version?: string
-  source: {
-    kind: string
-    reference?: string
-    integrity?: string
-  }
-}
-
-interface SelfHostEnvRequirement {
-  name: string
-  aliases?: readonly string[]
-  format?: string
-  kind: "binding" | "secret" | "variable"
-  required: boolean
-  description: string
-}
-
-interface SelfHostResourceRequirement {
-  resourceKey: string
-  roles: readonly string[]
-  provider: string
-  required: boolean
-  env: readonly SelfHostEnvRequirement[]
-  notes?: string
-}
-
-interface SelfHostStarter {
-  schemaVersion: string
-  rootFiles: readonly string[]
-  optionalDirectories: readonly string[]
-  seedEntry: string
-  deploymentTarget: string
-  databaseProvider: string
-  defaultPlugins: readonly unknown[]
-  packageScripts: Readonly<Record<string, string>>
-  runtimeDependencies: readonly string[]
-  developmentDependencies: readonly string[]
-  gitignoreEntries: readonly string[]
-}
-
-export interface SelfHostProjectionDiagnostic {
-  code: string
-  severity: "error"
-  path: string
-  message: string
-  hint: string
-}
-
-export interface SelfHostProjection {
-  schemaVersion: string
-  ready: boolean
-  frameworkVersion: string
-  sourceGraphHash: string
-  projectedGraphHash: string
-  starter: SelfHostStarter
-  project: {
-    productBom: Record<string, JsonValue>
-    modules: readonly SelfHostProjectSelection[]
-    extensions: readonly SelfHostProjectSelection[]
-    plugins: readonly SelfHostProjectSelection[]
-    deployment: {
-      target: "node"
-      mode: "self-hosted"
-      providers: Readonly<Record<string, string>>
-      migrations?: readonly Record<string, JsonValue>[]
-    }
-  }
-  graph: {
-    packageRecords: readonly SelfHostPackageRecord[]
-  }
-  providerRemaps: readonly {
-    role: string
-    from: string
-    to: string
-    reason: "explicit-override" | "self-host-default"
-  }[]
-  provisioning: {
-    resources: readonly SelfHostResourceRequirement[]
-    database: {
-      engine: string
-      format: string
-      dump: { path: string; byteLength: number; contentHash: string }
-    }
-    objectStorage: {
-      objects: readonly {
-        logicalStore: string
-        key: string
-        path: string
-        byteLength: number
-        contentHash: string
-      }[]
-    }
-  }
-  diagnostics: readonly SelfHostProjectionDiagnostic[]
+export type SelfHostProjection = Pick<
+  VoyantSelfHostProjection,
+  | "schemaVersion"
+  | "ready"
+  | "frameworkVersion"
+  | "sourceGraphHash"
+  | "projectedGraphHash"
+  | "starter"
+  | "project"
+  | "providerRemaps"
+  | "provisioning"
+  | "migrationJournal"
+  | "diagnostics"
+> & {
+  graph: Pick<VoyantSelfHostProjection["graph"], "packageRecords">
 }
 
 export interface GeneratedSelfHostProject {
@@ -139,6 +56,7 @@ export function selfHostExportProjectFiles(
   projection: SelfHostProjection,
 ): GeneratedSelfHostProject {
   validateStarter(projection.starter)
+  assertNoSerializedSecrets(projection)
 
   const files = new Map<string, string>([
     ["package.json", projectPackageJson(name, projection)],
@@ -166,15 +84,17 @@ function validateStarter(starter: SelfHostStarter): void {
     )
   }
 
-  const rootFiles = [...starter.rootFiles].sort()
-  if (JSON.stringify(rootFiles) !== JSON.stringify([...REQUIRED_ROOT_FILES].sort())) {
+  const rootFiles = [...starter.rootFiles].sort(compareCodeUnits)
+  if (
+    JSON.stringify(rootFiles) !== JSON.stringify([...REQUIRED_ROOT_FILES].sort(compareCodeUnits))
+  ) {
     throw new Error("The self-host projection contains an unsupported standard starter root shape.")
   }
 }
 
 function projectPackageJson(name: string, projection: SelfHostProjection): string {
   const coordinates = packageCoordinates(projection)
-  const developmentNames = new Set(projection.starter.developmentDependencies)
+  const developmentNames = new Set<string>(projection.starter.developmentDependencies)
   const dependencies = new Map<string, string>()
   const devDependencies = new Map<string, string>()
 
@@ -185,17 +105,21 @@ function projectPackageJson(name: string, projection: SelfHostProjection): strin
 
   for (const packageName of projection.starter.runtimeDependencies) {
     if (dependencies.has(packageName)) continue
-    dependencies.set(
-      packageName,
-      packageName === "@voyant-travel/framework" ? projection.frameworkVersion : "latest",
-    )
+    const coordinate =
+      packageName === "@voyant-travel/framework"
+        ? exactRegistryVersion(packageName, projection.frameworkVersion)
+        : coordinates.get(packageName)
+    if (!coordinate) throw missingStarterCoordinate(packageName)
+    dependencies.set(packageName, coordinate)
   }
   for (const packageName of projection.starter.developmentDependencies) {
     if (devDependencies.has(packageName)) continue
-    devDependencies.set(
-      packageName,
-      packageName === "@voyant-travel/cli" ? readCliPackageVersion() : "latest",
-    )
+    const coordinate =
+      packageName === "@voyant-travel/cli"
+        ? exactRegistryVersion(packageName, readCliPackageVersion())
+        : coordinates.get(packageName)
+    if (!coordinate) throw missingStarterCoordinate(packageName)
+    devDependencies.set(packageName, coordinate)
   }
 
   return `${JSON.stringify(
@@ -218,7 +142,7 @@ function projectPackageJson(name: string, projection: SelfHostProjection): strin
 function packageCoordinates(projection: SelfHostProjection): Map<string, string> {
   const coordinates = new Map<string, string>()
   const records = [...projection.graph.packageRecords].sort((left, right) =>
-    left.packageName.localeCompare(right.packageName),
+    compareCodeUnits(left.packageName, right.packageName),
   )
 
   for (const record of records) {
@@ -233,16 +157,42 @@ function packageCoordinates(projection: SelfHostProjection): Map<string, string>
   }
 
   if (!coordinates.has("@voyant-travel/framework")) {
-    coordinates.set("@voyant-travel/framework", projection.frameworkVersion)
+    coordinates.set(
+      "@voyant-travel/framework",
+      exactRegistryVersion("@voyant-travel/framework", projection.frameworkVersion),
+    )
   }
   return coordinates
 }
 
 function packageCoordinate(record: SelfHostPackageRecord): string {
-  if (record.source.kind === "registry" && record.version) return record.version
-  if (record.source.kind === "git" && record.source.reference) return record.source.reference
+  if (record.source.kind === "registry" && record.version) {
+    return exactRegistryVersion(record.packageName, record.version)
+  }
+  if (
+    record.source.kind === "git" &&
+    record.source.reference &&
+    /#[0-9a-f]{7,64}$/i.test(record.source.reference)
+  ) {
+    return record.source.reference
+  }
   throw new Error(
     `Package ${record.packageName} has no exact installable ${record.source.kind} coordinate.`,
+  )
+}
+
+function exactRegistryVersion(packageName: string, version: string): string {
+  if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/.test(version)) {
+    throw new Error(
+      `Package ${packageName} has non-exact registry coordinate ${JSON.stringify(version)}.`,
+    )
+  }
+  return version
+}
+
+function missingStarterCoordinate(packageName: string): Error {
+  return new Error(
+    `Starter dependency ${packageName} has no exact coordinate in the self-host projection graph.`,
   )
 }
 
@@ -291,7 +241,7 @@ function environmentExample(projection: SelfHostProjection): string {
   }
 
   return `${[...names]
-    .sort()
+    .sort(compareCodeUnits)
     .map((name) => `${name}=${name === "PORT" ? "8080" : ""}`)
     .join("\n")}\n`
 }
@@ -308,7 +258,7 @@ function provisioningChecklist(projection: SelfHostProjection): string {
   ]
 
   const remaps = [...projection.providerRemaps].sort((left, right) =>
-    left.role.localeCompare(right.role),
+    compareCodeUnits(left.role, right.role),
   )
   if (remaps.length === 0) {
     lines.push("- [ ] No provider remaps were required.")
@@ -320,16 +270,21 @@ function provisioningChecklist(projection: SelfHostProjection): string {
 
   lines.push("", "## Resources", "")
   for (const resource of [...projection.provisioning.resources].sort((left, right) =>
-    left.resourceKey.localeCompare(right.resourceKey),
+    compareCodeUnits(left.resourceKey, right.resourceKey),
   )) {
     const requirement = resource.required ? "required" : "optional"
     lines.push(
       `### \`${resource.resourceKey}\``,
       "",
-      `- [ ] Provision the ${requirement} \`${resource.provider}\` resource for ${resource.roles.map((role) => `\`${role}\``).join(", ")}.`,
+      `- [ ] Provision the ${requirement} \`${resource.provider}\` resource for ${[
+        ...resource.roles,
+      ]
+        .sort(compareCodeUnits)
+        .map((role) => `\`${role}\``)
+        .join(", ")}.`,
     )
     for (const env of [...resource.env].sort((left, right) =>
-      left.name.localeCompare(right.name),
+      compareCodeUnits(left.name, right.name),
     )) {
       lines.push(
         `- [ ] Set ${env.required ? "required" : "optional"} ${env.kind} \`${env.name}\`: ${env.description}`,
@@ -340,13 +295,21 @@ function provisioningChecklist(projection: SelfHostProjection): string {
   }
 
   const database = projection.provisioning.database
+  const journal = projection.migrationJournal
   lines.push(
+    "## Migration Journal Lineage",
+    "",
+    `Schema: \`${journal.schemaVersion}\``,
+    `Ledger: \`${journal.ledgerSchema}.${journal.ledgerTable}\``,
+    `Identity columns: ${journal.identityColumns.map((column) => `\`${column}\``).join(", ")}`,
+    `Content hash column: \`${journal.contentHashColumn}\``,
+    "",
     "## Restore Data",
     "",
     `- [ ] Verify and restore the ${database.engine} ${database.format} dump at \`${database.dump.path}\` (${database.dump.byteLength} bytes, \`${database.dump.contentHash}\`).`,
   )
   const objects = [...projection.provisioning.objectStorage.objects].sort((left, right) =>
-    `${left.logicalStore}\0${left.key}`.localeCompare(`${right.logicalStore}\0${right.key}`),
+    compareCodeUnits(`${left.logicalStore}\0${left.key}`, `${right.logicalStore}\0${right.key}`),
   )
   for (const object of objects) {
     lines.push(
@@ -358,7 +321,9 @@ function provisioningChecklist(projection: SelfHostProjection): string {
     "## Verify",
     "",
     "- [ ] Install dependencies and resolve a clean project graph.",
-    "- [ ] Restore the database and object storage before applying new migrations.",
+    `- [ ] Confirm the restored database retains the \`${journal.ledgerSchema}.${journal.ledgerTable}\` journal and its source/tag/content-hash lineage.`,
+    "- [ ] Do not replay migrations already represented in the restored journal; restore first, then let the normal migration command apply only later migrations.",
+    "- [ ] Stop on missing journal rows, content-hash mismatches, or schema drift. Re-export or reconcile the source database instead of baselining over unexplained drift.",
     "- [ ] Run `pnpm exec voyant doctor`, then build and boot the Node application before cutover.",
     "",
     "Supply all secret values through the deployment secret manager. No secret values are stored in this project.",
@@ -367,26 +332,85 @@ function provisioningChecklist(projection: SelfHostProjection): string {
   return lines.join("\n")
 }
 
-function normalizeJson(value: JsonValue | readonly Record<string, JsonValue>[]): JsonValue {
-  if (Array.isArray(value)) return value.map((entry) => normalizeJson(entry as JsonValue))
+function normalizeJson(value: unknown): JsonValue {
+  if (Array.isArray(value)) return value.map((entry) => normalizeJson(entry))
   if (value && typeof value === "object") {
     return Object.fromEntries(
       Object.entries(value)
-        .sort(([left], [right]) => left.localeCompare(right))
+        .sort(([left], [right]) => compareCodeUnits(left, right))
         .map(([key, entry]) => [key, normalizeJson(entry)]),
     )
   }
-  return value as JsonPrimitive
+  if (
+    value === null ||
+    typeof value === "boolean" ||
+    typeof value === "number" ||
+    typeof value === "string"
+  ) {
+    return value
+  }
+  throw new Error(`Projected config contains a non-JSON value of type ${typeof value}.`)
 }
 
 function sortedRecord<T>(record: Readonly<Record<string, T>>): Record<string, T> {
   return Object.fromEntries(
-    Object.entries(record).sort(([left], [right]) => left.localeCompare(right)),
+    Object.entries(record).sort(([left], [right]) => compareCodeUnits(left, right)),
   )
 }
 
 function sortedEntries(map: ReadonlyMap<string, string>): Array<[string, string]> {
-  return [...map.entries()].sort(([left], [right]) => left.localeCompare(right))
+  return [...map.entries()].sort(([left], [right]) => compareCodeUnits(left, right))
+}
+
+const SECRET_CONFIG_KEYS = new Set([
+  "accesstoken",
+  "apikey",
+  "authorization",
+  "clientsecret",
+  "connectionstring",
+  "credentials",
+  "databaseurl",
+  "dsn",
+  "password",
+  "privatekey",
+  "refreshtoken",
+  "secret",
+  "signingkey",
+  "token",
+])
+
+function assertNoSerializedSecrets(projection: SelfHostProjection): void {
+  for (const collection of ["modules", "extensions", "plugins"] as const) {
+    for (const [index, selection] of projection.project[collection].entries()) {
+      if (selection.config !== undefined) {
+        assertNoSecretValue(selection.config, `$.project.${collection}[${index}].config`)
+      }
+    }
+  }
+  if (projection.project.deployment.migrations) {
+    assertNoSecretValue(projection.project.deployment.migrations, "$.project.deployment.migrations")
+  }
+}
+
+function assertNoSecretValue(value: unknown, path: string): void {
+  if (Array.isArray(value)) {
+    for (const [index, entry] of value.entries()) {
+      assertNoSecretValue(entry, `${path}[${index}]`)
+    }
+    return
+  }
+  if (!value || typeof value !== "object") return
+
+  for (const [key, entry] of Object.entries(value)) {
+    const entryPath = `${path}.${key}`
+    const normalizedKey = key.replace(/[^A-Za-z0-9]/g, "").toLowerCase()
+    if (SECRET_CONFIG_KEYS.has(normalizedKey) && entry !== "" && entry !== null) {
+      throw new Error(
+        `Refusing to serialize secret-bearing config at ${entryPath}. Supply secrets through deployment environment requirements instead.`,
+      )
+    }
+    assertNoSecretValue(entry, entryPath)
+  }
 }
 
 function assertPortableRelativePath(path: string): void {

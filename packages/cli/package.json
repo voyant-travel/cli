@@ -57,6 +57,7 @@
   "dependencies": {
     "@voyant-travel/cloud-sdk": "^0.10.1",
     "@voyant-travel/core": "^0.109.0",
+    "@voyant-travel/framework": "^0.45.0",
     "@voyant-travel/workflows": "^0.107.9",
     "@voyant-travel/workflows-orchestrator": "^0.107.9",
     "@voyant-travel/workflows-orchestrator-node": "^0.107.9",

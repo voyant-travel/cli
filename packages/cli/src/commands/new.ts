@@ -14,6 +14,7 @@ import { basename, dirname, isAbsolute, join, resolve } from "node:path"
 import { x } from "tar"
 
 import { parseArgs } from "../lib/args.js"
+import { compareCodeUnits } from "../lib/strings.js"
 import { VOYANT_FRAMEWORK_VERSION, VOYANT_RUNTIME_VERSION } from "../lib/voyant-version.js"
 import {
   cleanProjectFiles,
@@ -72,6 +73,25 @@ const STARTER_RELEASE_BASE_URL =
  */
 export interface NewCommandOptions {
   loadSelfHostExportApi?: () => Promise<SelfHostExportApi>
+  selfHostProjectFileSystem?: SelfHostProjectFileSystem
+}
+
+export interface SelfHostProjectFileSystem {
+  existsSync: typeof existsSync
+  mkdirSync: typeof mkdirSync
+  mkdtempSync: typeof mkdtempSync
+  renameSync: typeof renameSync
+  rmSync: typeof rmSync
+  writeFileSync: typeof writeFileSync
+}
+
+const DEFAULT_SELF_HOST_PROJECT_FILE_SYSTEM: SelfHostProjectFileSystem = {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
 }
 
 export async function newCommand(
@@ -127,6 +147,7 @@ export async function newCommand(
       force,
       bundlePath: isAbsolute(exportFlag) ? exportFlag : resolve(ctx.cwd, exportFlag),
       loadApi: options.loadSelfHostExportApi ?? loadSelfHostExportApi,
+      fileSystem: options.selfHostProjectFileSystem ?? DEFAULT_SELF_HOST_PROJECT_FILE_SYSTEM,
     })
   }
 
@@ -255,6 +276,7 @@ interface GenerateFromSelfHostExportInput {
   force: boolean
   bundlePath: string
   loadApi: () => Promise<SelfHostExportApi>
+  fileSystem: SelfHostProjectFileSystem
 }
 
 async function generateFromSelfHostExport(
@@ -300,12 +322,20 @@ async function generateFromSelfHostExport(
           `  ${diagnostic.code} at ${diagnostic.path}: ${diagnostic.message}\n    Hint: ${diagnostic.hint}\n`,
         )
       }
-      ctx.stderr("Resolve provider diagnostics with --provider role=provider and retry.\n")
+      if (
+        projection.diagnostics.some(
+          (diagnostic) => diagnostic.code === "VOYANT_SELF_HOST_PROVIDER_UNSUPPORTED",
+        )
+      ) {
+        ctx.stderr("Resolve provider diagnostics with --provider role=provider and retry.\n")
+      } else {
+        ctx.stderr("Resolve the reported projection diagnostics and retry.\n")
+      }
       return 1
     }
 
     const generated = selfHostExportProjectFiles(input.name, projection)
-    writeGeneratedSelfHostProject(input.target, generated, input.force)
+    writeGeneratedSelfHostProject(input.target, generated, input.force, input.fileSystem)
   } catch (err) {
     const reason = err instanceof Error ? err.message : String(err)
     ctx.stderr(`Failed to generate project from self-host export: ${reason}\n`)
@@ -359,7 +389,7 @@ function parseProviderOverrides(argv: readonly string[]): Record<string, string>
   }
 
   return Object.fromEntries(
-    Object.entries(overrides).sort(([left], [right]) => left.localeCompare(right)),
+    Object.entries(overrides).sort(([left], [right]) => compareCodeUnits(left, right)),
   )
 }
 
@@ -367,42 +397,59 @@ function writeGeneratedSelfHostProject(
   target: string,
   generated: GeneratedSelfHostProject,
   force: boolean,
+  fileSystem: SelfHostProjectFileSystem,
 ): void {
   const parent = dirname(target)
-  mkdirSync(parent, { recursive: true })
-  const stagingRoot = mkdtempSync(join(parent, `.${basename(target)}-`))
+  fileSystem.mkdirSync(parent, { recursive: true })
+  const stagingRoot = fileSystem.mkdtempSync(join(parent, `.${basename(target)}-`))
   const stagedProject = join(stagingRoot, "project")
   const previousTarget = join(stagingRoot, "previous")
   let movedPrevious = false
+  let preserveStagingRoot = false
 
   try {
-    mkdirSync(stagedProject)
-    for (const directory of [...generated.directories].sort()) {
-      mkdirSync(join(stagedProject, directory), { recursive: true })
+    fileSystem.mkdirSync(stagedProject)
+    for (const directory of [...generated.directories].sort(compareCodeUnits)) {
+      fileSystem.mkdirSync(join(stagedProject, directory), { recursive: true })
     }
     for (const [relativePath, contents] of [...generated.files].sort(([left], [right]) =>
-      left.localeCompare(right),
+      compareCodeUnits(left, right),
     )) {
       const path = join(stagedProject, relativePath)
-      mkdirSync(dirname(path), { recursive: true })
-      writeFileSync(path, contents)
+      fileSystem.mkdirSync(dirname(path), { recursive: true })
+      fileSystem.writeFileSync(path, contents)
     }
 
-    if (existsSync(target)) {
+    if (fileSystem.existsSync(target)) {
       if (!force) throw new Error(`Target directory already exists: ${target}`)
-      renameSync(target, previousTarget)
+      fileSystem.renameSync(target, previousTarget)
       movedPrevious = true
     }
-    renameSync(stagedProject, target)
-    if (movedPrevious) rmSync(previousTarget, { recursive: true, force: true })
+    fileSystem.renameSync(stagedProject, target)
+    if (movedPrevious) fileSystem.rmSync(previousTarget, { recursive: true, force: true })
   } catch (err) {
-    if (movedPrevious && existsSync(previousTarget)) {
-      rmSync(target, { recursive: true, force: true })
-      renameSync(previousTarget, target)
+    if (movedPrevious && fileSystem.existsSync(previousTarget)) {
+      try {
+        fileSystem.rmSync(target, { recursive: true, force: true })
+        fileSystem.renameSync(previousTarget, target)
+        movedPrevious = false
+      } catch (rollbackError) {
+        const backupPreserved = fileSystem.existsSync(previousTarget)
+        preserveStagingRoot = backupPreserved
+        const backupMessage = backupPreserved
+          ? `The original project backup was preserved at ${previousTarget}.`
+          : "The original project backup could not be found after rollback failed."
+        throw new Error(
+          `Replacement failed: ${errorReason(err)} Rollback failed: ${errorReason(rollbackError)} ${backupMessage}`,
+          { cause: err },
+        )
+      }
     }
     throw err
   } finally {
-    rmSync(stagingRoot, { recursive: true, force: true })
+    if (!preserveStagingRoot) {
+      fileSystem.rmSync(stagingRoot, { recursive: true, force: true })
+    }
   }
 }
 
@@ -412,9 +459,8 @@ async function loadSelfHostExportApi(): Promise<SelfHostExportApi> {
   try {
     loaded = await import(specifier)
   } catch (err) {
-    const reason = err instanceof Error ? err.message : String(err)
     throw new Error(
-      `Could not load ${specifier}. Install a framework release that exports the self-host contract. ${reason}`,
+      `Could not load ${specifier}. Install a CLI release with a compatible framework self-host contract. ${errorReason(err)}`,
     )
   }
 
@@ -429,6 +475,10 @@ async function loadSelfHostExportApi(): Promise<SelfHostExportApi> {
     throw new Error(`${specifier} does not expose the required validation and projection APIs.`)
   }
   return loaded as SelfHostExportApi
+}
+
+function errorReason(err: unknown): string {
+  return err instanceof Error ? err.message : String(err)
 }
 
 function printNextSteps(ctx: CommandContext, name: string, target: string): void {

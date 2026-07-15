@@ -46,14 +46,25 @@ voyant new operator-self-hosted \
 Repeat `--provider role=provider` for each provider that needs an explicit
 self-host override. The command refuses invalid bundles, unsupported providers,
 and non-portable package sources before writing the target. `--force` replaces
-an existing target only after validation and projection succeed.
+an existing target only after validation and projection succeed. If replacement
+and rollback both fail, the error reports the retained backup directory instead
+of deleting the only recoverable copy. Provider override advice is printed only
+for provider diagnostics; package diagnostics must be resolved at their source.
 
 Generated `package.json` dependencies preserve exact admitted registry versions
-and installable git references from the projected graph. The explicit
+and commit-pinned git references from the projected graph. Generation stops when
+any starter dependency lacks an exact coordinate; it never substitutes
+`latest`. The explicit
 `defineProject` config retains module, extension, and plugin subpaths plus their
-JSON config and projected self-host provider selections. Review
+JSON config and projected self-host provider selections. Secret-bearing config
+is rejected at the CLI boundary and must be supplied through deployment
+environment requirements. Review
 `SELF_HOST_PROVISIONING.md` before restoring the database and object storage;
-the checklist and `.env.example` contain requirement names but no secret values.
+the checklist records the migration-journal lineage and requires restoring its
+ledger without replaying represented migrations. Missing journal rows, migration
+content-hash mismatches, or unexplained schema drift are stop conditions, not a
+reason to baseline over the restored database. The checklist and `.env.example`
+contain requirement names but no secret values.
 
 ## Cloud commands (Voyant Cloud login)
 

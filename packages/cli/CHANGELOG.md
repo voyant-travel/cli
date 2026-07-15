@@ -1,5 +1,11 @@
 # @voyant-travel/cli
 
+## 0.42.0
+
+### Minor Changes
+
+- 453d6f8: Add admin extension publishing, extension read commands, private connector manifest registration and validation, and deploy awareness for extension projects.
+
 ## 0.41.0
 
 ### Minor Changes

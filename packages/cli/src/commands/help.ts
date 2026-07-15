@@ -52,6 +52,12 @@ CLOUD COMMANDS  (need a Voyant Cloud token; add --json for machine output)
   deploy <app> [--env]               Trigger a deployment
   deploy <list|get|logs|cancel|rollback> <app> [id]
                                      Inspect and control deployments
+  publish [--dir <dist>] [--yes]     Publish an admin UI extension from voyant-extension.json
+  extensions list [--filter <kind>]  List extensions (kind: listed, installed, mine)
+  extensions installs                List installed extensions
+  connector validate <manifest> [--probe]
+                                     Validate a private connector manifest
+  connector register <manifest>      Register a private connector provider
   databases <list|get|create|delete|branches|connection>
                                      Manage Neon / D1 databases
   storage buckets <list|create|delete>  Manage R2 buckets
@@ -102,6 +108,10 @@ EXAMPLES
   voyant env list my-app --env production --json
   voyant env set my-app STRIPE_KEY sk_live_xyz --secret
   voyant deploy my-app
+  voyant publish --dir dist --yes
+  voyant extensions list --filter mine
+  voyant connector validate ./connector.json --probe
+  voyant connector register ./connector.json
   voyant databases list --json
   voyant storage buckets list
   voyant vaults list --json

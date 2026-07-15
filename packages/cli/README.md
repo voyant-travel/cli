@@ -79,6 +79,11 @@ contain requirement names but no secret values.
 | `voyant secrets get <vault> <key>` | Fetch a single secret value (pipe-friendly) |
 | `voyant secrets set <vault> <key> [value]` | Upsert a secret (stdin if value omitted) |
 | `voyant secrets rm <vault> <key>` | Delete a secret |
+| `voyant publish [--dir <dist>]` | Publish an admin UI extension from `voyant-extension.json` |
+| `voyant extensions list [--filter listed\|installed\|mine]` | List extensions visible to the current organization |
+| `voyant extensions installs` | List installed admin UI extensions |
+| `voyant connector validate <manifest.json> [--probe]` | Validate a private connector manifest |
+| `voyant connector register <manifest.json>` | Register a private connector provider |
 
 ## Configuration
 

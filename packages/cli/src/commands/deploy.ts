@@ -1,3 +1,4 @@
+import { access } from "node:fs/promises"
 import { join } from "node:path"
 
 import { getBooleanFlag, getStringFlag, type ParsedArgs, parseArgs } from "../lib/args.js"
@@ -99,6 +100,15 @@ async function deployResolvedGraph(
   args: ParsedArgs,
   positionalAppSlug: string | undefined,
 ): Promise<CommandResult> {
+  if (await isExtensionProject(ctx.cwd)) {
+    return fail(
+      ctx,
+      args,
+      "This directory contains voyant-extension.json. Extensions are published with `voyant publish`, not `voyant deploy`.",
+      "extension_project",
+    )
+  }
+
   const requestedTarget = getStringFlag(args, "target") ?? "voyant-cloud"
   const target = CLOUD_TARGETS.has(requestedTarget) ? "voyant-cloud" : requestedTarget
   if (target !== "voyant-cloud" && target !== "docker" && target !== "custom") {
@@ -153,6 +163,15 @@ async function deployResolvedGraph(
         ? error.code
         : "deployment_failed"
     return fail(ctx, args, errorMessage(error), code)
+  }
+}
+
+async function isExtensionProject(cwd: string): Promise<boolean> {
+  try {
+    await access(join(cwd, "voyant-extension.json"))
+    return true
+  } catch {
+    return false
   }
 }
 

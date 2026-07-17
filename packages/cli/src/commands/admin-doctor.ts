@@ -1,7 +1,5 @@
 import { existsSync, readFileSync } from "node:fs"
 import { dirname, isAbsolute, join, relative, resolve } from "node:path"
-
-import type { VoyantConfig } from "@voyant-travel/core/config"
 import { resolveCoreAdminEntry } from "../lib/admin-core-entry.js"
 import {
   type AdminEntryScanResult,
@@ -26,6 +24,7 @@ import {
 } from "../lib/admin-routes.js"
 import { getStringFlag, parseArgs } from "../lib/args.js"
 import { loadVoyantConfigFile, resolveConfigPath } from "../lib/config-loader.js"
+import type { VoyantConfig } from "../lib/config-manifest.js"
 import type { CommandContext, CommandResult } from "../types.js"
 
 /** Default location (relative to the config dir) of the host's destination resolver map. */

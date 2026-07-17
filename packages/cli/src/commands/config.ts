@@ -1,12 +1,11 @@
+import { parseArgs } from "../lib/args.js"
+import { loadVoyantConfigFile, resolveConfigPath } from "../lib/config-loader.js"
 import {
   type ConfigValidationResult,
   resolveEntry,
   type VoyantConfig,
   validateVoyantConfig,
-} from "@voyant-travel/core/config"
-
-import { parseArgs } from "../lib/args.js"
-import { loadVoyantConfigFile, resolveConfigPath } from "../lib/config-loader.js"
+} from "../lib/config-manifest.js"
 import type { CommandContext, CommandResult } from "../types.js"
 
 /**

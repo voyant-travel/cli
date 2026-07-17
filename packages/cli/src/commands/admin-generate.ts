@@ -1,7 +1,5 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path"
-
-import type { ModuleEntry, VoyantConfig } from "@voyant-travel/core/config"
 import { resolveCoreAdminEntry } from "../lib/admin-core-entry.js"
 import {
   type AdminEntryScanResult,
@@ -37,6 +35,7 @@ import {
 } from "../lib/admin-routes.js"
 import { getBooleanFlag, getStringFlag, parseArgs } from "../lib/args.js"
 import { loadVoyantConfigFile, resolveConfigPath } from "../lib/config-loader.js"
+import type { ModuleEntry, VoyantConfig } from "../lib/config-manifest.js"
 import { toCamelCase, toPascalCase } from "../lib/strings.js"
 import type { CommandContext, CommandResult } from "../types.js"
 

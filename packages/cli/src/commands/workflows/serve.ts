@@ -887,44 +887,13 @@ export async function defaultServeDeps(opts: DefaultServeDepsOptions = {}): Prom
     // behave the same way across runs in a single dev session.
     const rateLimiter = rateLimitMod.createInMemoryRateLimiter()
 
-    // In-process passthrough runner for `runtime: "node"` steps.
-    // Local dev has only one Node process, so the step body runs here
-    // anyway — the important part is that the routing works and the
-    // runtime label flows into the journal / timeline. Production
-    // replaces this with `createCfContainerStepRunner` from
-    // `@voyant-travel/workflows-orchestrator-cloudflare`, which dispatches to a CF
-    // Container binding sized for the step.
-    const nodeStepRunner: import("@voyant-travel/workflows/handler").StepRunner = async ({
-      attempt,
-      fn,
-      stepCtx,
-    }) => {
-      const startedAt = Date.now()
-      try {
-        const output = await fn(stepCtx)
-        return { attempt, status: "ok", output, startedAt, finishedAt: Date.now() }
-      } catch (err) {
-        const e = err as Error
-        const code =
-          typeof (err as { code?: unknown }).code === "string"
-            ? (err as { code: string }).code
-            : "UNKNOWN"
-        return {
-          attempt,
-          status: "err",
-          error: {
-            category: "USER_ERROR",
-            code,
-            message: e?.message ?? String(err),
-            name: e?.name,
-            stack: e?.stack,
-          },
-          startedAt,
-          finishedAt: Date.now(),
-        }
-      }
-    }
-
+    // `handleStepRequest` runs `runtime: "node"` step bodies in-process by
+    // default — local dev has only one Node process, so the step body runs
+    // here anyway. (Hosted runtimes replace that internal runner with a
+    // dispatching one; the CLI serve loop does not need to override it.)
+    // We only hand the handler the shared in-memory rate limiter so
+    // `rateLimit` buckets behave consistently across a single dev session.
+    //
     // Build a StepHandler once; the handler consults the process-local
     // workflow registry each call, so it stays live for the entry's lifetime.
     // Forwards per-invocation options (signal + onStreamChunk) so cancel
@@ -932,7 +901,7 @@ export async function defaultServeDeps(opts: DefaultServeDepsOptions = {}): Prom
     const stepHandler: import("@voyant-travel/workflows-orchestrator").StepHandler = async (
       req,
       stepOpts,
-    ) => handlerMod.handleStepRequest(req, { rateLimiter, nodeStepRunner }, stepOpts)
+    ) => handlerMod.handleStepRequest(req, { rateLimiter }, stepOpts)
     const tenantMeta = {
       tenantId: "tnt_local",
       projectId: "prj_local",

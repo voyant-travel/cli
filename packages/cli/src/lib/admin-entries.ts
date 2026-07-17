@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from "node:fs"
 import { dirname, join } from "node:path"
 
-import type { ModuleEntry } from "@voyant-travel/core/config"
+import type { ModuleEntry } from "./config-manifest.js"
 
 import { toCamelCase, toPascalCase } from "./strings.js"
 

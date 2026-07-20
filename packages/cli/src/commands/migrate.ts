@@ -1,7 +1,6 @@
 import { existsSync } from "node:fs"
 import { readFile } from "node:fs/promises"
 import { isAbsolute, relative, resolve } from "node:path"
-import { pathToFileURL } from "node:url"
 import type { LinkDefinition } from "@voyant-travel/core/links"
 import {
   DeploymentArtifactError,
@@ -13,6 +12,7 @@ import {
   materializeProjectLinks,
   type ProjectLinkMigrationReport,
 } from "../lib/project-link-migration.js"
+import { loadProjectModule } from "../lib/project-module-loader.js"
 import { type ProjectMigrationPlan, parseMigrationPlan } from "../lib/project-resolution.js"
 
 const PROJECT_LINKS_ARTIFACT = "runtime/project-links.generated.ts"
@@ -251,11 +251,16 @@ function pendingLinkReport(definitions: readonly LinkDefinition[]): ProjectLinkM
 
 async function importMigrationRunner(
   path: string,
-  contentHash: string,
+  _contentHash: string,
 ): Promise<MigrationRunnerModule> {
-  return import(
-    `${pathToFileURL(path).href}?graph=${encodeURIComponent(contentHash)}`
-  ) as Promise<MigrationRunnerModule>
+  // Load through the project module loader (jiti) rather than a native
+  // `import()`. In a workspace worktree `@voyant-travel/framework` resolves to
+  // TypeScript source, and the generated runner imports it (plus `.ts` setup
+  // handlers) with NodeNext `.js` specifiers that native ESM cannot resolve.
+  // jiti strips types and rewrites `.js`->`.ts` transitively, matching how the
+  // resolver and link artifact are already loaded. `moduleCache: false` inside
+  // the loader gives us the fresh evaluation the graph-hash query used to force.
+  return loadProjectModule<MigrationRunnerModule>(path)
 }
 
 function assertRunnerContract(

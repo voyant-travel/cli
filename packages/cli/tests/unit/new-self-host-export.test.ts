@@ -204,8 +204,8 @@ function projection(overrides: Partial<SelfHostProjection> = {}): SelfHostProjec
     provisioning: {
       resources: [
         {
-          resourceKey: "auth:better-auth",
-          roles: ["auth"],
+          resourceKey: "adminAuth:better-auth",
+          roles: ["adminAuth"],
           provider: "better-auth",
           required: true,
           env: [

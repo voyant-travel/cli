@@ -151,6 +151,7 @@ describe("voyant migrate", () => {
             links: [
               {
                 id: "@acme/bookings#link.qa",
+                kind: "definition",
                 source: "@acme/bookings/links",
                 export: "qaLink",
               },

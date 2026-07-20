@@ -201,29 +201,47 @@ function resolveProjectLinkArtifacts(
   return { projectLinkCount, projectLinksPath }
 }
 
+/**
+ * Count the link definitions the framework artifact writer materializes into
+ * `runtime/project-links.generated.ts`. This MUST stay aligned with the
+ * framework's selection (see project-resolver.ts `selectedLinks` +
+ * `generateSelectedLinksSource`): every `kind: "definition"` link that carries
+ * a `source` and `export`, deduplicated by `id`, across all unit collections
+ * (modules, extensions, plugins, adapters, providers). Project-convention link
+ * files also land in the graph as `kind: "definition"` entries, so counting by
+ * kind covers them without double-counting. `kind: "linkable"` entity
+ * registrations emit no table and must be excluded.
+ */
 function countProjectLinks(graph: Record<string, unknown>): number {
-  let count = 0
-  for (const units of [graph.modules, graph.extensions, graph.plugins]) {
+  const seen = new Set<string>()
+  for (const units of [
+    graph.modules,
+    graph.extensions,
+    graph.plugins,
+    graph.adapters,
+    graph.providers,
+  ]) {
     if (!Array.isArray(units)) continue
     for (const value of units) {
       if (!value || typeof value !== "object" || Array.isArray(value)) continue
       const unit = value as Record<string, unknown>
-      const meta =
-        unit.meta && typeof unit.meta === "object" && !Array.isArray(unit.meta)
-          ? (unit.meta as Record<string, unknown>)
-          : undefined
-      const projectConvention = meta?.source === "project-convention"
       if (!Array.isArray(unit.links)) continue
-      count += unit.links.filter((value) => {
-        if (!value || typeof value !== "object" || Array.isArray(value)) return false
-        const link = value as Record<string, unknown>
-        return (
-          typeof link.source === "string" && (projectConvention || typeof link.export === "string")
-        )
-      }).length
+      for (const entry of unit.links) {
+        if (!entry || typeof entry !== "object" || Array.isArray(entry)) continue
+        const link = entry as Record<string, unknown>
+        if (
+          link.kind !== "definition" ||
+          typeof link.source !== "string" ||
+          typeof link.export !== "string" ||
+          typeof link.id !== "string"
+        ) {
+          continue
+        }
+        seen.add(link.id)
+      }
     }
   }
-  return count
+  return seen.size
 }
 
 function pendingLinkReport(definitions: readonly LinkDefinition[]): ProjectLinkMigrationReport {

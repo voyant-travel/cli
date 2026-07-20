@@ -139,7 +139,14 @@ function normalizeUnits(selections, kind, testDatabaseGraph) {
           : [],
         migrations: [],
         links: testDatabaseGraph
-          ? [{ id: `${specifier}#link.standard`, source: `${specifier}/links`, export: "link" }]
+          ? [
+              {
+                id: `${specifier}#link.standard`,
+                kind: "definition",
+                source: `${specifier}/links`,
+                export: "link",
+              },
+            ]
           : [],
         subscribers: [],
         events: [],

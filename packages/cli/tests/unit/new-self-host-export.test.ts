@@ -18,6 +18,7 @@ import type {
   SelfHostExportApi,
   SelfHostProjection,
 } from "../../src/templates/self-host-export-project.js"
+import { selfHostExportProjectFiles } from "../../src/templates/self-host-export-project.js"
 
 const HASH_A = `sha256:${"a".repeat(64)}`
 const HASH_B = `sha256:${"b".repeat(64)}`
@@ -642,6 +643,22 @@ describe("newCommand --from-export", () => {
       expect(existsSync(join(firstProject, directory))).toBe(true)
     }
     expect(fileSnapshot(firstProject)).toEqual(fileSnapshot(secondProject))
+  })
+
+  it("omits removed workflow and job starter directories from older projections", () => {
+    const base = projection()
+    const generated = selfHostExportProjectFiles("my-app", {
+      ...base,
+      starter: {
+        ...base.starter,
+        optionalDirectories: [...base.starter.optionalDirectories, "src/workflows", "src/jobs"],
+      },
+    })
+
+    expect(generated.directories).not.toContain("src/workflows")
+    expect(generated.directories).not.toContain("src/jobs")
+    expect(generated.directories).toContain("src/subscribers")
+    expect(generated.directories).toContain("src/links")
   })
 
   it("validates collisions before writing and replaces a forced target only after readiness", async () => {

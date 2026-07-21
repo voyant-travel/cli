@@ -26,7 +26,9 @@ export interface SelfHostExportApi {
 
 type SelfHostProjectSelection = VoyantSelfHostProjection["project"]["modules"][number]
 type SelfHostPackageRecord = VoyantSelfHostProjection["graph"]["packageRecords"][number]
-type SelfHostStarter = VoyantSelfHostProjection["starter"]
+type SelfHostStarter = Omit<VoyantSelfHostProjection["starter"], "optionalDirectories"> & {
+  readonly optionalDirectories: readonly string[]
+}
 
 export type SelfHostProjection = Pick<
   VoyantSelfHostProjection,
@@ -35,13 +37,13 @@ export type SelfHostProjection = Pick<
   | "frameworkVersion"
   | "sourceGraphHash"
   | "projectedGraphHash"
-  | "starter"
   | "project"
   | "providerRemaps"
   | "provisioning"
   | "migrationJournal"
   | "diagnostics"
 > & {
+  starter: SelfHostStarter
   graph: Pick<VoyantSelfHostProjection["graph"], "packageRecords">
 }
 
@@ -51,6 +53,7 @@ export interface GeneratedSelfHostProject {
 }
 
 const REQUIRED_ROOT_FILES = [".env.example", ".gitignore", "package.json", "voyant.config.ts"]
+const REMOVED_PROJECT_LOCAL_DIRECTORIES = new Set(["src/jobs", "src/workflows"])
 
 export function selfHostExportProjectFiles(
   name: string,
@@ -68,14 +71,22 @@ export function selfHostExportProjectFiles(
     ["SELF_HOST_PROVISIONING.md", provisioningChecklist(projection)],
   ])
 
-  for (const path of [...files.keys(), ...projection.starter.optionalDirectories]) {
+  const directories = activeOptionalDirectories(projection.starter)
+
+  for (const path of [...files.keys(), ...directories]) {
     assertPortableRelativePath(path)
   }
 
   return {
     files,
-    directories: [...projection.starter.optionalDirectories],
+    directories,
   }
+}
+
+function activeOptionalDirectories(starter: SelfHostStarter): string[] {
+  return starter.optionalDirectories.filter(
+    (directory) => !REMOVED_PROJECT_LOCAL_DIRECTORIES.has(directory),
+  )
 }
 
 function validateStarter(starter: SelfHostStarter): void {

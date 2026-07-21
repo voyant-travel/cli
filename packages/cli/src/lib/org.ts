@@ -3,8 +3,7 @@ import type { VoyantCloudClient } from "@voyant-travel/cloud-sdk"
 /**
  * The organization an API token is bound to, as returned by
  * `GET /cloud/v1/organization`. The cloud-sdk does not expose a typed method
- * for this route (its routes live alongside workflow routes the SDK doesn't
- * mirror), so we call the transport directly.
+ * for this route, so we call the transport directly.
  */
 export interface CloudOrganizationInfo {
   id: string

@@ -30,7 +30,6 @@ OPEN-SOURCE COMMANDS
                                      db doctor + admin doctor (exit 1 on any gate)
   upgrade [package] [--to <version>] [--plan]  Bump a dependency with a graph-aware plan
                                      (then run: voyant db migrate && voyant doctor)
-  dev [--file <path>]                Watch and serve workflows locally
   develop [--host <h>] [--port <n>] Prepare and run the full application in development mode
   start [--port <n>] [--probe]       Start with the project's installed Voyant runtime
   build [--artifacts-only] [--json]  Prepare artifacts and build the full application
@@ -40,7 +39,6 @@ OPEN-SOURCE COMMANDS
   db sync-links [--emit-drizzle]     Emit link-table DDL, or a generated Drizzle schema
   db doctor [--fail-on-drift]        Report graph artifacts or legacy migration drift
   exec <script.ts> [args...]         Run a TS/JS script with the voyant loader hook
-  workflows <subcommand>             Build, serve, inspect, and self-host workflows
 
 CLOUD COMMANDS  (need a Voyant Cloud token; add --json for machine output)
   login [--token <value>]            Authorize via browser device flow (or paste a token)

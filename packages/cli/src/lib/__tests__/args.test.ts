@@ -8,7 +8,6 @@ describe("parseArgs", () => {
       positionals: ["a", "b", "c"],
       flags: {},
     })
-    expect(parsed.positional).toEqual(["a", "b", "c"])
   })
 
   it("parses --flag=value form", () => {
@@ -38,7 +37,7 @@ describe("parseArgs", () => {
 
   it("mixes positional and flags in any order", () => {
     const parsed = parseArgs(["list", "--file", "./a.js", "--json"])
-    expect(parsed.positional).toEqual(["list"])
+    expect(parsed.positionals).toEqual(["list"])
     expect(parsed.flags).toEqual({ file: "./a.js", json: true })
   })
 })

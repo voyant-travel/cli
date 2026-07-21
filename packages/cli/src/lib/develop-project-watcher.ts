@@ -20,8 +20,6 @@ const PROJECT_CONVENTION_DIRECTORIES = [
   "src/api",
   "src/admin",
   "src/modules",
-  "src/workflows",
-  "src/jobs",
   "src/subscribers",
   "src/links",
 ] as const

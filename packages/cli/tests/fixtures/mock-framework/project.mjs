@@ -23,7 +23,6 @@ export async function resolveProject({ project }) {
       links: [],
       subscribers: [],
       events: [],
-      workflows: [],
       meta: {
         source: "project-convention",
         sourcePath: "src/modules/qa-probe/index.ts",
@@ -143,7 +142,6 @@ function normalizeUnits(selections, kind, testDatabaseGraph) {
           : [],
         subscribers: [],
         events: [],
-        workflows: [],
       }
     })
     .sort((left, right) => left.id.localeCompare(right.id))

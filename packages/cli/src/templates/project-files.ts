@@ -20,8 +20,6 @@ export function cleanProjectFiles(name: string): Array<[string, string]> {
     ["src/api/admin/.gitkeep", ""],
     ["src/api/public/.gitkeep", ""],
     ["src/admin/.gitkeep", ""],
-    ["src/workflows/.gitkeep", ""],
-    ["src/jobs/.gitkeep", ""],
     ["src/subscribers/.gitkeep", ""],
     ["src/modules/.gitkeep", ""],
     ["src/links/.gitkeep", ""],

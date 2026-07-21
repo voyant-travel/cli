@@ -23,13 +23,11 @@ voyant --help
 | `voyant db <generate\|migrate\|studio\|push\|check>` | Proxy drizzle-kit to the project root |
 | `voyant db sync-links [--out <file>]` | Emit DDL for cross-module link tables |
 | `voyant exec <script.ts> [args…]` | Run a TS/JS script with native strip-types |
-| `voyant dev [--file <path>]` | Watch and serve workflows locally |
 | `voyant develop [--host <h>] [--port <n>]` | Keep `.voyant/` refreshed and run the full app through project-installed runtime tooling |
 | `voyant start [--port <n>] [--probe]` | Start the project through its installed `@voyant-travel/runtime` |
 | `voyant build [--json]` | Refresh `.voyant/` and build the full app through project-installed runtime tooling |
 | `voyant build --artifacts-only [--json]` | Write deterministic `.voyant/` outputs without building the app |
 | `voyant migrate [--json]` | Refresh `.voyant/` and execute the framework-authored migration plan |
-| `voyant workflows <subcommand>` | Build, serve, inspect, and self-host workflows |
 | `voyant --version` | Print the CLI version |
 
 ### Generate from a self-host export
@@ -104,17 +102,6 @@ Cloud commands accept these inputs in priority order:
 
 `--api-url <url>` and `VOYANT_CLOUD_API_URL` likewise override the default
 `https://api.voyant.travel`.
-
-## Workflow bundles
-
-`voyant workflows build --platform node` emits `bundle.mjs` for Node's native
-ESM loader and expects the bundle to be imported from a filesystem path or
-`file:` URL. Node bundles may include a `createRequire(import.meta.url)` shim so
-valid Node dependencies that dynamically require built-ins such as `stream` can
-load during manifest extraction and in the self-hosted Node runner.
-
-Use `--platform neutral` or `--platform browser` for runtimes that do not load
-workflow bundles from the filesystem.
 
 ## Framework project resolver contract
 

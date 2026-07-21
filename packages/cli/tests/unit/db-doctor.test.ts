@@ -158,7 +158,7 @@ describe("dbDoctorCommand", () => {
     const code = await dbDoctorCommand(ctx)
 
     expect(out()).toContain("Generated project artifacts are stale")
-    expect(out()).toContain("Run `voyant build` or `voyant dev`")
+    expect(out()).toContain("Run `voyant build` or `voyant develop`")
     expect(out()).toContain("Report mode exits 0")
     expect(err()).toBe("")
     expect(code).toBe(0)
@@ -171,7 +171,7 @@ describe("dbDoctorCommand", () => {
     const code = await dbDoctorCommand(ctx)
 
     expect(out()).toContain("Generated project artifacts are missing")
-    expect(out()).toContain("Run `voyant build` or `voyant dev` to refresh .voyant/")
+    expect(out()).toContain("Run `voyant build` or `voyant develop` to refresh .voyant/")
     expect(err()).not.toContain("Could not find a template with drizzle.config")
     expect(code).toBe(1)
   })

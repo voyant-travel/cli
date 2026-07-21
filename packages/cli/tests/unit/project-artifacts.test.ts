@@ -118,6 +118,8 @@ describe("project artifacts", () => {
     await expect(checkProjectArtifacts(root)).rejects.toMatchObject({
       code: "artifact_missing",
     })
-    await expect(checkProjectArtifacts(root)).rejects.toThrow("Run `voyant build` or `voyant dev`")
+    await expect(checkProjectArtifacts(root)).rejects.toThrow(
+      "Run `voyant build` or `voyant develop`",
+    )
   })
 })

@@ -139,10 +139,18 @@ describe("main", () => {
     expect(migrate.stderr.join("")).toContain("voyant migrate: No voyant.config.* found")
   })
 
-  it("dispatches the full-app develop command separately from dev", async () => {
+  it("dispatches the full-app develop command", async () => {
     const develop = makeIo()
 
     expect(await main(["develop"], develop.opts)).toBe(1)
     expect(develop.stderr.join("")).toContain("voyant develop: No voyant.config.* found")
+  })
+
+  it("rejects removed workflow product commands", async () => {
+    for (const command of ["dev", "workflows"]) {
+      const { stderr, opts } = makeIo()
+      expect(await main([command], opts)).toBe(1)
+      expect(stderr.join("")).toContain(`Unknown command: ${command}`)
+    }
   })
 })

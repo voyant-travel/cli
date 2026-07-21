@@ -5,8 +5,6 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest"
 
 import { buildCommand } from "../../src/commands/build-command.js"
 import { deployCommand } from "../../src/commands/deploy.js"
-import type { DevDeps } from "../../src/commands/dev.js"
-import { devCommand } from "../../src/commands/dev-command.js"
 import { doctorCommand } from "../../src/commands/doctor.js"
 import { migrateCommand } from "../../src/commands/migrate-command.js"
 import { writeProjectConfig, writeProjectFixture } from "../helpers/project-fixture.js"
@@ -36,15 +34,6 @@ describe("unified project graph lifecycle", () => {
     const doctorHash = doctorReport.checks.find(
       (check) => check.id === "deployment-graph",
     )?.contentHash
-
-    const dev = io([], root)
-    expect(
-      await devCommand(dev.ctx, {
-        devDeps: readyDevDeps(),
-        waitForShutdown: async (cleanup) => cleanup(),
-      }),
-    ).toBe(0)
-    const devHash = dev.stderr.join("").match(/hash\s+(sha256:[a-f0-9]{64})/)?.[1]
 
     const migrate = io(["--json"], root)
     expect(await migrateCommand(migrate.ctx)).toBe(0)
@@ -86,7 +75,6 @@ describe("unified project graph lifecycle", () => {
     const customHash = JSON.parse(custom.stdout.join("")).source.contentHash as string
 
     expect(doctorHash).toBe(buildReport.contentHash)
-    expect(devHash).toBe(buildReport.contentHash)
     expect(migrateReport.contentHash).toBe(buildReport.contentHash)
     expect(cloudHash).toBe(buildReport.contentHash)
     expect(dockerHash).toBe(buildReport.contentHash)
@@ -132,20 +120,5 @@ function io(argv: string[], cwd: string) {
       stdout: (chunk: string) => stdout.push(chunk),
       stderr: (chunk: string) => stderr.push(chunk),
     },
-  }
-}
-
-function readyDevDeps(): DevDeps {
-  return {
-    startBundler: async ({ onRebuild }) => {
-      await onRebuild({ ok: true, errors: [] })
-      return { dispose: async () => {} }
-    },
-    startServe: async () => ({
-      url: "http://127.0.0.1:3232",
-      close: async () => {},
-      workflowCount: 1,
-    }),
-    log: () => {},
   }
 }

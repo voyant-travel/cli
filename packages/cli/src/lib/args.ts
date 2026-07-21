@@ -11,8 +11,6 @@
  */
 export interface ParsedArgs {
   positionals: string[]
-  /** Compatibility alias used by the imported workflows CLI modules. */
-  positional: string[]
   flags: Record<string, string | boolean>
 }
 
@@ -63,12 +61,7 @@ export function parseArgs(argv: ReadonlyArray<string>, options: ParseArgsOptions
     positionals.push(token)
   }
 
-  const parsed = { positionals, flags } as ParsedArgs
-  Object.defineProperty(parsed, "positional", {
-    enumerable: false,
-    get: () => positionals,
-  })
-  return parsed
+  return { positionals, flags }
 }
 
 export function getStringFlag(args: ParsedArgs, ...names: string[]): string | undefined {

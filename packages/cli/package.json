@@ -21,12 +21,10 @@
     "./commands/db-schemas": "./src/commands/db-schemas.ts",
     "./commands/exec": "./src/commands/exec.ts",
     "./commands/new": "./src/commands/new.ts",
-    "./commands/dev": "./src/commands/dev.ts",
     "./commands/develop": "./src/commands/develop.ts",
     "./commands/start": "./src/commands/start.ts",
     "./commands/build": "./src/commands/build-command.ts",
     "./commands/migrate": "./src/commands/migrate-command.ts",
-    "./commands/workflows": "./src/commands/workflows-command.ts",
     "./commands/login": "./src/commands/login.ts",
     "./commands/logout": "./src/commands/logout.ts",
     "./commands/whoami": "./src/commands/whoami.ts",
@@ -58,11 +56,7 @@
     "@voyant-travel/cloud-sdk": "^0.12.0",
     "@voyant-travel/core": "^0.125.0",
     "@voyant-travel/framework": "^0.48.2",
-    "@voyant-travel/workflows": "^0.122.2",
-    "@voyant-travel/workflows-orchestrator": "^0.122.2",
-    "@voyant-travel/workflows-orchestrator-node": "^0.108.0",
     "dotenv": "^17.4.2",
-    "esbuild": "^0.28.0",
     "jiti": "^2.6.1",
     "pg": "^8.16.3",
     "tar": "^7.4.3",
@@ -147,11 +141,6 @@
         "import": "./dist/commands/new.js",
         "default": "./dist/commands/new.js"
       },
-      "./commands/dev": {
-        "types": "./dist/commands/dev.d.ts",
-        "import": "./dist/commands/dev.js",
-        "default": "./dist/commands/dev.js"
-      },
       "./commands/develop": {
         "types": "./dist/commands/develop.d.ts",
         "import": "./dist/commands/develop.js",
@@ -171,11 +160,6 @@
         "types": "./dist/commands/migrate-command.d.ts",
         "import": "./dist/commands/migrate-command.js",
         "default": "./dist/commands/migrate-command.js"
-      },
-      "./commands/workflows": {
-        "types": "./dist/commands/workflows-command.d.ts",
-        "import": "./dist/commands/workflows-command.js",
-        "default": "./dist/commands/workflows-command.js"
       },
       "./commands/login": {
         "types": "./dist/commands/login.d.ts",

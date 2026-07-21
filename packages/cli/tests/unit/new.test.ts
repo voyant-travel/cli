@@ -171,8 +171,6 @@ describe("newCommand", () => {
       "src/api/admin",
       "src/api/public",
       "src/admin",
-      "src/workflows",
-      "src/jobs",
       "src/subscribers",
       "src/modules",
       "src/links",

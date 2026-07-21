@@ -153,7 +153,7 @@ export async function loadProjectArtifacts(projectRoot: string): Promise<LoadedP
   if (!existsSync(manifestPath)) {
     throw new ProjectArtifactError(
       "artifact_missing",
-      `Generated project artifacts are missing at ${manifestPath}. Run \`voyant build\` or \`voyant dev\` to create .voyant/.`,
+      `Generated project artifacts are missing at ${manifestPath}. Run \`voyant build\` or \`voyant develop\` to create .voyant/.`,
     )
   }
 
@@ -162,7 +162,7 @@ export async function loadProjectArtifacts(projectRoot: string): Promise<LoadedP
     if (!existsSync(join(artifactRoot, file))) {
       throw new ProjectArtifactError(
         "artifact_missing",
-        `Generated project artifact is missing: ${join(PROJECT_ARTIFACT_DIRECTORY, file)}. Run \`voyant build\` or \`voyant dev\` to refresh .voyant/.`,
+        `Generated project artifact is missing: ${join(PROJECT_ARTIFACT_DIRECTORY, file)}. Run \`voyant build\` or \`voyant develop\` to refresh .voyant/.`,
       )
     }
   }
@@ -203,7 +203,7 @@ export async function loadProjectArtifacts(projectRoot: string): Promise<LoadedP
   if (!runtimeSource.includes(manifest.graphHash)) {
     throw new ProjectArtifactError(
       "artifact_stale",
-      `Generated runtime entry ${manifest.runtimeEntry} does not reference ${manifest.graphHash}. Run \`voyant build\` or \`voyant dev\` to refresh .voyant/.`,
+      `Generated runtime entry ${manifest.runtimeEntry} does not reference ${manifest.graphHash}. Run \`voyant build\` or \`voyant develop\` to refresh .voyant/.`,
     )
   }
 
@@ -212,7 +212,7 @@ export async function loadProjectArtifacts(projectRoot: string): Promise<LoadedP
   if (!migrationRunnerSource.includes(manifest.graphHash)) {
     throw new ProjectArtifactError(
       "artifact_stale",
-      `Generated migration runner ${manifest.migrationRunner} does not reference ${manifest.graphHash}. Run \`voyant build\` or \`voyant dev\` to refresh .voyant/.`,
+      `Generated migration runner ${manifest.migrationRunner} does not reference ${manifest.graphHash}. Run \`voyant build\` or \`voyant develop\` to refresh .voyant/.`,
     )
   }
 
@@ -276,7 +276,7 @@ function artifactCheckError(
     missing.length > 0 ? (stale.length > 0 ? "are missing or stale" : "are missing") : "are stale"
   return new ProjectArtifactError(
     missing.length > 0 ? "artifact_missing" : "artifact_stale",
-    `Generated project artifacts ${summary} (${details.join("; ")}). Run \`voyant build\` or \`voyant dev\` to refresh .voyant/.`,
+    `Generated project artifacts ${summary} (${details.join("; ")}). Run \`voyant build\` or \`voyant develop\` to refresh .voyant/.`,
   )
 }
 
@@ -386,6 +386,6 @@ function isSafeRelativePath(value: unknown): value is string {
 function hashMismatch(label: string, actual: unknown, expected: string): ProjectArtifactError {
   return new ProjectArtifactError(
     "artifact_stale",
-    `Generated ${label} hash ${String(actual)} does not match ${expected}. Run \`voyant build\` or \`voyant dev\` to refresh .voyant/.`,
+    `Generated ${label} hash ${String(actual)} does not match ${expected}. Run \`voyant build\` or \`voyant develop\` to refresh .voyant/.`,
   )
 }

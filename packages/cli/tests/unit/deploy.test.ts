@@ -280,7 +280,7 @@ function writeDeploymentFixture(options: { project: Record<string, unknown> }): 
     capabilities: { provided: [], required: [] },
     packageRecords: [],
     provisioning: {
-      scheduledJobs: [{ id: "@voyant-travel/bookings#workflow.release-holds" }],
+      scheduledJobs: [{ id: "@voyant-travel/bookings#jobs.expire-stale-holds" }],
     },
     diagnostics: [],
   }

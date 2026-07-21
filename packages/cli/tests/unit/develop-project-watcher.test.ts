@@ -33,8 +33,6 @@ describe("develop project watcher", () => {
       listener?.("rename", "package.json")
       listener?.("change", "src/api/public/routes.ts")
       listener?.("change", "src/admin/extensions.tsx")
-      listener?.("change", "src/workflows/confirm-booking.ts")
-      listener?.("change", "src/jobs/send-reminders.ts")
       listener?.("change", "src/subscribers/audit-events.ts")
       listener?.("change", "src/links/booking-customer.ts")
       vi.advanceTimersByTime(74)

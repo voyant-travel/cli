@@ -1,5 +1,11 @@
 # @voyant-travel/cli
 
+## 1.0.0
+
+### Major Changes
+
+- bef4286: Remove the Voyant Workflows CLI product, including `voyant workflows`, the workflow-only `voyant dev` command, and their public command exports. Use `voyant develop` for full-application development.
+
 ## 0.42.2
 
 ### Patch Changes

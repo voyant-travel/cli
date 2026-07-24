@@ -48,7 +48,7 @@ describe("removeCommand", () => {
     configPath = join(project, "voyant.config.ts")
     writeFileSync(
       packagePath,
-      `${JSON.stringify({ name: "operator", dependencies: {}, packageManager: "pnpm@9.0.0" }, null, 2)}\n`,
+      `${JSON.stringify({ name: "operator", dependencies: {}, packageManager: "pnpm@10.34.5" }, null, 2)}\n`,
     )
     writeFileSync(
       configPath,

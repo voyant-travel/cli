@@ -55,7 +55,7 @@ function projectPackageJson(name: string): string {
         "@voyant-travel/cli": `^${readCliPackageVersion()}`,
         typescript: "^5.9.2",
       },
-      packageManager: "pnpm@9.0.0",
+      packageManager: "pnpm@10.34.5",
     },
     null,
     2,

@@ -138,7 +138,7 @@ function projectPackageJson(name: string, projection: SelfHostProjection): strin
       scripts: sortedRecord(projection.starter.packageScripts),
       dependencies: Object.fromEntries(sortedEntries(dependencies)),
       devDependencies: Object.fromEntries(sortedEntries(devDependencies)),
-      packageManager: "pnpm@9.0.0",
+      packageManager: "pnpm@10.34.5",
     },
     null,
     2,

@@ -1,6 +1,6 @@
 {
   "name": "@voyant-travel/cli",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "license": "Apache-2.0",
   "description": "Unified CLI for the Voyant open-source framework and the Voyant Cloud platform.",
   "type": "module",

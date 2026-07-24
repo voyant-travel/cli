@@ -1,5 +1,11 @@
 # @voyant-travel/cli
 
+## 1.0.1
+
+### Patch Changes
+
+- e54a4af: Use a pnpm release that supports catalog dependency specifiers in the workspace and generated projects.
+
 ## 1.0.0
 
 ### Major Changes

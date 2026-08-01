@@ -24,4 +24,22 @@ describe("waitForShutdownSignal", () => {
     expect(target.listenerCount("SIGINT")).toBe(0)
     expect(target.listenerCount("SIGTERM")).toBe(0)
   })
+
+  it("can be cancelled without running cleanup or retaining listeners", async () => {
+    const target = new EventEmitter()
+    const cleanup = vi.fn(async () => {})
+    const controller = new AbortController()
+    const done = waitForShutdownSignal(cleanup, {
+      target,
+      signals: ["SIGINT", "SIGTERM"],
+      abortSignal: controller.signal,
+    })
+
+    controller.abort()
+    await done
+
+    expect(cleanup).not.toHaveBeenCalled()
+    expect(target.listenerCount("SIGINT")).toBe(0)
+    expect(target.listenerCount("SIGTERM")).toBe(0)
+  })
 })

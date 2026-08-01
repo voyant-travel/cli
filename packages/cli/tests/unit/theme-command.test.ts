@@ -111,6 +111,17 @@ describe("voyant theme", () => {
     expect(JSON.parse(run.stdout.join(""))).toEqual(validReport())
   })
 
+  it("suppresses project config stdout while framing a JSON report", async () => {
+    const run = io(root, ["check", "--json"])
+    const validateTheme = vi.fn(async () => {
+      process.stdout.write("config noise\n")
+      return validReport()
+    })
+
+    expect(await themeCommand(run.ctx, { loadTooling: async () => ({ validateTheme }) })).toBe(0)
+    expect(run.stdout).toEqual([`${JSON.stringify(validReport(), null, 2)}\n`])
+  })
+
   it("rejects an incompatible tooling report at runtime", async () => {
     const run = io(root, ["check", "--json"])
     expect(
@@ -128,7 +139,8 @@ describe("voyant theme", () => {
 
   it("starts and closes the SDK development handle", async () => {
     const close = vi.fn(async () => {})
-    const developTheme = vi.fn(async () => ({ url: "http://localhost:4455", close }))
+    const wait = vi.fn(() => new Promise<number>(() => {}))
+    const developTheme = vi.fn(async () => ({ url: "http://localhost:4455", close, wait }))
     const waitForShutdown = vi.fn(async (cleanup: () => Promise<void>) => cleanup())
     const run = io(root, ["dev", "--host", "0.0.0.0", "--port", "4455"])
 
@@ -146,6 +158,46 @@ describe("voyant theme", () => {
     })
     expect(close).toHaveBeenCalledOnce()
     expect(run.stderr.join("")).toContain("http://localhost:4455")
+  })
+
+  it("returns when the development server exits before a signal", async () => {
+    const close = vi.fn(async () => {})
+    const waitForShutdown = vi.fn(() => new Promise<void>(() => {}))
+    const run = io(root, ["dev"])
+
+    expect(
+      await themeCommand(run.ctx, {
+        loadTooling: async () => ({
+          developTheme: async () => ({
+            url: "http://localhost:4321",
+            close,
+            wait: async () => 0,
+          }),
+        }),
+        waitForShutdown,
+      }),
+    ).toBe(0)
+    expect(close).toHaveBeenCalledOnce()
+  })
+
+  it("propagates an early non-zero development server exit", async () => {
+    const close = vi.fn(async () => {})
+    const run = io(root, ["dev"])
+
+    expect(
+      await themeCommand(run.ctx, {
+        loadTooling: async () => ({
+          developTheme: async () => ({
+            url: "http://localhost:4321",
+            close,
+            wait: async () => 7,
+          }),
+        }),
+        waitForShutdown: () => new Promise<void>(() => {}),
+      }),
+    ).toBe(7)
+    expect(close).toHaveBeenCalledOnce()
+    expect(run.stderr.join("")).toContain("exited with code 7")
   })
 
   it("prints structured SDK diagnostics when development cannot start", async () => {
@@ -187,10 +239,11 @@ describe("voyant theme", () => {
       },
       devDependencies: { "@voyant-travel/cli": CLI_SCAFFOLD_VERSION_RANGE },
     })
+    expect(THEME_SDK_SCAFFOLD_VERSION).toBe("^0.1.0-alpha.0")
     const config = readFileSync(join(target, "theme.config.ts"), "utf8")
     expect(config).toContain("defineTheme")
     expect(config).toContain('context: "home"')
-    expect(config).toContain('context: "content"')
+    expect(config).toContain('{ id: "content", pattern: "/[...path]", context: "content" }')
     expect(config).toContain('context: "notFound"')
     expect(config).toContain('kind: "home"')
     expect(config).toContain('kind: "content"')
@@ -198,9 +251,12 @@ describe("voyant theme", () => {
     expect(readFileSync(join(target, "astro.config.mjs"), "utf8")).toContain(
       "voyantTheme({ theme })",
     )
-    expect(readFileSync(join(target, "src/pages/index.astro"), "utf8")).toContain(
-      "resolveThemeContext",
-    )
+    const page = readFileSync(join(target, "src/pages/[...path].astro"), "utf8")
+    expect(page).toContain("export function getStaticPaths()")
+    expect(page).toContain("theme.fixtures.home")
+    expect(page).toContain("...theme.fixtures.content")
+    expect(page).toContain("theme.fixtures.notFound")
+    expect(page).toContain('context.kind === "notFound"')
     expect(readFileSync(join(target, "src/env.d.ts"), "utf8")).toContain(
       "@voyant-travel/astro/virtual",
     )
@@ -218,6 +274,12 @@ describe("voyant theme", () => {
       checkThemeDefinition(theme: unknown): { ok: boolean; diagnostics: unknown[] }
     }
     expect(fixtureSdk.checkThemeDefinition(loaded.default)).toEqual({ ok: true, diagnostics: [] })
+    const invalidTheme = structuredClone(loaded.default) as {
+      manifest: { routes: Array<{ context: string; pattern: string }> }
+    }
+    const contentRoute = invalidTheme.manifest.routes.find((route) => route.context === "content")
+    if (contentRoute) contentRoute.pattern = "/:slug"
+    expect(fixtureSdk.checkThemeDefinition(invalidTheme).ok).toBe(false)
     await expect(scaffoldTheme(target)).rejects.toThrow("non-empty directory")
 
     const numericTarget = join(root, "123_theme")

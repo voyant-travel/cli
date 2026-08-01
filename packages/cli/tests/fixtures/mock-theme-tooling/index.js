@@ -4,6 +4,7 @@ export function defineTheme(theme) {
 
 export function checkThemeDefinition(theme) {
   const contexts = new Set(theme?.manifest?.routes?.map((route) => route.context))
+  const contentRoutes = theme?.manifest?.routes?.filter((route) => route.context === "content")
   const valid =
     theme?.contractVersion === "v1alpha1" &&
     typeof theme?.manifest?.id === "string" &&
@@ -12,6 +13,8 @@ export function checkThemeDefinition(theme) {
     contexts.has("home") &&
     contexts.has("content") &&
     contexts.has("notFound") &&
+    contentRoutes.length > 0 &&
+    contentRoutes.every((route) => /\[(?:\.\.\.)?[A-Za-z][A-Za-z0-9_]*\]/.test(route.pattern)) &&
     theme?.fixtures?.home?.kind === "home" &&
     Array.isArray(theme?.fixtures?.content) &&
     theme.fixtures.content.every((entry) => entry.kind === "content") &&

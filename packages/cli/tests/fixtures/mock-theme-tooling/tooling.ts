@@ -13,5 +13,11 @@ export async function buildTheme() {
 }
 
 export async function developTheme() {
-  return { url: "http://127.0.0.1:4321", async close() {} }
+  return {
+    url: "http://127.0.0.1:4321",
+    async close() {},
+    async wait() {
+      return 0
+    },
+  }
 }

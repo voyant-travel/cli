@@ -18,14 +18,14 @@ import type { CommandContext, CommandResult } from "../types.js"
 
 const DEFAULT_HOST = "127.0.0.1"
 const DEFAULT_PORT = 4321
-export const THEME_SDK_SCAFFOLD_VERSION = "0.1.0-alpha.0"
+export const THEME_SDK_SCAFFOLD_VERSION = "^0.1.0-alpha.0"
 // 1.1.0 is the first CLI release containing the nested theme commands.
 export const CLI_SCAFFOLD_VERSION_RANGE = "^1.1.0"
 
 export interface ThemeCommandDeps {
   loadTooling?: (projectRoot: string) => Promise<ThemeToolingModule>
   scaffold?: typeof scaffoldTheme
-  waitForShutdown?: (cleanup: () => Promise<void>) => Promise<void>
+  waitForShutdown?: typeof waitForShutdownSignal
 }
 
 /** `voyant theme <init|check|build|dev>` — project-pinned theme development tooling. */
@@ -87,15 +87,18 @@ async function runThemeReportCommand(
     const tooling = await (deps.loadTooling ?? loadThemeTooling)(ctx.cwd)
     const run = requireThemeToolingFunction(tooling, functionName, command)
     const options = { projectRoot: ctx.cwd, configFile: getStringFlag(args, "config") }
+    const json = wantsJson(args)
     const report = assertThemeToolingReport(
-      await run(
-        functionName === "buildTheme"
-          ? { ...options, output: wantsJson(args) ? "silent" : "inherit" }
-          : options,
+      await withSuppressedProcessStdout(json, () =>
+        run(
+          functionName === "buildTheme"
+            ? { ...options, output: json ? "silent" : "inherit" }
+            : options,
+        ),
       ),
       command,
     )
-    if (wantsJson(args)) {
+    if (json) {
       printJson(ctx, report)
     } else {
       emitHumanReport(ctx, command, report)
@@ -124,6 +127,7 @@ async function themeDevCommand(
   }
 
   let cleanup: (() => Promise<void>) | undefined
+  let shutdownController: AbortController | undefined
   try {
     const tooling = await (deps.loadTooling ?? loadThemeTooling)(ctx.cwd)
     const developTheme = requireThemeToolingFunction(tooling, "developTheme", "dev")
@@ -142,9 +146,32 @@ async function themeDevCommand(
       await handle.close()
     }
     ctx.stderr(`voyant theme dev: ${handle.url}\n`)
-    await (deps.waitForShutdown ?? waitForShutdownSignal)(cleanup)
-    return 0
+    shutdownController = new AbortController()
+    let shutdownRequested = false
+    const shutdown = (deps.waitForShutdown ?? waitForShutdownSignal)(
+      async () => {
+        shutdownRequested = true
+        await cleanup?.()
+      },
+      { abortSignal: shutdownController.signal },
+    ).then(() => ({ kind: "shutdown" as const }))
+    const completed = handle.wait().then((code) => {
+      if (!Number.isInteger(code) || code < 0) {
+        throw new Error("Theme tooling returned an invalid development server exit code.")
+      }
+      return { kind: "completed" as const, code }
+    })
+    const outcome = await Promise.race([shutdown, completed])
+    shutdownController.abort()
+    if (outcome.kind === "shutdown" || shutdownRequested) return 0
+
+    await cleanup()
+    if (outcome.code !== 0) {
+      ctx.stderr(`voyant theme dev: development server exited with code ${outcome.code}.\n`)
+    }
+    return outcome.code
   } catch (error) {
+    shutdownController?.abort()
     if (cleanup) {
       try {
         await cleanup()
@@ -160,6 +187,20 @@ async function themeDevCommand(
       ctx.stderr("Run `voyant theme check` for structured validation diagnostics.\n")
     }
     return 1
+  }
+}
+
+async function withSuppressedProcessStdout<T>(
+  suppress: boolean,
+  operation: () => Promise<T>,
+): Promise<T> {
+  if (!suppress) return operation()
+  const write = process.stdout.write
+  process.stdout.write = (() => true) as typeof process.stdout.write
+  try {
+    return await operation()
+  } finally {
+    process.stdout.write = write
   }
 }
 
@@ -258,9 +299,8 @@ function themeTemplateFiles(name: string): Record<string, string> {
     )}\n`,
     "astro.config.mjs": `import { voyantTheme } from "@voyant-travel/astro"\nimport { defineConfig } from "astro/config"\nimport theme from "./theme.config.ts"\n\nexport default defineConfig({ integrations: [voyantTheme({ theme })] })\n`,
     "src/env.d.ts": `/// <reference types="astro/client" />\n/// <reference types="@voyant-travel/astro/virtual" />\n`,
-    "src/pages/index.astro": `---\nimport { resolveThemeContext } from "virtual:voyant-theme"\n\nconst context = resolveThemeContext(Astro.url)\n---\n\n<html lang={context.locale}>\n  <head><title>{context.title}</title></head>\n  <body>\n    <main>\n      <h1>{context.title}</h1>\n      {context.kind === "home" && <p>Your Voyant theme is ready.</p>}\n    </main>\n  </body>\n</html>\n`,
-    "src/pages/[...slug].astro": `---\nimport { resolveThemeContext } from "virtual:voyant-theme"\n\nconst context = resolveThemeContext(Astro.url)\n---\n\n<html lang={context.locale}>\n  <head><title>{context.title}</title></head>\n  <body>\n    <main>\n      <h1>{context.title}</h1>\n      {context.kind === "content" && <p>{context.body}</p>}\n      {context.kind === "notFound" && <p>{context.message}</p>}\n    </main>\n  </body>\n</html>\n`,
-    "theme.config.ts": `import { defineTheme } from "@voyant-travel/theme"\n\nexport default defineTheme({\n  contractVersion: "v1alpha1",\n  manifest: {\n    id: "${name}",\n    name: "${name}",\n    version: "0.1.0",\n    routes: [\n      { id: "home", pattern: "/", context: "home" },\n      { id: "content", pattern: "/:slug", context: "content" },\n      { id: "not-found", pattern: "/404", context: "notFound" },\n    ],\n    settings: [],\n    sections: [],\n  },\n  fixtures: {\n    home: {\n      kind: "home",\n      path: "/",\n      locale: "en",\n      site: { name: "${name}" },\n      navigation: [{ label: "Welcome", href: "/welcome" }],\n      settings: {},\n      title: "${name}",\n      sections: [],\n    },\n    content: [{\n      kind: "content",\n      path: "/welcome",\n      slug: "welcome",\n      locale: "en",\n      site: { name: "${name}" },\n      navigation: [{ label: "Home", href: "/" }],\n      settings: {},\n      title: "Welcome",\n      summary: "A fixture-backed content page.",\n      body: "Build your first Voyant theme here.",\n    }],\n    notFound: {\n      kind: "notFound",\n      path: "/404",\n      locale: "en",\n      site: { name: "${name}" },\n      navigation: [{ label: "Home", href: "/" }],\n      settings: {},\n      title: "Page not found",\n      message: "The requested page does not exist.",\n    },\n  },\n})\n`,
+    "src/pages/[...path].astro": `---\nimport { theme } from "virtual:voyant-theme"\n\nexport function getStaticPaths() {\n  const contexts = [theme.fixtures.home, ...theme.fixtures.content, theme.fixtures.notFound]\n  return contexts.map((context) => ({\n    params: { path: context.path === "/" ? undefined : context.path.replace(/^\\//, "") },\n    props: { context },\n  }))\n}\n\nconst { context } = Astro.props\nif (context.kind === "notFound") Astro.response.status = 404\n---\n\n<html lang={context.locale}>\n  <head><title>{context.title}</title></head>\n  <body>\n    <main>\n      <h1>{context.title}</h1>\n      {context.kind === "home" && <p>Your Voyant theme is ready.</p>}\n      {context.kind === "content" && <p>{context.body}</p>}\n      {context.kind === "notFound" && <p>{context.message}</p>}\n    </main>\n  </body>\n</html>\n`,
+    "theme.config.ts": `import { defineTheme } from "@voyant-travel/theme"\n\nexport default defineTheme({\n  contractVersion: "v1alpha1",\n  manifest: {\n    id: "${name}",\n    name: "${name}",\n    version: "0.1.0",\n    routes: [\n      { id: "home", pattern: "/", context: "home" },\n      { id: "content", pattern: "/[...path]", context: "content" },\n      { id: "not-found", pattern: "/404", context: "notFound" },\n    ],\n    settings: [],\n    sections: [],\n  },\n  fixtures: {\n    home: {\n      kind: "home",\n      path: "/",\n      locale: "en",\n      site: { name: "${name}" },\n      navigation: [{ label: "Welcome", href: "/welcome" }],\n      settings: {},\n      title: "${name}",\n      sections: [],\n    },\n    content: [{\n      kind: "content",\n      path: "/welcome",\n      slug: "welcome",\n      locale: "en",\n      site: { name: "${name}" },\n      navigation: [{ label: "Home", href: "/" }],\n      settings: {},\n      title: "Welcome",\n      summary: "A fixture-backed content page.",\n      body: "Build your first Voyant theme here.",\n    }],\n    notFound: {\n      kind: "notFound",\n      path: "/404",\n      locale: "en",\n      site: { name: "${name}" },\n      navigation: [{ label: "Home", href: "/" }],\n      settings: {},\n      title: "Page not found",\n      message: "The requested page does not exist.",\n    },\n  },\n})\n`,
     "tsconfig.json": `{\n  "extends": "astro/tsconfigs/strict"\n}\n`,
   }
 }

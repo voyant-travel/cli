@@ -100,8 +100,8 @@ relative to the theme project. This keeps validation, diagnostics, builds, and
 the Astro development server pinned to the SDK version declared by that theme;
 the CLI does not carry a second copy of those rules. Use `voyant theme check
 --json` for the SDK's deterministic structured report. Newly scaffolded themes
-pin the `0.1.0-alpha.0` SDK contract and require CLI `^1.1.0`, the first release
-that contains these commands.
+use the compatible `^0.1.0-alpha.0` SDK contract range and require CLI `^1.1.0`,
+the first release that contains these commands.
 
 ## Cloud configuration
 

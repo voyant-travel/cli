@@ -30,6 +30,7 @@ export interface ThemeToolingReport {
 export interface ThemeDevelopmentHandle {
   url: string
   close(): Promise<void>
+  wait(): Promise<number>
 }
 
 export interface ThemeToolingOptions {
@@ -103,7 +104,12 @@ export function assertThemeToolingReport(value: unknown, command: string): Theme
 }
 
 export function assertThemeDevelopmentHandle(value: unknown): ThemeDevelopmentHandle {
-  if (!isRecord(value) || typeof value.url !== "string" || typeof value.close !== "function") {
+  if (
+    !isRecord(value) ||
+    typeof value.url !== "string" ||
+    typeof value.close !== "function" ||
+    typeof value.wait !== "function"
+  ) {
     throw new Error(
       `The project-installed ${TOOLING_PACKAGE} returned an invalid development handle. Upgrade ${THEME_PACKAGE} before running \`voyant theme dev\`.`,
     )

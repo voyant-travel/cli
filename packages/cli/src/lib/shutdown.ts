@@ -8,6 +8,7 @@ export interface ShutdownSignalTarget {
 export interface WaitForShutdownOptions {
   signals?: readonly ShutdownSignal[]
   target?: ShutdownSignalTarget
+  abortSignal?: AbortSignal
 }
 
 export async function waitForShutdownSignal(
@@ -25,6 +26,14 @@ export async function waitForShutdownSignal(
       for (const [signal, listener] of listeners) {
         target.removeListener(signal, listener)
       }
+      opts.abortSignal?.removeEventListener("abort", onAbort)
+    }
+
+    const onAbort = (): void => {
+      if (shuttingDown) return
+      shuttingDown = true
+      removeListeners()
+      resolve()
     }
 
     const onSignal = (): void => {
@@ -33,6 +42,12 @@ export async function waitForShutdownSignal(
       removeListeners()
       cleanup().then(resolve, reject)
     }
+
+    if (opts.abortSignal?.aborted) {
+      resolve()
+      return
+    }
+    opts.abortSignal?.addEventListener("abort", onAbort, { once: true })
 
     for (const signal of signals) {
       const listener = (): void => onSignal()

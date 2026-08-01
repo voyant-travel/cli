@@ -23,6 +23,10 @@ voyant --help
 | `voyant db <generate\|migrate\|studio\|push\|check>` | Proxy drizzle-kit to the project root |
 | `voyant db sync-links [--out <file>]` | Emit DDL for cross-module link tables |
 | `voyant exec <script.ts> [args…]` | Run a TS/JS script with native strip-types |
+| `voyant theme init [directory]` | Scaffold a minimal Astro theme using prerelease theme SDK packages |
+| `voyant theme check [--json]` | Validate a theme with its project-installed `@voyant-travel/theme/tooling` |
+| `voyant theme build [--json]` | Build a theme with its project-installed SDK tooling |
+| `voyant theme dev [--host <h>] [--port <n>]` | Start the theme SDK development server |
 | `voyant develop [--host <h>] [--port <n>]` | Keep `.voyant/` refreshed and run the full app through project-installed runtime tooling |
 | `voyant start [--port <n>] [--probe]` | Start the project through its installed `@voyant-travel/runtime` |
 | `voyant build [--json]` | Refresh `.voyant/` and build the full app through project-installed runtime tooling |
@@ -91,6 +95,14 @@ precedence. App development and builds require the project-installed
 `@voyant-travel/runtime/tooling` export; update `@voyant-travel/runtime` when an
 older installation does not provide it.
 
+Theme lifecycle commands similarly resolve `@voyant-travel/theme/tooling`
+relative to the theme project. This keeps validation, diagnostics, builds, and
+the Astro development server pinned to the SDK version declared by that theme;
+the CLI does not carry a second copy of those rules. Use `voyant theme check
+--json` for the SDK's deterministic structured report. Newly scaffolded themes
+pin the `0.1.0-alpha.0` SDK contract and require CLI `^1.1.0`, the first release
+that contains these commands.
+
 ## Cloud configuration
 
 Cloud commands accept these inputs in priority order:
@@ -142,8 +154,10 @@ import { resolveSchemas } from "@voyant-travel/cli/drizzle"
 import { runDeviceCodeFlow } from "@voyant-travel/cli/lib/device-code"
 import { resolveCloudAuth } from "@voyant-travel/cli/lib/cloud-client"
 import { setCredential } from "@voyant-travel/cli/lib/credentials"
+import { loadThemeTooling } from "@voyant-travel/cli/lib/theme-tooling"
 import { addCommand } from "@voyant-travel/cli/commands/add"
 import { newCommand } from "@voyant-travel/cli/commands/new"
+import { themeCommand } from "@voyant-travel/cli/commands/theme"
 ```
 
 Subpath exports under `./commands/*` and `./lib/*` are stable; see the

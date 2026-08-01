@@ -25,6 +25,7 @@
     "./commands/start": "./src/commands/start.ts",
     "./commands/build": "./src/commands/build-command.ts",
     "./commands/migrate": "./src/commands/migrate-command.ts",
+    "./commands/theme": "./src/commands/theme.ts",
     "./commands/login": "./src/commands/login.ts",
     "./commands/logout": "./src/commands/logout.ts",
     "./commands/whoami": "./src/commands/whoami.ts",
@@ -37,6 +38,7 @@
     "./lib/credentials": "./src/lib/credentials.ts",
     "./lib/cloud-client": "./src/lib/cloud-client.ts",
     "./lib/device-code": "./src/lib/device-code.ts",
+    "./lib/theme-tooling": "./src/lib/theme-tooling.ts",
     "./lib/voyant-version": "./src/lib/voyant-version.ts"
   },
   "files": [
@@ -161,6 +163,11 @@
         "import": "./dist/commands/migrate-command.js",
         "default": "./dist/commands/migrate-command.js"
       },
+      "./commands/theme": {
+        "types": "./dist/commands/theme.d.ts",
+        "import": "./dist/commands/theme.js",
+        "default": "./dist/commands/theme.js"
+      },
       "./commands/login": {
         "types": "./dist/commands/login.d.ts",
         "import": "./dist/commands/login.js",
@@ -220,6 +227,11 @@
         "types": "./dist/lib/device-code.d.ts",
         "import": "./dist/lib/device-code.js",
         "default": "./dist/lib/device-code.js"
+      },
+      "./lib/theme-tooling": {
+        "types": "./dist/lib/theme-tooling.d.ts",
+        "import": "./dist/lib/theme-tooling.js",
+        "default": "./dist/lib/theme-tooling.js"
       },
       "./lib/voyant-version": {
         "types": "./dist/lib/voyant-version.d.ts",

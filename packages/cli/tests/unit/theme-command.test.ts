@@ -111,14 +111,18 @@ describe("voyant theme", () => {
     expect(JSON.parse(run.stdout.join(""))).toEqual(validReport())
   })
 
-  it("suppresses project config stdout while framing a JSON report", async () => {
+  it("suppresses project tooling import and config stdout while framing a JSON report", async () => {
     const run = io(root, ["check", "--json"])
     const validateTheme = vi.fn(async () => {
       process.stdout.write("config noise\n")
       return validReport()
     })
+    const loadTooling = vi.fn(async () => {
+      process.stdout.write("module import noise\n")
+      return { validateTheme }
+    })
 
-    expect(await themeCommand(run.ctx, { loadTooling: async () => ({ validateTheme }) })).toBe(0)
+    expect(await themeCommand(run.ctx, { loadTooling })).toBe(0)
     expect(run.stdout).toEqual([`${JSON.stringify(validReport(), null, 2)}\n`])
   })
 

@@ -84,18 +84,18 @@ async function runThemeReportCommand(
 ): Promise<CommandResult> {
   const args = parseArgs(ctx.argv, { booleanFlags: ["json"] })
   try {
-    const tooling = await (deps.loadTooling ?? loadThemeTooling)(ctx.cwd)
-    const run = requireThemeToolingFunction(tooling, functionName, command)
     const options = { projectRoot: ctx.cwd, configFile: getStringFlag(args, "config") }
     const json = wantsJson(args)
     const report = assertThemeToolingReport(
-      await withSuppressedProcessStdout(json, () =>
-        run(
+      await withSuppressedProcessStdout(json, async () => {
+        const tooling = await (deps.loadTooling ?? loadThemeTooling)(ctx.cwd)
+        const run = requireThemeToolingFunction(tooling, functionName, command)
+        return run(
           functionName === "buildTheme"
             ? { ...options, output: json ? "silent" : "inherit" }
             : options,
-        ),
-      ),
+        )
+      }),
       command,
     )
     if (json) {

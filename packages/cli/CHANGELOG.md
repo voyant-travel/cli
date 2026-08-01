@@ -1,5 +1,11 @@
 # @voyant-travel/cli
 
+## 1.1.0
+
+### Minor Changes
+
+- ff37c34: Add `voyant theme init`, `check`, `build`, and `dev`, delegating lifecycle behavior to each theme project's installed SDK tooling.
+
 ## 1.0.1
 
 ### Patch Changes

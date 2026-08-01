@@ -29,6 +29,7 @@ import { removeCommand } from "./commands/remove.js"
 import { secretsCommand } from "./commands/secrets.js"
 import { startCommand } from "./commands/start.js"
 import { storageCommand } from "./commands/storage.js"
+import { themeCommand } from "./commands/theme.js"
 import { upgradeCommand } from "./commands/upgrade.js"
 import { vaultsCommand } from "./commands/vaults.js"
 import { whoamiCommand } from "./commands/whoami.js"
@@ -181,6 +182,9 @@ export async function main(
     }
     case "migrate": {
       return migrateCommand({ ...ctx, argv: rest })
+    }
+    case "theme": {
+      return themeCommand({ ...ctx, argv: rest })
     }
     case "db:generate":
     case "db:migrate":

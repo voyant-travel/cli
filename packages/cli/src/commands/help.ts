@@ -39,6 +39,8 @@ OPEN-SOURCE COMMANDS
   db sync-links [--emit-drizzle]     Emit link-table DDL, or a generated Drizzle schema
   db doctor [--fail-on-drift]        Report graph artifacts or legacy migration drift
   exec <script.ts> [args...]         Run a TS/JS script with the voyant loader hook
+  theme init [directory]             Scaffold a minimal Astro theme
+  theme <check|build|dev>            Use the theme project's installed SDK tooling
 
 CLOUD COMMANDS  (need a Voyant Cloud token; add --json for machine output)
   login [--token <value>]            Authorize via browser device flow (or paste a token)
@@ -97,6 +99,8 @@ EXAMPLES
   voyant migrate --plan --json
   voyant db generate
   voyant exec ./scripts/backfill.ts --dry-run
+  voyant theme init ./my-theme
+  voyant theme check --json
   voyant login                                # browser device flow
   voyant login --token tok_live_abc123        # paste-token mode (CI/headless)
   voyant whoami --json

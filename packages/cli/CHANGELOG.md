@@ -1,5 +1,11 @@
 # @voyant-travel/cli
 
+## 1.2.0
+
+### Minor Changes
+
+- b98adc7: Scaffold v1alpha4 tour-capable themes with the published theme SDK and Cloudflare Astro runtime.
+
 ## 1.1.0
 
 ### Minor Changes

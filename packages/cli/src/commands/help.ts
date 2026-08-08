@@ -39,7 +39,7 @@ OPEN-SOURCE COMMANDS
   db sync-links [--emit-drizzle]     Emit link-table DDL, or a generated Drizzle schema
   db doctor [--fail-on-drift]        Report graph artifacts or legacy migration drift
   exec <script.ts> [args...]         Run a TS/JS script with the voyant loader hook
-  theme init [directory]             Scaffold a minimal Astro theme
+  theme init [directory]             Scaffold a tour-capable Astro theme
   theme <check|build|dev>            Use the theme project's installed SDK tooling
 
 CLOUD COMMANDS  (need a Voyant Cloud token; add --json for machine output)

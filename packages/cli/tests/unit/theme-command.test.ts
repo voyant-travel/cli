@@ -6,8 +6,11 @@ import { createJiti } from "jiti"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import {
+  ASTRO_CLOUDFLARE_SCAFFOLD_VERSION,
+  ASTRO_SCAFFOLD_VERSION,
   CLI_SCAFFOLD_VERSION_RANGE,
   scaffoldTheme,
+  THEME_ASTRO_SCAFFOLD_VERSION,
   THEME_SDK_SCAFFOLD_VERSION,
   themeCommand,
 } from "../../src/commands/theme.js"
@@ -227,7 +230,7 @@ describe("voyant theme", () => {
     )
   })
 
-  it("scaffolds a minimal Astro theme and refuses a non-empty target", async () => {
+  it("scaffolds a tour-capable Astro theme and refuses a non-empty target", async () => {
     const target = join(root, "Example Theme")
     const result = await scaffoldTheme(target)
 
@@ -237,32 +240,45 @@ describe("voyant theme", () => {
       name: "example-theme",
     })
     expect(JSON.parse(readFileSync(join(target, "package.json"), "utf8"))).toMatchObject({
+      engines: { node: ">=22.12.0" },
       dependencies: {
         "@voyant-travel/theme": THEME_SDK_SCAFFOLD_VERSION,
-        "@voyant-travel/astro": THEME_SDK_SCAFFOLD_VERSION,
+        "@voyant-travel/astro": THEME_ASTRO_SCAFFOLD_VERSION,
+        "@astrojs/cloudflare": ASTRO_CLOUDFLARE_SCAFFOLD_VERSION,
+        astro: ASTRO_SCAFFOLD_VERSION,
       },
       devDependencies: { "@voyant-travel/cli": CLI_SCAFFOLD_VERSION_RANGE },
     })
-    expect(THEME_SDK_SCAFFOLD_VERSION).toBe("^0.1.0-alpha.0")
+    expect(THEME_SDK_SCAFFOLD_VERSION).toBe("0.1.0-alpha.14")
+    expect(THEME_ASTRO_SCAFFOLD_VERSION).toBe("0.1.0-alpha.13")
     const config = readFileSync(join(target, "theme.config.ts"), "utf8")
     expect(config).toContain("defineTheme")
     expect(config).toContain('context: "home"')
-    expect(config).toContain('{ id: "content", pattern: "/[...path]", context: "content" }')
+    expect(config).toContain('{ id: "content", pattern: "/journal/[...path]", context: "content" }')
     expect(config).toContain('context: "notFound"')
+    expect(config).toContain('contractVersion: "v1alpha4"')
+    expect(config).toContain('context: "tourIndex"')
+    expect(config).toContain('context: "tourDetail"')
+    expect(config).toContain('{ id: "catalog.pricing.v1" }')
+    expect(config).toContain('{ id: "booking.session.v1" }')
     expect(config).toContain('kind: "home"')
     expect(config).toContain('kind: "content"')
     expect(config).toContain('kind: "notFound"')
+    expect(config).toContain('kind: "tourIndex"')
+    expect(config).toContain('kind: "tourDetail"')
     expect(readFileSync(join(target, "astro.config.mjs"), "utf8")).toContain(
       "voyantTheme({ theme })",
     )
     const page = readFileSync(join(target, "src/pages/[...path].astro"), "utf8")
-    expect(page).toContain("export function getStaticPaths()")
-    expect(page).toContain("theme.fixtures.home")
-    expect(page).toContain("...theme.fixtures.content")
-    expect(page).toContain("theme.fixtures.notFound")
+    expect(page).toContain("resolveThemeContext(Astro.url)")
+    expect(page).toContain('context.kind === "tourIndex"')
+    expect(page).toContain('context.kind === "tourDetail"')
     expect(page).toContain('context.kind === "notFound"')
     expect(readFileSync(join(target, "src/env.d.ts"), "utf8")).toContain(
       "@voyant-travel/astro/virtual",
+    )
+    expect(readFileSync(join(target, "wrangler.jsonc"), "utf8")).toContain(
+      '"main": "@astrojs/cloudflare/entrypoints/server"',
     )
 
     const fixturePackage = join(target, "node_modules/@voyant-travel/theme")

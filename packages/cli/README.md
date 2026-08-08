@@ -23,7 +23,7 @@ voyant --help
 | `voyant db <generate\|migrate\|studio\|push\|check>` | Proxy drizzle-kit to the project root |
 | `voyant db sync-links [--out <file>]` | Emit DDL for cross-module link tables |
 | `voyant exec <script.ts> [args…]` | Run a TS/JS script with native strip-types |
-| `voyant theme init [directory]` | Scaffold a minimal Astro theme using prerelease theme SDK packages |
+| `voyant theme init [directory]` | Scaffold a tour-capable Astro theme using the v1alpha4 contract |
 | `voyant theme check [--json]` | Validate a theme with its project-installed `@voyant-travel/theme/tooling` |
 | `voyant theme build [--json]` | Build a theme with its project-installed SDK tooling |
 | `voyant theme dev [--host <h>] [--port <n>]` | Start the theme SDK development server |
@@ -100,8 +100,12 @@ relative to the theme project. This keeps validation, diagnostics, builds, and
 the Astro development server pinned to the SDK version declared by that theme;
 the CLI does not carry a second copy of those rules. Use `voyant theme check
 --json` for the SDK's deterministic structured report. Newly scaffolded themes
-use the compatible `^0.1.0-alpha.0` SDK contract range and require CLI `^1.1.0`,
-the first release that contains these commands.
+pin `@voyant-travel/theme` `0.1.0-alpha.14` and its `v1alpha4` contract, with
+canonical tour index/detail routes and declarations for live search, pricing,
+availability, booking, and checkout capabilities. The companion Astro
+integration remains pinned to its independently published `0.1.0-alpha.13`
+release. Scaffolds require CLI `^1.1.0`, the first release containing these
+commands.
 
 ## Cloud configuration
 

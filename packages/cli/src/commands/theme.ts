@@ -18,7 +18,10 @@ import type { CommandContext, CommandResult } from "../types.js"
 
 const DEFAULT_HOST = "127.0.0.1"
 const DEFAULT_PORT = 4321
-export const THEME_SDK_SCAFFOLD_VERSION = "^0.1.0-alpha.0"
+export const THEME_SDK_SCAFFOLD_VERSION = "0.1.0-alpha.14"
+export const THEME_ASTRO_SCAFFOLD_VERSION = "0.1.0-alpha.13"
+export const ASTRO_SCAFFOLD_VERSION = "7.1.6"
+export const ASTRO_CLOUDFLARE_SCAFFOLD_VERSION = "14.1.7"
 // 1.1.0 is the first CLI release containing the nested theme commands.
 export const CLI_SCAFFOLD_VERSION_RANGE = "^1.1.0"
 
@@ -272,23 +275,25 @@ function packageName(value: string): string {
 
 function themeTemplateFiles(name: string): Record<string, string> {
   return {
-    ".gitignore": "node_modules/\ndist/\n.astro/\n",
-    "README.md": `# ${name}\n\nA Voyant Astro theme.\n\n\`\`\`sh\npnpm install\npnpm theme:check\npnpm dev\n\`\`\`\n`,
+    ".gitignore": "node_modules/\ndist/\n.astro/\n.wrangler/\n.voyant/\n",
+    "README.md": `# ${name}\n\nA Voyant Astro theme with fixture-backed home, content, and tour pages. Tour catalog content is immutable; current pricing, availability, booking, and checkout stay behind declared live capabilities.\n\n\`\`\`sh\npnpm install\npnpm theme:check\npnpm dev\npnpm build\n\`\`\`\n`,
     "package.json": `${JSON.stringify(
       {
         name,
         version: "0.1.0",
         private: true,
         type: "module",
+        engines: { node: ">=22.12.0" },
         scripts: {
           dev: "voyant theme dev",
           "theme:check": "voyant theme check",
           build: "voyant theme build",
         },
         dependencies: {
-          "@voyant-travel/astro": THEME_SDK_SCAFFOLD_VERSION,
+          "@astrojs/cloudflare": ASTRO_CLOUDFLARE_SCAFFOLD_VERSION,
+          "@voyant-travel/astro": THEME_ASTRO_SCAFFOLD_VERSION,
           "@voyant-travel/theme": THEME_SDK_SCAFFOLD_VERSION,
-          astro: "^5.0.0",
+          astro: ASTRO_SCAFFOLD_VERSION,
         },
         devDependencies: {
           "@voyant-travel/cli": CLI_SCAFFOLD_VERSION_RANGE,
@@ -297,10 +302,24 @@ function themeTemplateFiles(name: string): Record<string, string> {
       null,
       2,
     )}\n`,
-    "astro.config.mjs": `import { voyantTheme } from "@voyant-travel/astro"\nimport { defineConfig } from "astro/config"\nimport theme from "./theme.config.ts"\n\nexport default defineConfig({ integrations: [voyantTheme({ theme })] })\n`,
+    "astro.config.mjs": `import cloudflare from "@astrojs/cloudflare"\nimport { voyantTheme } from "@voyant-travel/astro"\nimport { defineConfig, sessionDrivers } from "astro/config"\nimport theme from "./theme.config.ts"\n\nexport default defineConfig({\n  adapter: cloudflare({ imageService: "passthrough" }),\n  output: "server",\n  session: { driver: sessionDrivers.lruCache() },\n  build: { format: "directory" },\n  integrations: [voyantTheme({ theme })],\n})\n`,
     "src/env.d.ts": `/// <reference types="astro/client" />\n/// <reference types="@voyant-travel/astro/virtual" />\n`,
-    "src/pages/[...path].astro": `---\nimport { theme } from "virtual:voyant-theme"\n\nexport function getStaticPaths() {\n  const contexts = [theme.fixtures.home, ...theme.fixtures.content, theme.fixtures.notFound]\n  return contexts.map((context) => ({\n    params: { path: context.path === "/" ? undefined : context.path.replace(/^\\//, "") },\n    props: { context },\n  }))\n}\n\nconst { context } = Astro.props\nif (context.kind === "notFound") Astro.response.status = 404\n---\n\n<html lang={context.locale}>\n  <head><title>{context.title}</title></head>\n  <body>\n    <main>\n      <h1>{context.title}</h1>\n      {context.kind === "home" && <p>Your Voyant theme is ready.</p>}\n      {context.kind === "content" && <p>{context.body}</p>}\n      {context.kind === "notFound" && <p>{context.message}</p>}\n    </main>\n  </body>\n</html>\n`,
-    "theme.config.ts": `import { defineTheme } from "@voyant-travel/theme"\n\nexport default defineTheme({\n  contractVersion: "v1alpha1",\n  manifest: {\n    id: "${name}",\n    name: "${name}",\n    version: "0.1.0",\n    routes: [\n      { id: "home", pattern: "/", context: "home" },\n      { id: "content", pattern: "/[...path]", context: "content" },\n      { id: "not-found", pattern: "/404", context: "notFound" },\n    ],\n    settings: [],\n    sections: [],\n  },\n  fixtures: {\n    home: {\n      kind: "home",\n      path: "/",\n      locale: "en",\n      site: { name: "${name}" },\n      navigation: [{ label: "Welcome", href: "/welcome" }],\n      settings: {},\n      title: "${name}",\n      sections: [],\n    },\n    content: [{\n      kind: "content",\n      path: "/welcome",\n      slug: "welcome",\n      locale: "en",\n      site: { name: "${name}" },\n      navigation: [{ label: "Home", href: "/" }],\n      settings: {},\n      title: "Welcome",\n      summary: "A fixture-backed content page.",\n      body: "Build your first Voyant theme here.",\n    }],\n    notFound: {\n      kind: "notFound",\n      path: "/404",\n      locale: "en",\n      site: { name: "${name}" },\n      navigation: [{ label: "Home", href: "/" }],\n      settings: {},\n      title: "Page not found",\n      message: "The requested page does not exist.",\n    },\n  },\n})\n`,
+    "src/pages/[...path].astro": `---\nimport { resolveThemeContext } from "virtual:voyant-theme"\n\nconst context = await resolveThemeContext(Astro.url)\nif (context.kind === "notFound") Astro.response.status = 404\n---\n\n<!doctype html>\n<html lang={context.locale}>\n  <head>\n    <meta charset="utf-8" />\n    <meta name="viewport" content="width=device-width" />\n    <title>{context.seo.title} · {context.site.name}</title>\n    {context.seo.description && <meta name="description" content={context.seo.description} />}\n    {context.seo.noIndex && <meta name="robots" content="noindex" />}\n    {context.openGraph?.title && <meta property="og:title" content={context.openGraph.title} />}\n    {context.openGraph?.description && <meta property="og:description" content={context.openGraph.description} />}\n    {context.openGraph?.image && <meta property="og:image" content={context.openGraph.image.src} />}\n    {context.codeInjection?.head && <Fragment set:html={context.codeInjection.head} />}\n  </head>\n  <body>\n    {context.codeInjection?.bodyStart && <Fragment set:html={context.codeInjection.bodyStart} />}\n    <header>\n      <a href="/">{context.site.name}</a>\n      <nav>{context.navigation.map((item) => <a href={item.href}>{item.label}</a>)}</nav>\n    </header>\n    <main>\n      <h1>{context.title}</h1>\n      {context.kind === "home" && <p>Your Voyant theme is ready.</p>}\n      {context.kind === "content" && <><p>{context.summary}</p><article>{context.body}</article></>}\n      {context.kind === "tourIndex" && (\n        <ul>{context.products.map((product) => <li><a href={\`/tours/\${product.slug}\`}>{product.name}</a></li>)}</ul>\n      )}\n      {context.kind === "tourDetail" && (\n        <>\n          <p>{context.product.shortDescription}</p>\n          {context.product.descriptionHtml && <article set:html={context.product.descriptionHtml} />}\n          <p>Live selling is available through the capabilities declared by this theme.</p>\n        </>\n      )}\n      {context.kind === "notFound" && <p>{context.message}</p>}\n    </main>\n    {context.codeInjection?.bodyEnd && <Fragment set:html={context.codeInjection.bodyEnd} />}\n  </body>\n</html>\n`,
+    "theme.config.ts": `import { defineTheme } from "@voyant-travel/theme"\n\nconst product = {\n  id: "danube-delta",\n  slug: "danube-delta",\n  name: "The Danube delta",\n  shortDescription: "Reed beds, quiet channels, and village guesthouses.",\n  descriptionHtml: "<p>Explore Europe's largest wetland by small boat.</p>",\n  bookingMode: "itinerary" as const,\n  capacityMode: "limited" as const,\n  categories: [{ id: "nature", name: "Nature", slug: "nature" }],\n  tags: [{ id: "small-group", name: "Small group" }],\n  destinations: [{ id: "tulcea", slug: "tulcea", name: "Tulcea" }],\n  locations: [],\n  media: [],\n  features: [],\n  faqs: [],\n}\n\nexport default defineTheme({\n  contractVersion: "v1alpha4",\n  manifest: {\n    id: "${name}",\n    name: "${name}",\n    version: "0.1.0",\n    routes: [\n      { id: "home", pattern: "/", context: "home" },\n      { id: "content", pattern: "/journal/[...path]", context: "content" },\n      { id: "tours", pattern: "/tours", context: "tourIndex" },\n      { id: "tour-detail", pattern: "/tours/[slug]", context: "tourDetail" },\n      { id: "not-found", pattern: "/404", context: "notFound" },\n    ],\n    capabilities: [\n      { id: "catalog.search.v1" },\n      { id: "catalog.product-detail.v1" },\n      { id: "catalog.pricing.v1" },\n      { id: "catalog.availability.v1" },\n      { id: "catalog.requirements.v1" },\n      { id: "catalog.markets.v1" },\n      { id: "booking.session.v1" },\n      { id: "checkout.v1" },\n    ],\n    settings: [],\n    sections: [],\n  },\n  fixtures: {\n    home: {\n      kind: "home",\n      path: "/",\n      locale: "en",\n      site: { name: "${name}" },\n      navigation: [{ label: "Tours", href: "/tours" }],\n      menus: {},\n      seo: { title: "${name}" },\n      settings: {},\n      title: "${name}",\n      sections: [],\n    },\n    content: [{\n      kind: "content",\n      path: "/journal/welcome",\n      slug: "welcome",\n      locale: "en",\n      site: { name: "${name}" },\n      navigation: [{ label: "Home", href: "/" }],\n      menus: {},\n      seo: { title: "Welcome" },\n      settings: {},\n      title: "Welcome",\n      summary: "A fixture-backed content page.",\n      body: "Build your first Voyant theme here.",\n    }],\n    tourIndex: {\n      kind: "tourIndex",\n      path: "/tours",\n      locale: "en",\n      site: { name: "${name}" },\n      navigation: [{ label: "Home", href: "/" }],\n      menus: {},\n      seo: { title: "Tours" },\n      settings: {},\n      title: "Tours",\n      products: [product],\n    },\n    tourDetail: [{\n      kind: "tourDetail",\n      path: "/tours/danube-delta",\n      slug: "danube-delta",\n      locale: "en",\n      site: { name: "${name}" },\n      navigation: [{ label: "Tours", href: "/tours" }],\n      menus: {},\n      seo: { title: "The Danube delta" },\n      settings: {},\n      title: "The Danube delta",\n      product,\n    }],\n    notFound: {\n      kind: "notFound",\n      path: "/404",\n      locale: "en",\n      site: { name: "${name}" },\n      navigation: [{ label: "Home", href: "/" }],\n      menus: {},\n      seo: { title: "Page not found", noIndex: true },\n      settings: {},\n      title: "Page not found",\n      message: "The requested page does not exist.",\n    },\n  },\n})\n`,
+    "wrangler.jsonc": `{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "${name}",
+  "main": "@astrojs/cloudflare/entrypoints/server",
+  "compatibility_date": "2026-08-02",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS"
+  },
+  "observability": {
+    "enabled": true
+  }
+}\n`,
     "tsconfig.json": `{\n  "extends": "astro/tsconfigs/strict"\n}\n`,
   }
 }
@@ -314,7 +333,7 @@ usage:
   voyant theme dev [--config <path>] [--host <host>] [--port <n>]
 
 commands:
-  init    Scaffold a minimal Astro theme
+  init    Scaffold a tour-capable Astro theme
   check   Validate the theme and print deterministic diagnostics
   build   Validate and build the theme
   dev     Start the theme development server

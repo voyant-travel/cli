@@ -1,4 +1,12 @@
-import { cpSync, mkdtempSync, readFileSync, rmSync } from "node:fs"
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -316,6 +324,138 @@ describe("voyant theme", () => {
       schemaVersion: "voyant.theme.tooling.v1",
       ok: true,
     })
+  })
+
+  it("validates and writes an injected remote Theme Project Link", async () => {
+    writeFileSync(join(root, "theme.config.ts"), "export default {}\n")
+    const validateTheme = vi.fn(async () => validReport())
+    const validate = vi.fn(async () => ({
+      schemaVersion: "voyant.theme-project-link.v1" as const,
+      apiUrl: "https://sandbox.onvoyant.com",
+      organizationId: "org_123",
+      themeId: "thm_123",
+      siteId: "site_123",
+      installationId: "thi_123",
+    }))
+    const run = io(root, [
+      "link",
+      "--theme",
+      "thm_123",
+      "--site",
+      "site_123",
+      "--installation",
+      "thi_123",
+      "--api-url",
+      "https://sandbox.onvoyant.com",
+      "--org",
+      "org_123",
+      "--json",
+    ])
+
+    expect(
+      await themeCommand(run.ctx, {
+        loadTooling: async () => ({ validateTheme }),
+        validateLink: { validate },
+      }),
+    ).toBe(0)
+    expect(validateTheme).toHaveBeenCalledWith({
+      projectRoot: root,
+      configFile: join(root, "theme.config.ts"),
+    })
+    expect(validate).toHaveBeenCalledWith({
+      project: {
+        projectRoot: root,
+        configPath: join(root, "theme.config.ts"),
+        linkPath: join(root, ".voyant", "theme-project-link.json"),
+      },
+      selectors: {
+        theme: "thm_123",
+        site: "site_123",
+        installation: "thi_123",
+        apiUrl: "https://sandbox.onvoyant.com",
+        organization: "org_123",
+      },
+    })
+    expect(JSON.parse(run.stdout.join(""))).toMatchObject({
+      schemaVersion: "voyant.theme-link-result.v1",
+      link: { themeId: "thm_123", siteId: "site_123" },
+    })
+    expect(readFileSync(join(root, ".voyant", "theme-project-link.json"), "utf8")).not.toContain(
+      "token",
+    )
+  })
+
+  it("does not write a link when the default remote Adapter is unavailable", async () => {
+    writeFileSync(join(root, "theme.config.ts"), "export default {}\n")
+    const run = io(root, ["link", "--theme", "thm_123", "--json"])
+
+    expect(
+      await themeCommand(run.ctx, {
+        loadTooling: async () => ({ validateTheme: async () => validReport() }),
+      }),
+    ).toBe(1)
+    expect(JSON.parse(run.stderr.join(""))).toMatchObject({
+      error: { code: "theme_link_validation_unavailable" },
+    })
+    expect(existsSync(join(root, ".voyant", "theme-project-link.json"))).toBe(false)
+  })
+
+  it("requires explicit selectors deterministically when no local link exists", async () => {
+    writeFileSync(join(root, "theme.config.ts"), "export default {}\n")
+    const run = io(root, ["link", "--json"])
+
+    expect(await themeCommand(run.ctx)).toBe(1)
+    expect(JSON.parse(run.stderr.join(""))).toMatchObject({
+      error: { code: "theme_selector_required" },
+    })
+  })
+
+  it("reports status without remote validation or credentials", async () => {
+    writeFileSync(join(root, "theme.config.ts"), "export default {}\n")
+    mkdirSync(join(root, ".voyant"), { recursive: true })
+    writeFileSync(
+      join(root, ".voyant", "theme-project-link.json"),
+      `${JSON.stringify({
+        schemaVersion: "voyant.theme-project-link.v1",
+        apiUrl: "https://api.voyant.travel",
+        organizationId: "org_123",
+        themeId: "thm_123",
+      })}\n`,
+    )
+    const run = io(root, ["status", "--json"])
+
+    expect(
+      await themeCommand(run.ctx, {
+        loadTooling: async () => ({ validateTheme: async () => validReport() }),
+      }),
+    ).toBe(0)
+    expect(JSON.parse(run.stdout.join(""))).toMatchObject({
+      schemaVersion: "voyant.theme-status.v1",
+      linked: true,
+      link: { themeId: "thm_123" },
+      local: { valid: true },
+      remoteValidation: "not_checked",
+    })
+    expect(run.stdout.join("")).not.toContain("token")
+  })
+
+  it("unlinks locally without loading tooling or invoking remote validation", async () => {
+    writeFileSync(join(root, "theme.config.ts"), "export default {}\n")
+    mkdirSync(join(root, ".voyant"), { recursive: true })
+    writeFileSync(
+      join(root, ".voyant", "theme-project-link.json"),
+      `${JSON.stringify({
+        schemaVersion: "voyant.theme-project-link.v1",
+        apiUrl: "https://api.voyant.travel",
+        organizationId: "org_123",
+        themeId: "thm_123",
+      })}\n`,
+    )
+    const run = io(root, ["unlink", "--json"])
+
+    expect(await themeCommand(run.ctx)).toBe(0)
+    expect(JSON.parse(run.stdout.join(""))).toMatchObject({ removed: true })
+    expect(existsSync(join(root, ".voyant", "theme-project-link.json"))).toBe(false)
   })
 })
 

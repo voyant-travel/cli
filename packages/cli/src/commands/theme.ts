@@ -5,6 +5,17 @@ import { getStringFlag, parseArgs } from "../lib/args.js"
 import { errorMessage, fail, printJson, wantsJson } from "../lib/output.js"
 import { waitForShutdownSignal } from "../lib/shutdown.js"
 import {
+  type ResolvedThemeProject,
+  readThemeProjectLink,
+  removeThemeProjectLink,
+  resolveThemeProject,
+  resolveThemeTargetSelectors,
+  type ThemeProjectLink,
+  ThemeProjectLinkError,
+  type ThemeTargetSelectors,
+  writeThemeProjectLink,
+} from "../lib/theme-project-link.js"
+import {
   assertThemeDevelopmentHandle,
   assertThemeToolingReport,
   loadThemeTooling,
@@ -29,6 +40,16 @@ export interface ThemeCommandDeps {
   loadTooling?: (projectRoot: string) => Promise<ThemeToolingModule>
   scaffold?: typeof scaffoldTheme
   waitForShutdown?: typeof waitForShutdownSignal
+  validateLink?: ThemeProjectLinkValidationAdapter
+}
+
+export interface ThemeProjectLinkValidationInput {
+  project: ResolvedThemeProject
+  selectors: ThemeTargetSelectors
+}
+
+export interface ThemeProjectLinkValidationAdapter {
+  validate(input: ThemeProjectLinkValidationInput): Promise<ThemeProjectLink>
 }
 
 /** `voyant theme <init|check|build|dev>` — project-pinned theme development tooling. */
@@ -55,10 +76,204 @@ export async function themeCommand(
       return runThemeReportCommand(subCtx, "build", "buildTheme", deps)
     case "dev":
       return themeDevCommand(subCtx, deps)
+    case "link":
+      return themeLinkCommand(subCtx, deps)
+    case "unlink":
+      return themeUnlinkCommand(subCtx)
+    case "status":
+      return themeStatusCommand(subCtx, deps)
     default:
       ctx.stderr(`Unknown theme subcommand: ${sub}. Expected "init", "check", "build", or "dev".\n`)
       return 1
   }
+}
+
+async function themeLinkCommand(
+  ctx: CommandContext,
+  deps: ThemeCommandDeps,
+): Promise<CommandResult> {
+  const args = parseArgs(ctx.argv, { booleanFlags: ["json"] })
+  try {
+    const project = await resolveThemeProject({
+      cwd: ctx.cwd,
+      configFile: getStringFlag(args, "config"),
+    })
+    const existing = await readThemeProjectLink(project)
+    const selectors = resolveThemeTargetSelectors(
+      {
+        theme: getStringFlag(args, "theme"),
+        site: getStringFlag(args, "site"),
+        installation: getStringFlag(args, "installation"),
+        apiUrl: getStringFlag(args, "api-url"),
+        organization: getStringFlag(args, "org"),
+      },
+      existing,
+    )
+    if (!selectors.theme) {
+      return fail(
+        ctx,
+        args,
+        "voyant theme link: --theme is required when the project has no existing link.",
+        "theme_selector_required",
+      )
+    }
+    if (selectors.installation && !selectors.site) {
+      return fail(
+        ctx,
+        args,
+        "voyant theme link: --installation requires --site or a linked Site.",
+        "theme_site_selector_required",
+      )
+    }
+
+    const report = await validateLocalTheme(project, deps)
+    if (!report.ok) {
+      if (wantsJson(args)) printJson(ctx, report)
+      else emitHumanReport(ctx, "check", report)
+      return 1
+    }
+
+    const adapter = deps.validateLink ?? unsupportedThemeProjectLinkValidation
+    const link = await adapter.validate({
+      project,
+      selectors: {
+        theme: selectors.theme,
+        site: selectors.site,
+        installation: selectors.installation,
+        apiUrl: selectors.apiUrl,
+        organization: selectors.organization,
+      },
+    })
+    const stored = await writeThemeProjectLink(project, link)
+    const result = {
+      schemaVersion: "voyant.theme-link-result.v1",
+      ok: true,
+      projectRoot: project.projectRoot,
+      linkPath: project.linkPath,
+      link: stored,
+    }
+    if (wantsJson(args)) return printJson(ctx, result)
+    ctx.stdout(`Linked Theme Project to ${stored.themeId}.\n`)
+    if (stored.siteId) ctx.stdout(`Default Site: ${stored.siteId}\n`)
+    if (stored.installationId) ctx.stdout(`Default installation: ${stored.installationId}\n`)
+    return 0
+  } catch (error) {
+    return failThemeProjectCommand(ctx, args, "link", error)
+  }
+}
+
+async function themeUnlinkCommand(ctx: CommandContext): Promise<CommandResult> {
+  const args = parseArgs(ctx.argv, { booleanFlags: ["json"] })
+  try {
+    const project = await resolveThemeProject({
+      cwd: ctx.cwd,
+      configFile: getStringFlag(args, "config"),
+    })
+    const removed = await removeThemeProjectLink(project)
+    const result = {
+      schemaVersion: "voyant.theme-unlink-result.v1",
+      ok: true,
+      removed,
+      projectRoot: project.projectRoot,
+      linkPath: project.linkPath,
+    }
+    if (wantsJson(args)) return printJson(ctx, result)
+    ctx.stdout(
+      removed
+        ? "Removed the local Theme Project Link. No remote resources were changed.\n"
+        : "Theme Project is not linked; no remote resources were changed.\n",
+    )
+    return 0
+  } catch (error) {
+    return failThemeProjectCommand(ctx, args, "unlink", error)
+  }
+}
+
+async function themeStatusCommand(
+  ctx: CommandContext,
+  deps: ThemeCommandDeps,
+): Promise<CommandResult> {
+  const args = parseArgs(ctx.argv, { booleanFlags: ["json"] })
+  try {
+    const project = await resolveThemeProject({
+      cwd: ctx.cwd,
+      configFile: getStringFlag(args, "config"),
+    })
+    const [link, local] = await Promise.all([
+      readThemeProjectLink(project),
+      validateLocalTheme(project, deps),
+    ])
+    const result = {
+      schemaVersion: "voyant.theme-status.v1",
+      projectRoot: project.projectRoot,
+      configPath: project.configPath,
+      linked: link !== null,
+      link,
+      local: {
+        valid: local.ok,
+        diagnostics: local.diagnostics,
+      },
+      remoteValidation: "not_checked" as const,
+    }
+    if (wantsJson(args)) return printJson(ctx, result)
+    ctx.stdout(`Theme Project: ${project.projectRoot}\n`)
+    ctx.stdout(`Local theme: ${local.ok ? "valid" : "invalid"}\n`)
+    if (!link) {
+      ctx.stdout("Remote Theme: not linked\n")
+    } else {
+      ctx.stdout(`Remote Theme: ${link.themeId}\n`)
+      ctx.stdout(`Organization: ${link.organizationId}\n`)
+      if (link.siteId) ctx.stdout(`Default Site: ${link.siteId}\n`)
+      if (link.installationId) ctx.stdout(`Default installation: ${link.installationId}\n`)
+    }
+    return local.ok ? 0 : 1
+  } catch (error) {
+    return failThemeProjectCommand(ctx, args, "status", error)
+  }
+}
+
+async function validateLocalTheme(
+  project: ResolvedThemeProject,
+  deps: ThemeCommandDeps,
+): Promise<ThemeToolingReport> {
+  const tooling = await (deps.loadTooling ?? loadThemeTooling)(project.projectRoot)
+  const validateTheme = requireThemeToolingFunction(tooling, "validateTheme", "check")
+  return assertThemeToolingReport(
+    await validateTheme({ projectRoot: project.projectRoot, configFile: project.configPath }),
+    "check",
+  )
+}
+
+const unsupportedThemeProjectLinkValidation: ThemeProjectLinkValidationAdapter = {
+  async validate() {
+    throw new ThemeProjectLinkCommandError(
+      "theme_link_validation_unavailable",
+      "Connected Theme Project validation is not configured in this CLI build. The platform link endpoint must be available before a link can be written.",
+    )
+  },
+}
+
+class ThemeProjectLinkCommandError extends Error {
+  constructor(
+    readonly code: string,
+    message: string,
+  ) {
+    super(message)
+    this.name = "ThemeProjectLinkCommandError"
+  }
+}
+
+function failThemeProjectCommand(
+  ctx: CommandContext,
+  args: ReturnType<typeof parseArgs>,
+  command: "link" | "unlink" | "status",
+  error: unknown,
+): 1 {
+  const code =
+    error instanceof ThemeProjectLinkError || error instanceof ThemeProjectLinkCommandError
+      ? error.code
+      : `theme_${command}_failed`
+  return fail(ctx, args, `voyant theme ${command}: ${errorMessage(error)}`, code)
 }
 
 async function themeInitCommand(

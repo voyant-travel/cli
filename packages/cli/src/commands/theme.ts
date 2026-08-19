@@ -420,6 +420,7 @@ async function themeDevCommand(
   let cleanup: (() => Promise<void>) | undefined
   let shutdownController: AbortController | undefined
   let revokeSession: (() => Promise<void>) | undefined
+  let closeProjectWatcher: (() => Promise<void>) | undefined
   try {
     const explicitLocal = getBooleanFlag(args, "local")
     const explicitConnectedTarget = ["theme", "site", "installation", "api-url", "org"].some(
@@ -454,6 +455,17 @@ async function themeDevCommand(
           adapter: NonNullable<
             NonNullable<Parameters<typeof developTheme>[0]["runtime"]>
           >["adapter"]
+        }
+      | undefined
+    let connectedLifecycle:
+      | {
+          platform: ThemePlatformAdapter
+          link: ThemeProjectLink & { siteId: string; installationId: string }
+          sessionId: string
+          sessionToken: string
+          contractVersion: string
+          manifest: Record<string, unknown>
+          manifestDigest: `sha256:${string}`
         }
       | undefined
 
@@ -558,10 +570,18 @@ async function themeDevCommand(
               childEnvironment: {
                 [THEME_DEVELOPMENT_CAPABILITY_ENV]: session.sessionToken,
               },
-              dispose: revokeSession,
             }
           },
         },
+      }
+      connectedLifecycle = {
+        platform,
+        link,
+        sessionId,
+        sessionToken: session.sessionToken,
+        contractVersion: definition.contractVersion,
+        manifest,
+        manifestDigest,
       }
     }
     const handle = assertThemeDevelopmentHandle(
@@ -572,12 +592,86 @@ async function themeDevCommand(
         port,
         ...(runtime ? { runtime } : {}),
       }),
+      { requireReload: Boolean(runtime) },
     )
+    const reloadTheme = handle.reload?.bind(handle)
+    if (connectedLifecycle) {
+      if (!reloadTheme) {
+        throw new ThemePlatformError(
+          "theme_sdk_upgrade_required",
+          "The project-installed @voyant-travel/theme cannot reload connected development runtimes. Upgrade it before running `voyant theme dev`.",
+        )
+      }
+      const watchThemeProject = requireThemeToolingFunction(tooling, "watchThemeProject", "dev")
+      const lifecycle = connectedLifecycle
+      const watcher = await watchThemeProject(
+        { projectRoot, configFile: resolvedConfigFile },
+        async (candidate) => {
+          try {
+            const report = assertThemeToolingReport(candidate, "check")
+            if (!report.ok) {
+              ctx.stderr(
+                "voyant theme dev: local manifest is invalid; keeping the last valid remote manifest.\n",
+              )
+              for (const diagnostic of report.diagnostics) emitHumanDiagnostic(ctx, diagnostic)
+              return
+            }
+            const definition = requireValidatedThemeDefinition(report)
+            if (definition.contractVersion !== lifecycle.contractVersion) {
+              emitHumanDiagnostic(ctx, {
+                code: "THEME_CONTRACT_CHANGE_REQUIRES_RESTART",
+                severity: "error",
+                message:
+                  "The Theme contract version cannot change inside an active development session. Restart voyant theme dev.",
+                path: "$.contractVersion",
+              })
+              return
+            }
+            const nextDigest = themeManifestDigest(definition.manifest)
+            if (nextDigest === lifecycle.manifestDigest) return
+            const nextRuntimeValue = await lifecycle.platform.replaceSessionManifest(
+              lifecycle.sessionId,
+              {
+                expectedManifestDigest: lifecycle.manifestDigest,
+                manifest: definition.manifest,
+                manifestDigest: nextDigest,
+              },
+            )
+            const descriptor = parseThemeDevelopmentRuntimeDescriptor(
+              tooling.parseThemeDevelopmentRuntimeDescriptor?.(nextRuntimeValue),
+            )
+            assertRuntimeMatchesTarget(descriptor, lifecycle.link, nextDigest)
+            lifecycle.manifest = definition.manifest
+            lifecycle.manifestDigest = nextDigest
+            await reloadTheme({
+              descriptor,
+              adapter: {
+                id: THEME_DEVELOPMENT_RUNTIME_ADAPTER_ID,
+                prepare: () => ({
+                  childEnvironment: {
+                    [THEME_DEVELOPMENT_CAPABILITY_ENV]: lifecycle.sessionToken,
+                  },
+                }),
+              },
+            })
+            ctx.stderr("voyant theme dev: manifest updated; Astro restarted.\n")
+          } catch (error) {
+            ctx.stderr(`voyant theme dev: live manifest update failed: ${errorMessage(error)}\n`)
+            const diagnostics = themeDiagnosticsFromError(error)
+            if (diagnostics) {
+              for (const diagnostic of diagnostics) emitHumanDiagnostic(ctx, diagnostic)
+            }
+          }
+        },
+      )
+      closeProjectWatcher = watcher.close
+    }
     let closed = false
     cleanup = async () => {
       if (closed) return
       closed = true
       try {
+        await closeProjectWatcher?.()
         await handle.close()
       } finally {
         await revokeSession?.()
@@ -585,9 +679,7 @@ async function themeDevCommand(
     }
     ctx.stderr(`voyant theme dev: ${handle.url}\n`)
     if (runtime) {
-      ctx.stderr(
-        "voyant theme dev: the remote editor manifest is pinned for this session; restart after changing theme.config until live manifest reload is enabled.\n",
-      )
+      ctx.stderr("voyant theme dev: watching the local manifest for connected editor updates.\n")
     }
     shutdownController = new AbortController()
     let shutdownRequested = false

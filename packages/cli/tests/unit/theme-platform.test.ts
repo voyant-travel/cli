@@ -94,6 +94,28 @@ describe("Theme platform Adapter", () => {
     )
   })
 
+  it("CAS-updates a session manifest and returns its replacement runtime", async () => {
+    const runtime = {
+      schemaVersion: "voyant.theme-development-runtime.v1",
+      sessionId: "tds_123",
+      manifestDigest: `sha256:${"c".repeat(64)}`,
+    }
+    mocks.request.mockResolvedValueOnce({ data: { runtime } })
+    const adapter = createThemePlatformAdapter({})
+    const input = {
+      expectedManifestDigest: `sha256:${"b".repeat(64)}` as const,
+      manifest: { id: "bucharest", version: "0.2.0" },
+      manifestDigest: `sha256:${"c".repeat(64)}` as const,
+    }
+
+    await expect(adapter.replaceSessionManifest("tds_123", input)).resolves.toEqual(runtime)
+    expect(mocks.request).toHaveBeenCalledWith(
+      "/cloud/v1/theme-development-sessions/tds_123/manifest",
+      { method: "PUT", body: input },
+    )
+    expect(JSON.stringify(mocks.request.mock.calls)).not.toContain("cloud-secret")
+  })
+
   it("canonicalizes object keys when computing the platform manifest digest", () => {
     expect(themeManifestDigest({ b: [2, 1], a: { d: false, c: null } })).toBe(
       themeManifestDigest({ a: { c: null, d: false }, b: [2, 1] }),

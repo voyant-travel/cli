@@ -23,7 +23,8 @@ import {
   themeCommand,
 } from "../../src/commands/theme.js"
 import { main } from "../../src/index.js"
-import { loadThemeTooling } from "../../src/lib/theme-tooling.js"
+import { themeManifestDigest } from "../../src/lib/theme-platform.js"
+import { loadThemeTooling, type ThemeToolingReport } from "../../src/lib/theme-tooling.js"
 
 const FIXTURE = resolve(
   fileURLToPath(new URL("..", import.meta.url)),
@@ -243,6 +244,8 @@ describe("voyant theme", () => {
     writeLinkedProject(root)
     const capability = "vyd_abcdefghijklmnopqrstuvwxyz234567"
     const revokeSession = vi.fn(async () => {})
+    const replaceSessionManifest = vi.fn()
+    const closeWatcher = vi.fn(async () => {})
     const resolveTarget = vi.fn(async (input) => ({
       schemaVersion: "voyant.theme-project-link.v1" as const,
       apiUrl: "https://sandbox.onvoyant.com",
@@ -270,6 +273,7 @@ describe("voyant theme", () => {
       return {
         url: "http://127.0.0.1:4545",
         wait: () => new Promise<number>(() => {}),
+        reload: async () => {},
         close: async () => prepared?.dispose?.(),
       }
     })
@@ -291,8 +295,14 @@ describe("voyant theme", () => {
           validateTheme: async () => validReport(),
           parseThemeDevelopmentRuntimeDescriptor: (value) => value,
           developTheme,
+          watchThemeProject: async () => ({ close: closeWatcher }),
         }),
-        createPlatformAdapter: () => ({ resolveTarget, createSession, revokeSession }),
+        createPlatformAdapter: () => ({
+          resolveTarget,
+          createSession,
+          replaceSessionManifest,
+          revokeSession,
+        }),
         waitForShutdown: async (cleanup) => cleanup(),
       }),
     ).toBe(0)
@@ -319,11 +329,100 @@ describe("voyant theme", () => {
     expect(childEnvironment).toEqual({ VOYANT_THEME_DEVELOPMENT_CAPABILITY: capability })
     expect(revokeSession).toHaveBeenCalledOnce()
     expect(revokeSession).toHaveBeenCalledWith("tds_session")
+    expect(closeWatcher).toHaveBeenCalledOnce()
     expect(run.stdout.join("") + run.stderr.join("")).not.toContain(capability)
     expect(readFileSync(join(root, ".voyant", "theme-project-link.json"), "utf8")).not.toContain(
       capability,
     )
     expect(JSON.stringify(developTheme.mock.calls)).not.toContain(capability)
+  })
+
+  it("keeps an invalid edit remote-only and CAS-updates then reloads on the next valid edit", async () => {
+    writeFileSync(join(root, "theme.config.ts"), "export default {}\n")
+    writeLinkedProject(root)
+    const capability = "vyd_never_print_this_capability"
+    let onReport: ((report: ThemeToolingReport) => Promise<void>) | undefined
+    const reload = vi.fn(async () => {})
+    const replaceSessionManifest = vi.fn(async (_sessionId, input) =>
+      runtimeDescriptor({
+        themeId: "thm_canonical",
+        siteId: "site_canonical",
+        installationId: "thi_canonical",
+        manifestDigest: input.manifestDigest,
+      }),
+    )
+    const changed = {
+      ...validReport(),
+      theme: {
+        contractVersion: "v1",
+        manifest: { id: "fixture-theme", version: "0.2.0" },
+      },
+    }
+    const run = io(root, ["dev"])
+
+    expect(
+      await themeCommand(run.ctx, {
+        loadTooling: async () => ({
+          validateTheme: async () => validReport(),
+          parseThemeDevelopmentRuntimeDescriptor: (value) => value,
+          developTheme: async () => ({
+            url: "http://127.0.0.1:4321",
+            wait: () => new Promise<number>(() => {}),
+            reload,
+            close: async () => {},
+          }),
+          watchThemeProject: async (_options, callback) => {
+            onReport = callback as typeof onReport
+            return { close: async () => {} }
+          },
+        }),
+        createPlatformAdapter: () => ({
+          resolveTarget: async () => canonicalLink(),
+          createSession: async (input) => ({
+            sessionToken: capability,
+            runtime: runtimeDescriptor({
+              themeId: input.themeId,
+              siteId: input.siteId,
+              installationId: input.installationId,
+              manifestDigest: input.manifestDigest,
+            }),
+          }),
+          replaceSessionManifest,
+          revokeSession: async () => {},
+        }),
+        waitForShutdown: async (cleanup) => {
+          await onReport?.({
+            schemaVersion: "voyant.theme.tooling.v1",
+            ok: false,
+            diagnostics: [
+              {
+                code: "THEME_ROUTE_INVALID",
+                severity: "error",
+                message: "Route is invalid.",
+                path: "$.manifest.routes.0",
+              },
+            ],
+          })
+          expect(replaceSessionManifest).not.toHaveBeenCalled()
+          await onReport?.(changed)
+          await cleanup()
+        },
+      }),
+    ).toBe(0)
+
+    expect(replaceSessionManifest).toHaveBeenCalledOnce()
+    expect(replaceSessionManifest).toHaveBeenCalledWith(
+      "tds_session",
+      expect.objectContaining({
+        expectedManifestDigest: themeManifestDigest({ id: "fixture-theme" }),
+        manifest: changed.theme.manifest,
+        manifestDigest: themeManifestDigest(changed.theme.manifest),
+      }),
+    )
+    expect(reload).toHaveBeenCalledOnce()
+    expect(run.stderr.join("")).toContain("keeping the last valid remote manifest")
+    expect(run.stderr.join("")).toContain("manifest updated; Astro restarted")
+    expect(run.stdout.join("") + run.stderr.join("")).not.toContain(capability)
   })
 
   it("keeps --local fixture development at zero cloud calls", async () => {
@@ -426,6 +525,7 @@ describe("voyant theme", () => {
         createPlatformAdapter: () => ({
           resolveTarget: async () => canonicalLink(),
           createSession: async () => Promise.reject(new Error("session unavailable")),
+          replaceSessionManifest: async () => Promise.reject(new Error("unexpected")),
           revokeSession: async () => {},
         }),
       }),
@@ -649,6 +749,7 @@ describe("voyant theme", () => {
             })
           },
           createSession: async () => Promise.reject(new Error("unexpected")),
+          replaceSessionManifest: async () => Promise.reject(new Error("unexpected")),
           revokeSession: async () => {},
         }),
       }),

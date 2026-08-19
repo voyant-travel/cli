@@ -43,6 +43,12 @@ export interface CreatedThemeDevelopmentSession {
   runtime: ThemeDevelopmentRuntimeDescriptor
 }
 
+export interface ReplaceThemeDevelopmentManifestInput {
+  expectedManifestDigest: `sha256:${string}`
+  manifest: unknown
+  manifestDigest: `sha256:${string}`
+}
+
 export interface ThemePlatformAdapter {
   resolveTarget(input: {
     selectors: ThemeTargetSelectors
@@ -51,6 +57,10 @@ export interface ThemePlatformAdapter {
     manifestDigest: `sha256:${string}`
   }): Promise<ThemeProjectLink & { siteId: string; installationId: string }>
   createSession(input: CreateThemeDevelopmentSessionInput): Promise<CreatedThemeDevelopmentSession>
+  replaceSessionManifest(
+    sessionId: string,
+    input: ReplaceThemeDevelopmentManifestInput,
+  ): Promise<ThemeDevelopmentRuntimeDescriptor>
   revokeSession(sessionId: string): Promise<void>
 }
 
@@ -136,6 +146,19 @@ export function createThemePlatformAdapter(options: ResolveCloudAuthOptions): Th
         sessionToken: response.data.sessionToken,
         runtime: response.data.runtime as unknown as ThemeDevelopmentRuntimeDescriptor,
       }
+    },
+    async replaceSessionManifest(sessionId, input) {
+      const response = await client.transport.request<unknown>(
+        `/cloud/v1/theme-development-sessions/${encodeURIComponent(sessionId)}/manifest`,
+        { method: "PUT", body: input },
+      )
+      if (!isRecord(response) || !isRecord(response.data) || !isRecord(response.data.runtime)) {
+        throw new ThemePlatformError(
+          "theme_development_response_invalid",
+          "The Voyant platform returned an incompatible Theme Development Runtime after updating the manifest.",
+        )
+      }
+      return response.data.runtime as unknown as ThemeDevelopmentRuntimeDescriptor
     },
     async revokeSession(sessionId) {
       await client.transport.request(

@@ -1,5 +1,11 @@
 # @voyant-travel/cli
 
+## 1.3.0
+
+### Minor Changes
+
+- 9e7bbc4: Add canonical Theme Project Links and connected Astro development backed by short-lived Voyant platform sessions, with an explicit `--local` fixture mode. Developers can discover eligible Themes, Sites, and installations with `voyant theme targets` before linking. Valid local manifest edits are CAS-synchronized to the active remote session and safely restart Astro; invalid edits keep the last valid remote manifest and print structured diagnostics.
+
 ## 1.2.0
 
 ### Minor Changes

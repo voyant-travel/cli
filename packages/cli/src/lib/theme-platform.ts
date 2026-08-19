@@ -66,6 +66,7 @@ export interface ThemePlatformAdapter {
 
 export function createThemePlatformAdapter(options: ResolveCloudAuthOptions): ThemePlatformAdapter {
   const auth = resolveCloudAuth(options)
+  const apiPath = (path: string) => withApiBasePath(auth.apiUrl, path)
   const client = createCloudClient({
     token: auth.accessToken,
     apiUrl: auth.apiUrl,
@@ -81,7 +82,7 @@ export function createThemePlatformAdapter(options: ResolveCloudAuthOptions): Th
         )
       }
       const response = await client.transport.request<unknown>(
-        "/cloud/v1/theme-development-targets/resolve",
+        apiPath("/cloud/v1/theme-development-targets/resolve"),
         {
           method: "POST",
           body: {
@@ -127,7 +128,7 @@ export function createThemePlatformAdapter(options: ResolveCloudAuthOptions): Th
     },
     async createSession(input) {
       const response = await client.transport.request<unknown>(
-        "/cloud/v1/theme-development-sessions",
+        apiPath("/cloud/v1/theme-development-sessions"),
         { method: "POST", body: input },
       )
       if (
@@ -149,7 +150,7 @@ export function createThemePlatformAdapter(options: ResolveCloudAuthOptions): Th
     },
     async replaceSessionManifest(sessionId, input) {
       const response = await client.transport.request<unknown>(
-        `/cloud/v1/theme-development-sessions/${encodeURIComponent(sessionId)}/manifest`,
+        apiPath(`/cloud/v1/theme-development-sessions/${encodeURIComponent(sessionId)}/manifest`),
         { method: "PUT", body: input },
       )
       if (!isRecord(response) || !isRecord(response.data) || !isRecord(response.data.runtime)) {
@@ -162,11 +163,16 @@ export function createThemePlatformAdapter(options: ResolveCloudAuthOptions): Th
     },
     async revokeSession(sessionId) {
       await client.transport.request(
-        `/cloud/v1/theme-development-sessions/${encodeURIComponent(sessionId)}`,
+        apiPath(`/cloud/v1/theme-development-sessions/${encodeURIComponent(sessionId)}`),
         { method: "DELETE" },
       )
     },
   }
+}
+
+function withApiBasePath(apiUrl: string, path: string): string {
+  const prefix = new URL(apiUrl).pathname.replace(/\/+$/, "")
+  return `${prefix}${path}`
 }
 
 function invalidTargetResponse(): ThemePlatformError {

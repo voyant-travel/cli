@@ -20,7 +20,7 @@ describe("Theme platform Adapter", () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mocks.resolveCloudAuth.mockReturnValue({
-      apiUrl: "https://sandbox.onvoyant.com",
+      apiUrl: "https://sandbox.onvoyant.com/__voyant/themes-sandbox-api",
       accessToken: "cloud-secret",
       source: "credentials",
       organizationId: "org_123",
@@ -57,17 +57,20 @@ describe("Theme platform Adapter", () => {
       siteId: "site_123",
       installationId: "thi_123",
     })
-    expect(mocks.request).toHaveBeenCalledWith("/cloud/v1/theme-development-targets/resolve", {
-      method: "POST",
-      body: {
-        theme: "bucharest",
-        site: "preview-site",
-        installation: "thi_123",
-        contractVersion: "v1",
-        manifest: { id: "bucharest" },
-        manifestDigest: `sha256:${"a".repeat(64)}`,
+    expect(mocks.request).toHaveBeenCalledWith(
+      "/__voyant/themes-sandbox-api/cloud/v1/theme-development-targets/resolve",
+      {
+        method: "POST",
+        body: {
+          theme: "bucharest",
+          site: "preview-site",
+          installation: "thi_123",
+          contractVersion: "v1",
+          manifest: { id: "bucharest" },
+          manifestDigest: `sha256:${"a".repeat(64)}`,
+        },
       },
-    })
+    )
     expect(JSON.stringify(mocks.request.mock.calls)).not.toContain("cloud-secret")
   })
 
@@ -110,7 +113,7 @@ describe("Theme platform Adapter", () => {
 
     await expect(adapter.replaceSessionManifest("tds_123", input)).resolves.toEqual(runtime)
     expect(mocks.request).toHaveBeenCalledWith(
-      "/cloud/v1/theme-development-sessions/tds_123/manifest",
+      "/__voyant/themes-sandbox-api/cloud/v1/theme-development-sessions/tds_123/manifest",
       { method: "PUT", body: input },
     )
     expect(JSON.stringify(mocks.request.mock.calls)).not.toContain("cloud-secret")

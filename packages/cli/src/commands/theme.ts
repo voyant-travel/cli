@@ -39,6 +39,7 @@ import type { CommandContext, CommandResult } from "../types.js"
 
 const DEFAULT_HOST = "127.0.0.1"
 const DEFAULT_PORT = 4321
+const EDITOR_HANDOFF_TTL_SECONDS = 300
 export const THEME_SDK_SCAFFOLD_VERSION = "1.6.0"
 export const THEME_ASTRO_SCAFFOLD_VERSION = "1.0.2"
 export const ASTRO_SCAFFOLD_VERSION = "7.1.6"
@@ -719,6 +720,13 @@ async function themeDevCommand(
         },
       )
       closeProjectWatcher = watcher.close
+    }
+    if (connectedLifecycle && !wantsJson(args)) {
+      const handoff = await connectedLifecycle.platform.createEditorHandoff(
+        connectedLifecycle.sessionId,
+        { expiresInSeconds: EDITOR_HANDOFF_TTL_SECONDS },
+      )
+      ctx.stdout(`Theme editor (one-time link): ${handoff.handoffUrl}\n`)
     }
     let closed = false
     cleanup = async () => {

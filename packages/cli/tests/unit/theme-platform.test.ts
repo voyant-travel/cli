@@ -141,6 +141,38 @@ describe("Theme platform Adapter", () => {
     )
   })
 
+  it("creates a strict one-time editor handoff without exposing cloud credentials", async () => {
+    const handoff = {
+      handoffUrl: `https://sandbox.onvoyant.com/dash/theme-development/connect#code=vye_${"a".repeat(52)}`,
+      expiresAt: "2026-08-19T12:05:00.000Z",
+    }
+    mocks.request.mockResolvedValueOnce(handoff)
+    const adapter = createThemePlatformAdapter({})
+
+    await expect(
+      adapter.createEditorHandoff("tds_123", { expiresInSeconds: 300 }),
+    ).resolves.toEqual(handoff)
+    expect(mocks.request).toHaveBeenCalledWith(
+      "/__voyant/themes-sandbox-api/cloud/v1/theme-development-sessions/tds_123/editor-handoffs",
+      { method: "POST", body: { expiresInSeconds: 300 } },
+    )
+    expect(JSON.stringify(mocks.request.mock.calls)).not.toContain("cloud-secret")
+  })
+
+  it("rejects malformed or unexpectedly wrapped editor handoffs", async () => {
+    mocks.request.mockResolvedValueOnce({
+      data: {
+        handoffUrl: `https://sandbox.onvoyant.com/connect#code=vye_${"a".repeat(52)}`,
+        expiresAt: "2026-08-19T12:05:00.000Z",
+      },
+    })
+    const adapter = createThemePlatformAdapter({})
+
+    await expect(
+      adapter.createEditorHandoff("tds_123", { expiresInSeconds: 300 }),
+    ).rejects.toMatchObject({ code: "theme_editor_handoff_response_invalid" })
+  })
+
   it("CAS-updates a session manifest and returns its replacement runtime", async () => {
     const runtime = {
       schemaVersion: "voyant.theme-development-runtime.v1",

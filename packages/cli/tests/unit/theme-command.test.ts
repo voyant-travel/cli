@@ -263,6 +263,11 @@ describe("voyant theme", () => {
         manifestDigest: input.manifestDigest,
       }),
     }))
+    const handoffUrl = `https://sandbox.onvoyant.com/dash/theme-development/connect#code=vye_${"a".repeat(52)}`
+    const createEditorHandoff = vi.fn(async () => ({
+      handoffUrl,
+      expiresAt: "2026-08-19T12:05:00.000Z",
+    }))
     const childEnvironment: Record<string, string> = {}
     const developTheme = vi.fn(async (options) => {
       const prepared = await options.runtime?.adapter.prepare({
@@ -301,6 +306,7 @@ describe("voyant theme", () => {
           listTargets: async () => ({ organizationId: "org_canonical", themes: [], sites: [] }),
           resolveTarget,
           createSession,
+          createEditorHandoff,
           replaceSessionManifest,
           revokeSession,
         }),
@@ -330,6 +336,9 @@ describe("voyant theme", () => {
     expect(childEnvironment).toEqual({ VOYANT_THEME_DEVELOPMENT_CAPABILITY: capability })
     expect(revokeSession).toHaveBeenCalledOnce()
     expect(revokeSession).toHaveBeenCalledWith("tds_session")
+    expect(createEditorHandoff).toHaveBeenCalledWith("tds_session", { expiresInSeconds: 300 })
+    expect(run.stdout.join("")).toContain(handoffUrl)
+    expect(run.stderr.join("")).not.toContain(handoffUrl)
     expect(closeWatcher).toHaveBeenCalledOnce()
     expect(run.stdout.join("") + run.stderr.join("")).not.toContain(capability)
     expect(readFileSync(join(root, ".voyant", "theme-project-link.json"), "utf8")).not.toContain(
@@ -388,6 +397,10 @@ describe("voyant theme", () => {
               installationId: input.installationId,
               manifestDigest: input.manifestDigest,
             }),
+          }),
+          createEditorHandoff: async () => ({
+            handoffUrl: `https://sandbox.onvoyant.com/connect#code=vye_${"a".repeat(52)}`,
+            expiresAt: "2026-08-19T12:05:00.000Z",
           }),
           replaceSessionManifest,
           revokeSession: async () => {},
@@ -528,6 +541,7 @@ describe("voyant theme", () => {
           listTargets: async () => ({ organizationId: "org_canonical", themes: [], sites: [] }),
           resolveTarget: async () => canonicalLink(),
           createSession: async () => Promise.reject(new Error("session unavailable")),
+          createEditorHandoff: async () => Promise.reject(new Error("unexpected")),
           replaceSessionManifest: async () => Promise.reject(new Error("unexpected")),
           revokeSession: async () => {},
         }),
@@ -751,6 +765,7 @@ describe("voyant theme", () => {
           listTargets,
           resolveTarget: async () => Promise.reject(new Error("unexpected")),
           createSession: async () => Promise.reject(new Error("unexpected")),
+          createEditorHandoff: async () => Promise.reject(new Error("unexpected")),
           replaceSessionManifest: async () => Promise.reject(new Error("unexpected")),
           revokeSession: async () => Promise.reject(new Error("unexpected")),
         }),
@@ -772,6 +787,7 @@ describe("voyant theme", () => {
           listTargets: async () => ({ organizationId: "org_123", themes: [], sites: [] }),
           resolveTarget: async () => Promise.reject(new Error("unexpected")),
           createSession: async () => Promise.reject(new Error("unexpected")),
+          createEditorHandoff: async () => Promise.reject(new Error("unexpected")),
           replaceSessionManifest: async () => Promise.reject(new Error("unexpected")),
           revokeSession: async () => Promise.reject(new Error("unexpected")),
         }),
@@ -810,6 +826,7 @@ describe("voyant theme", () => {
             })
           },
           createSession: async () => Promise.reject(new Error("unexpected")),
+          createEditorHandoff: async () => Promise.reject(new Error("unexpected")),
           replaceSessionManifest: async () => Promise.reject(new Error("unexpected")),
           revokeSession: async () => {},
         }),

@@ -43,6 +43,11 @@ export interface CreatedThemeDevelopmentSession {
   runtime: ThemeDevelopmentRuntimeDescriptor
 }
 
+export interface CreatedThemeEditorHandoff {
+  handoffUrl: string
+  expiresAt: string
+}
+
 export interface ReplaceThemeDevelopmentManifestInput {
   expectedManifestDigest: `sha256:${string}`
   manifest: unknown
@@ -85,6 +90,10 @@ export interface ThemePlatformAdapter {
     manifestDigest: `sha256:${string}`
   }): Promise<ThemeProjectLink & { siteId: string; installationId: string }>
   createSession(input: CreateThemeDevelopmentSessionInput): Promise<CreatedThemeDevelopmentSession>
+  createEditorHandoff(
+    sessionId: string,
+    input: { expiresInSeconds: number },
+  ): Promise<CreatedThemeEditorHandoff>
   replaceSessionManifest(
     sessionId: string,
     input: ReplaceThemeDevelopmentManifestInput,
@@ -187,6 +196,21 @@ export function createThemePlatformAdapter(options: ResolveCloudAuthOptions): Th
         runtime: response.runtime as unknown as ThemeDevelopmentRuntimeDescriptor,
       }
     },
+    async createEditorHandoff(sessionId, input) {
+      const response = await client.transport.request<unknown>(
+        apiPath(
+          `/cloud/v1/theme-development-sessions/${encodeURIComponent(sessionId)}/editor-handoffs`,
+        ),
+        { method: "POST", body: input },
+      )
+      if (!isThemeEditorHandoff(response)) {
+        throw new ThemePlatformError(
+          "theme_editor_handoff_response_invalid",
+          "The Voyant platform returned an invalid Theme editor handoff.",
+        )
+      }
+      return response
+    },
     async replaceSessionManifest(sessionId, input) {
       const response = await client.transport.request<unknown>(
         apiPath(`/cloud/v1/theme-development-sessions/${encodeURIComponent(sessionId)}/manifest`),
@@ -252,6 +276,30 @@ function isThemeDevelopmentTargets(value: unknown): value is ThemeDevelopmentTar
         ),
     )
   )
+}
+
+function isThemeEditorHandoff(value: unknown): value is CreatedThemeEditorHandoff {
+  if (
+    !isRecord(value) ||
+    Object.keys(value).some((key) => key !== "handoffUrl" && key !== "expiresAt") ||
+    typeof value.handoffUrl !== "string" ||
+    typeof value.expiresAt !== "string" ||
+    !Number.isFinite(Date.parse(value.expiresAt))
+  ) {
+    return false
+  }
+  try {
+    const url = new URL(value.handoffUrl)
+    return (
+      url.protocol === "https:" &&
+      !url.username &&
+      !url.password &&
+      !url.search &&
+      url.hash.startsWith("#code=vye_")
+    )
+  } catch {
+    return false
+  }
 }
 
 export function themeManifestDigest(manifest: unknown): `sha256:${string}` {

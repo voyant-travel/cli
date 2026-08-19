@@ -1,0 +1,11 @@
+{
+  "mode": "pre",
+  "tag": "canary",
+  "initialVersions": {
+    "@voyant-travel/cli": "1.2.0",
+    "@voyant-travel/cli-tsconfig": "0.0.0"
+  },
+  "changesets": [
+    "calm-themes-link"
+  ]
+}

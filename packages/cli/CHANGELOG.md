@@ -1,5 +1,11 @@
 # @voyant-travel/cli
 
+## 1.3.0-canary.0
+
+### Minor Changes
+
+- 31f36f0: Add canonical Theme Project Links and connected Astro development backed by short-lived Voyant platform sessions, with an explicit `--local` fixture mode. Valid local manifest edits are CAS-synchronized to the active remote session and safely restart Astro; invalid edits keep the last valid remote manifest and print structured diagnostics.
+
 ## 1.2.0
 
 ### Minor Changes

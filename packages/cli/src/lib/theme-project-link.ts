@@ -22,18 +22,17 @@ const platformApiUrlSchema = z
     const url = new URL(value)
     if (
       (url.protocol !== "https:" && url.protocol !== "http:") ||
-      url.username ||
-      url.password ||
-      url.search ||
-      url.hash ||
-      url.pathname !== "/"
+      hasUrlUserInfo(value) ||
+      value.includes("?") ||
+      value.includes("#")
     ) {
       context.addIssue({
         code: "custom",
-        message: "apiUrl must be a credential-free HTTP(S) origin",
+        message: "apiUrl must be a credential-free HTTP(S) base URL without query or fragment",
       })
     }
   })
+  .transform(normalizePlatformApiUrl)
 
 const themeProjectLinkSchema = z
   .object({
@@ -56,6 +55,22 @@ const themeProjectLinkSchema = z
   })
 
 export type ThemeProjectLink = z.infer<typeof themeProjectLinkSchema>
+
+function normalizePlatformApiUrl(value: string): string {
+  const url = new URL(value)
+  const pathname = url.pathname.replace(/\/+$/, "")
+  return `${url.origin}${pathname}`
+}
+
+function hasUrlUserInfo(value: string): boolean {
+  const authorityStart = value.indexOf("://") + 3
+  const authorityEnd = value.slice(authorityStart).search(/[/?#]/)
+  const authority =
+    authorityEnd === -1
+      ? value.slice(authorityStart)
+      : value.slice(authorityStart, authorityStart + authorityEnd)
+  return authority.includes("@")
+}
 
 export type ThemeProjectLinkErrorCode =
   | "theme_project_not_found"

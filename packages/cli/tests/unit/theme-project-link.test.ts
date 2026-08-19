@@ -66,6 +66,22 @@ describe("Theme Project Link", () => {
     await expect(readThemeProjectLink(project)).resolves.toBeNull()
   })
 
+  it("persists a normalized sandbox API base path", async () => {
+    const project = await resolveThemeProject({ cwd: root })
+    const input = {
+      ...validLink(),
+      apiUrl: "https://sandbox.onvoyant.com/__voyant/themes-sandbox-api///",
+    }
+    const expected = {
+      ...input,
+      apiUrl: "https://sandbox.onvoyant.com/__voyant/themes-sandbox-api",
+    }
+
+    await expect(writeThemeProjectLink(project, input)).resolves.toEqual(expected)
+    await expect(readThemeProjectLink(project)).resolves.toEqual(expected)
+    expect(JSON.parse(readFileSync(project.linkPath, "utf8"))).toEqual(expected)
+  })
+
   it("rejects unknown fields so credentials cannot be persisted accidentally", () => {
     expect(() => parseThemeProjectLink({ ...validLink(), token: "secret" })).toThrowError(
       ThemeProjectLinkError,
@@ -80,12 +96,14 @@ describe("Theme Project Link", () => {
   it("rejects API URLs that could persist credentials or request metadata", () => {
     for (const apiUrl of [
       "https://token@example.com",
+      "https://@example.com",
       "https://example.com?token=secret",
-      "https://example.com/path",
+      "https://example.com/path?",
+      "https://example.com/path#fragment",
       "ftp://example.com",
     ]) {
       expect(() => parseThemeProjectLink({ ...validLink(), apiUrl })).toThrow(
-        /credential-free HTTP\(S\) origin/,
+        /credential-free HTTP\(S\) base URL without query or fragment/,
       )
     }
   })

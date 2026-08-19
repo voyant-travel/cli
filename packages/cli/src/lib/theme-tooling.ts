@@ -24,13 +24,39 @@ export interface ThemeToolingReport {
   schemaVersion: "voyant.theme.tooling.v1"
   ok: boolean
   diagnostics: readonly ThemeDiagnostic[]
+  theme?: {
+    contractVersion?: unknown
+    manifest?: unknown
+    [key: string]: unknown
+  }
   [key: string]: unknown
+}
+
+export interface ThemeRuntimeReference {
+  descriptor: unknown
+  adapter: {
+    id: string
+    prepare(context: { descriptor: unknown; projectRoot: string; signal?: AbortSignal }):
+      | {
+          childEnvironment?: Readonly<Record<string, string>>
+          dispose?(): void | Promise<void>
+        }
+      | Promise<{
+          childEnvironment?: Readonly<Record<string, string>>
+          dispose?(): void | Promise<void>
+        }>
+  }
 }
 
 export interface ThemeDevelopmentHandle {
   url: string
   close(): Promise<void>
   wait(): Promise<number>
+  reload?(runtime: ThemeRuntimeReference): Promise<void>
+}
+
+export interface ThemeProjectWatchHandle {
+  close(): Promise<void>
 }
 
 export interface ThemeToolingOptions {
@@ -39,6 +65,7 @@ export interface ThemeToolingOptions {
 }
 
 export interface ThemeToolingModule {
+  parseThemeDevelopmentRuntimeDescriptor?: (value: unknown) => unknown
   validateTheme?: (options: ThemeToolingOptions) => Promise<ThemeToolingReport>
   buildTheme?: (
     options: ThemeToolingOptions & { output?: "inherit" | "silent" },
@@ -47,15 +74,21 @@ export interface ThemeToolingModule {
     options: ThemeToolingOptions & {
       host: string
       port: number
+      runtime?: ThemeRuntimeReference
     },
   ) => Promise<ThemeDevelopmentHandle>
+  watchThemeProject?: (
+    options: ThemeToolingOptions & { debounceMs?: number },
+    onReport: (report: ThemeToolingReport) => void | Promise<void>,
+  ) => Promise<ThemeProjectWatchHandle>
 }
 
 /** Resolve theme tooling from the theme project so its pinned SDK controls behavior. */
 export async function loadThemeTooling(projectRoot: string): Promise<ThemeToolingModule> {
   const projectRequire = createRequire(resolve(projectRoot, "package.json"))
+  let themeEntry: string
   try {
-    projectRequire.resolve(THEME_PACKAGE)
+    themeEntry = projectRequire.resolve(THEME_PACKAGE)
   } catch {
     throw new Error(
       `${THEME_PACKAGE} is not installed in the current theme project. Install the project's dependencies before running theme commands.`,
@@ -71,11 +104,19 @@ export async function loadThemeTooling(projectRoot: string): Promise<ThemeToolin
     )
   }
 
-  if (/\.[cm]?tsx?$/.test(toolingEntry)) {
-    return loadProjectModule<ThemeToolingModule>(toolingEntry)
+  const [tooling, theme] = await Promise.all([
+    importProjectModule<ThemeToolingModule>(toolingEntry),
+    importProjectModule<ThemeToolingModule>(themeEntry),
+  ])
+  return {
+    ...tooling,
+    parseThemeDevelopmentRuntimeDescriptor: theme.parseThemeDevelopmentRuntimeDescriptor,
   }
+}
 
-  return import(pathToFileURL(toolingEntry).href) as Promise<ThemeToolingModule>
+async function importProjectModule<T>(entry: string): Promise<T> {
+  if (/\.[cm]?tsx?$/.test(entry)) return loadProjectModule<T>(entry)
+  return import(pathToFileURL(entry).href) as Promise<T>
 }
 
 export function requireThemeToolingFunction<K extends keyof ThemeToolingModule>(
@@ -103,12 +144,16 @@ export function assertThemeToolingReport(value: unknown, command: string): Theme
   return value as ThemeToolingReport
 }
 
-export function assertThemeDevelopmentHandle(value: unknown): ThemeDevelopmentHandle {
+export function assertThemeDevelopmentHandle(
+  value: unknown,
+  options: { requireReload?: boolean } = {},
+): ThemeDevelopmentHandle {
   if (
     !isRecord(value) ||
     typeof value.url !== "string" ||
     typeof value.close !== "function" ||
-    typeof value.wait !== "function"
+    typeof value.wait !== "function" ||
+    (options.requireReload && typeof value.reload !== "function")
   ) {
     throw new Error(
       `The project-installed ${TOOLING_PACKAGE} returned an invalid development handle. Upgrade ${THEME_PACKAGE} before running \`voyant theme dev\`.`,

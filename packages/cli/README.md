@@ -27,6 +27,8 @@ voyant --help
 | `voyant theme check [--json]` | Validate a theme with its project-installed `@voyant-travel/theme/tooling` |
 | `voyant theme build [--json]` | Build a theme with its project-installed SDK tooling |
 | `voyant theme dev [--host <h>] [--port <n>]` | Start the theme SDK development server |
+| `voyant theme targets [--json]` | List remote Themes, Sites, and installations available for connected development |
+| `voyant theme link --theme <id\|slug> --site <id\|slug> --installation <id>` | Link the local Theme project to a canonical remote development target |
 | `voyant develop [--host <h>] [--port <n>]` | Keep `.voyant/` refreshed and run the full app through project-installed runtime tooling |
 | `voyant start [--port <n>] [--probe]` | Start the project through its installed `@voyant-travel/runtime` |
 | `voyant build [--json]` | Refresh `.voyant/` and build the full app through project-installed runtime tooling |

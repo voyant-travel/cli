@@ -27,6 +27,45 @@ describe("Theme platform Adapter", () => {
     })
   })
 
+  it("lists development targets through the API base path without exposing credentials", async () => {
+    const data = {
+      organizationId: "org_123",
+      themes: [{ id: "thm_123", slug: "bucharest", name: "Bucharest", status: "active" }],
+      sites: [
+        {
+          id: "site_123",
+          slug: "preview",
+          platformHostname: "preview.sandbox.onvoyant.com",
+          status: "active",
+          installations: [{ id: "thi_123", themeId: "thm_123", archived: false }],
+        },
+      ],
+    }
+    mocks.request.mockResolvedValueOnce({ data })
+    const adapter = createThemePlatformAdapter({ org: "org_123" })
+
+    await expect(adapter.listTargets()).resolves.toEqual(data)
+    expect(mocks.request).toHaveBeenCalledWith(
+      "/__voyant/themes-sandbox-api/cloud/v1/theme-development-targets",
+    )
+    expect(JSON.stringify(mocks.request.mock.calls)).not.toContain("cloud-secret")
+  })
+
+  it("rejects malformed development target discovery responses", async () => {
+    mocks.request.mockResolvedValueOnce({
+      data: {
+        organizationId: "org_123",
+        themes: [],
+        sites: [{ id: "site_123", installations: "not-an-array" }],
+      },
+    })
+    const adapter = createThemePlatformAdapter({})
+
+    await expect(adapter.listTargets()).rejects.toMatchObject({
+      code: "theme_targets_response_invalid",
+    })
+  })
+
   it("resolves selectors to canonical IDs without putting credentials in the request", async () => {
     mocks.request.mockResolvedValueOnce({
       data: {

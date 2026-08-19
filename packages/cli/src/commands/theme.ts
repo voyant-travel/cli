@@ -9,6 +9,7 @@ import {
   parseThemeDevelopmentRuntimeDescriptor,
   THEME_DEVELOPMENT_CAPABILITY_ENV,
   THEME_DEVELOPMENT_RUNTIME_ADAPTER_ID,
+  type ThemeDevelopmentTargets,
   type ThemePlatformAdapter,
   ThemePlatformError,
   themeManifestDigest,
@@ -91,16 +92,69 @@ export async function themeCommand(
       return themeDevCommand(subCtx, deps)
     case "link":
       return themeLinkCommand(subCtx, deps)
+    case "targets":
+      return themeTargetsCommand(subCtx, deps)
     case "unlink":
       return themeUnlinkCommand(subCtx)
     case "status":
       return themeStatusCommand(subCtx, deps)
     default:
       ctx.stderr(
-        `Unknown theme subcommand: ${sub}. Expected "init", "check", "build", "dev", "link", "unlink", or "status".\n`,
+        `Unknown theme subcommand: ${sub}. Expected "init", "check", "build", "dev", "targets", "link", "unlink", or "status".\n`,
       )
       return 1
   }
+}
+
+async function themeTargetsCommand(
+  ctx: CommandContext,
+  deps: ThemeCommandDeps,
+): Promise<CommandResult> {
+  const args = parseArgs(ctx.argv, { booleanFlags: ["json"] })
+  try {
+    const platform = (deps.createPlatformAdapter ?? createThemePlatformAdapter)({
+      token: getStringFlag(args, "token"),
+      apiUrl: getStringFlag(args, "api-url"),
+      org: getStringFlag(args, "org"),
+    })
+    const targets = await platform.listTargets()
+    const result = {
+      schemaVersion: "voyant.theme-development-targets.v1",
+      ...targets,
+    }
+    if (wantsJson(args)) return printJson(ctx, result)
+    emitThemeDevelopmentTargets(ctx, targets)
+    return 0
+  } catch (error) {
+    return failThemeProjectCommand(ctx, args, "targets", error)
+  }
+}
+
+function emitThemeDevelopmentTargets(ctx: CommandContext, targets: ThemeDevelopmentTargets): void {
+  ctx.stdout(`Organization: ${targets.organizationId}\n`)
+  ctx.stdout("\nThemes:\n")
+  if (targets.themes.length === 0) ctx.stdout("  No Themes are available.\n")
+  for (const theme of targets.themes) {
+    ctx.stdout(`  ${theme.slug} (${theme.id}) — ${theme.name} [${theme.status}]\n`)
+  }
+
+  ctx.stdout("\nSites and installations:\n")
+  if (targets.sites.length === 0) ctx.stdout("  No Sites are available.\n")
+  const themesById = new Map(targets.themes.map((theme) => [theme.id, theme]))
+  for (const site of targets.sites) {
+    ctx.stdout(`  ${site.slug} (${site.id}) — ${site.platformHostname} [${site.status}]\n`)
+    if (site.installations.length === 0) ctx.stdout("    No Theme installations.\n")
+    for (const installation of site.installations) {
+      const theme = themesById.get(installation.themeId)
+      const themeSelector = theme ? `${theme.slug} (${theme.id})` : installation.themeId
+      const state = installation.archived ? "archived" : "active"
+      ctx.stdout(`    ${installation.id} — ${themeSelector} [${state}]\n`)
+    }
+  }
+
+  ctx.stdout(
+    "\nLink with: voyant theme link --theme <id|slug> --site <id|slug> --installation <id>\n",
+  )
 }
 
 async function themeLinkCommand(
@@ -128,7 +182,7 @@ async function themeLinkCommand(
       return fail(
         ctx,
         args,
-        "voyant theme link: --theme is required when the project has no existing link.",
+        "voyant theme link: --theme is required when the project has no existing link. Run `voyant theme targets` to discover available targets.",
         "theme_selector_required",
       )
     }
@@ -339,7 +393,7 @@ function platformLinkValidationAdapter(
 function failThemeProjectCommand(
   ctx: CommandContext,
   args: ReturnType<typeof parseArgs>,
-  command: "link" | "unlink" | "status",
+  command: "targets" | "link" | "unlink" | "status",
   error: unknown,
 ): 1 {
   const code =
@@ -936,6 +990,7 @@ usage:
   voyant theme check [--config <path>] [--json]
   voyant theme build [--config <path>] [--json]
   voyant theme dev [--local] [--config <path>] [--host <host>] [--port <n>]
+  voyant theme targets [--json]
   voyant theme link --theme <id|slug> --site <id|slug> --installation <id> [--json]
   voyant theme unlink [--json]
   voyant theme status [--local] [--json]
@@ -945,6 +1000,7 @@ commands:
   check   Validate the theme and print deterministic diagnostics
   build   Validate and build the theme
   dev     Start connected development (use --local for fixture-only mode)
+  targets List Themes, Sites, and installations available for development
   link    Link this project to a canonical remote Theme target
   unlink  Remove only the local Theme Project Link
   status  Validate the local Theme and linked remote target

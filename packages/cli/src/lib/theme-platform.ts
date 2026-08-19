@@ -49,7 +49,35 @@ export interface ReplaceThemeDevelopmentManifestInput {
   manifestDigest: `sha256:${string}`
 }
 
+export interface ThemeDevelopmentTargetTheme {
+  id: string
+  slug: string
+  name: string
+  status: string
+}
+
+export interface ThemeDevelopmentTargetInstallation {
+  id: string
+  themeId: string
+  archived: boolean
+}
+
+export interface ThemeDevelopmentTargetSite {
+  id: string
+  slug: string
+  platformHostname: string
+  status: string
+  installations: ThemeDevelopmentTargetInstallation[]
+}
+
+export interface ThemeDevelopmentTargets {
+  organizationId: string
+  themes: ThemeDevelopmentTargetTheme[]
+  sites: ThemeDevelopmentTargetSite[]
+}
+
 export interface ThemePlatformAdapter {
+  listTargets(): Promise<ThemeDevelopmentTargets>
   resolveTarget(input: {
     selectors: ThemeTargetSelectors
     contractVersion: string
@@ -74,6 +102,18 @@ export function createThemePlatformAdapter(options: ResolveCloudAuthOptions): Th
   })
 
   return {
+    async listTargets() {
+      const response = await client.transport.request<unknown>(
+        apiPath("/cloud/v1/theme-development-targets"),
+      )
+      if (!isRecord(response) || !isThemeDevelopmentTargets(response.data)) {
+        throw new ThemePlatformError(
+          "theme_targets_response_invalid",
+          "The Voyant platform returned an invalid Theme development targets response.",
+        )
+      }
+      return response.data
+    },
     async resolveTarget(input) {
       if (!input.selectors.theme || !input.selectors.site || !input.selectors.installation) {
         throw new ThemePlatformError(
@@ -179,6 +219,39 @@ function invalidTargetResponse(): ThemePlatformError {
   return new ThemePlatformError(
     "theme_target_response_invalid",
     "The Voyant platform returned an invalid Theme development target response.",
+  )
+}
+
+function isThemeDevelopmentTargets(value: unknown): value is ThemeDevelopmentTargets {
+  return (
+    isRecord(value) &&
+    typeof value.organizationId === "string" &&
+    Array.isArray(value.themes) &&
+    value.themes.every(
+      (theme) =>
+        isRecord(theme) &&
+        typeof theme.id === "string" &&
+        typeof theme.slug === "string" &&
+        typeof theme.name === "string" &&
+        typeof theme.status === "string",
+    ) &&
+    Array.isArray(value.sites) &&
+    value.sites.every(
+      (site) =>
+        isRecord(site) &&
+        typeof site.id === "string" &&
+        typeof site.slug === "string" &&
+        typeof site.platformHostname === "string" &&
+        typeof site.status === "string" &&
+        Array.isArray(site.installations) &&
+        site.installations.every(
+          (installation) =>
+            isRecord(installation) &&
+            typeof installation.id === "string" &&
+            typeof installation.themeId === "string" &&
+            typeof installation.archived === "boolean",
+        ),
+    )
   )
 }
 

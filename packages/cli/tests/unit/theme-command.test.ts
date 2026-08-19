@@ -298,6 +298,7 @@ describe("voyant theme", () => {
           watchThemeProject: async () => ({ close: closeWatcher }),
         }),
         createPlatformAdapter: () => ({
+          listTargets: async () => ({ organizationId: "org_canonical", themes: [], sites: [] }),
           resolveTarget,
           createSession,
           replaceSessionManifest,
@@ -377,6 +378,7 @@ describe("voyant theme", () => {
           },
         }),
         createPlatformAdapter: () => ({
+          listTargets: async () => ({ organizationId: "org_canonical", themes: [], sites: [] }),
           resolveTarget: async () => canonicalLink(),
           createSession: async (input) => ({
             sessionToken: capability,
@@ -523,6 +525,7 @@ describe("voyant theme", () => {
           developTheme,
         }),
         createPlatformAdapter: () => ({
+          listTargets: async () => ({ organizationId: "org_canonical", themes: [], sites: [] }),
           resolveTarget: async () => canonicalLink(),
           createSession: async () => Promise.reject(new Error("session unavailable")),
           replaceSessionManifest: async () => Promise.reject(new Error("unexpected")),
@@ -726,6 +729,63 @@ describe("voyant theme", () => {
     )
   })
 
+  it("lists actionable development targets without reading or writing the local project", async () => {
+    const listTargets = vi.fn(async () => ({
+      organizationId: "org_123",
+      themes: [{ id: "thm_123", slug: "bucharest", name: "Bucharest", status: "active" }],
+      sites: [
+        {
+          id: "site_123",
+          slug: "preview",
+          platformHostname: "preview.sandbox.onvoyant.com",
+          status: "active",
+          installations: [{ id: "thi_123", themeId: "thm_123", archived: false }],
+        },
+      ],
+    }))
+    const run = io(root, ["targets", "--api-url", "https://sandbox.onvoyant.com"])
+
+    expect(
+      await themeCommand(run.ctx, {
+        createPlatformAdapter: () => ({
+          listTargets,
+          resolveTarget: async () => Promise.reject(new Error("unexpected")),
+          createSession: async () => Promise.reject(new Error("unexpected")),
+          replaceSessionManifest: async () => Promise.reject(new Error("unexpected")),
+          revokeSession: async () => Promise.reject(new Error("unexpected")),
+        }),
+      }),
+    ).toBe(0)
+    expect(listTargets).toHaveBeenCalledOnce()
+    expect(run.stdout.join("")).toContain("bucharest (thm_123) — Bucharest [active]")
+    expect(run.stdout.join("")).toContain("thi_123 — bucharest (thm_123) [active]")
+    expect(run.stdout.join("")).toContain("voyant theme link --theme <id|slug>")
+    expect(existsSync(join(root, ".voyant"))).toBe(false)
+  })
+
+  it("prints development targets as a stable JSON envelope", async () => {
+    const run = io(root, ["targets", "--json"])
+
+    expect(
+      await themeCommand(run.ctx, {
+        createPlatformAdapter: () => ({
+          listTargets: async () => ({ organizationId: "org_123", themes: [], sites: [] }),
+          resolveTarget: async () => Promise.reject(new Error("unexpected")),
+          createSession: async () => Promise.reject(new Error("unexpected")),
+          replaceSessionManifest: async () => Promise.reject(new Error("unexpected")),
+          revokeSession: async () => Promise.reject(new Error("unexpected")),
+        }),
+      }),
+    ).toBe(0)
+    expect(JSON.parse(run.stdout.join(""))).toEqual({
+      schemaVersion: "voyant.theme-development-targets.v1",
+      organizationId: "org_123",
+      themes: [],
+      sites: [],
+    })
+    expect(run.stderr).toEqual([])
+  })
+
   it("does not write a link when remote target resolution fails", async () => {
     writeFileSync(join(root, "theme.config.ts"), "export default {}\n")
     const run = io(root, [
@@ -743,6 +803,7 @@ describe("voyant theme", () => {
       await themeCommand(run.ctx, {
         loadTooling: async () => ({ validateTheme: async () => validReport() }),
         createPlatformAdapter: () => ({
+          listTargets: async () => ({ organizationId: "org_123", themes: [], sites: [] }),
           resolveTarget: async () => {
             throw Object.assign(new Error("Target resolver is not deployed."), {
               code: "theme_target_resolver_unavailable",

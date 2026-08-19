@@ -77,6 +77,19 @@ describe("Theme Project Link", () => {
     }
   })
 
+  it("rejects API URLs that could persist credentials or request metadata", () => {
+    for (const apiUrl of [
+      "https://token@example.com",
+      "https://example.com?token=secret",
+      "https://example.com/path",
+      "ftp://example.com",
+    ]) {
+      expect(() => parseThemeProjectLink({ ...validLink(), apiUrl })).toThrow(
+        /credential-free HTTP\(S\) origin/,
+      )
+    }
+  })
+
   it("rejects malformed JSON and inconsistent installation state", async () => {
     const project = await resolveThemeProject({ cwd: root })
     mkdirSync(dirname(project.linkPath), { recursive: true })

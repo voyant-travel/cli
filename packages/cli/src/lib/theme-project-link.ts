@@ -15,10 +15,30 @@ const THEME_CONFIG_FILENAMES = [
   "theme.config.cjs",
 ] as const
 
+const platformApiUrlSchema = z
+  .string()
+  .url()
+  .superRefine((value, context) => {
+    const url = new URL(value)
+    if (
+      (url.protocol !== "https:" && url.protocol !== "http:") ||
+      url.username ||
+      url.password ||
+      url.search ||
+      url.hash ||
+      url.pathname !== "/"
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "apiUrl must be a credential-free HTTP(S) origin",
+      })
+    }
+  })
+
 const themeProjectLinkSchema = z
   .object({
     schemaVersion: z.literal(THEME_PROJECT_LINK_SCHEMA_VERSION),
-    apiUrl: z.string().url(),
+    apiUrl: platformApiUrlSchema,
     organizationId: z.string().trim().min(1),
     themeId: z.string().trim().min(1),
     siteId: z.string().trim().min(1).optional(),

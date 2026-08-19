@@ -1,5 +1,5 @@
 ---
-"@voyant-travel/cli": patch
+"@voyant-travel/cli": minor
 ---
 
-Add the gated internal foundation for non-secret local Theme Project Links and future connected theme development.
+Add canonical Theme Project Links and connected Astro development backed by short-lived Voyant platform sessions, with an explicit `--local` fixture mode.

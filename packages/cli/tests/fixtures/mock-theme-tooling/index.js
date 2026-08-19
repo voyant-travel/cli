@@ -6,7 +6,7 @@ export function checkThemeDefinition(theme) {
   const contexts = new Set(theme?.manifest?.routes?.map((route) => route.context))
   const contentRoutes = theme?.manifest?.routes?.filter((route) => route.context === "content")
   const valid =
-    theme?.contractVersion === "v1alpha4" &&
+    theme?.contractVersion === "v1" &&
     typeof theme?.manifest?.id === "string" &&
     typeof theme?.manifest?.name === "string" &&
     typeof theme?.manifest?.version === "string" &&

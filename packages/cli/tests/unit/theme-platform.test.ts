@@ -41,7 +41,7 @@ describe("Theme platform Adapter", () => {
         },
       ],
     }
-    mocks.request.mockResolvedValueOnce({ data })
+    mocks.request.mockResolvedValueOnce(data)
     const adapter = createThemePlatformAdapter({ org: "org_123" })
 
     await expect(adapter.listTargets()).resolves.toEqual(data)
@@ -53,11 +53,20 @@ describe("Theme platform Adapter", () => {
 
   it("rejects malformed development target discovery responses", async () => {
     mocks.request.mockResolvedValueOnce({
-      data: {
-        organizationId: "org_123",
-        themes: [],
-        sites: [{ id: "site_123", installations: "not-an-array" }],
-      },
+      organizationId: "org_123",
+      themes: [],
+      sites: [{ id: "site_123", installations: "not-an-array" }],
+    })
+    const adapter = createThemePlatformAdapter({})
+
+    await expect(adapter.listTargets()).rejects.toMatchObject({
+      code: "theme_targets_response_invalid",
+    })
+  })
+
+  it("rejects a wrapped target response instead of masking an SDK contract mismatch", async () => {
+    mocks.request.mockResolvedValueOnce({
+      data: { organizationId: "org_123", themes: [], sites: [] },
     })
     const adapter = createThemePlatformAdapter({})
 
@@ -68,13 +77,11 @@ describe("Theme platform Adapter", () => {
 
   it("resolves selectors to canonical IDs without putting credentials in the request", async () => {
     mocks.request.mockResolvedValueOnce({
-      data: {
-        organizationId: "org_123",
-        themeId: "thm_123",
-        siteId: "site_123",
-        installationId: "thi_123",
-        manifestDigest: `sha256:${"a".repeat(64)}`,
-      },
+      organizationId: "org_123",
+      themeId: "thm_123",
+      siteId: "site_123",
+      installationId: "thi_123",
+      manifestDigest: `sha256:${"a".repeat(64)}`,
     })
     const adapter = createThemePlatformAdapter({ org: "org_123" })
 
@@ -115,9 +122,7 @@ describe("Theme platform Adapter", () => {
 
   it("accepts only the session envelope and leaves descriptor semantics to the pinned SDK", async () => {
     const runtime = { schemaVersion: "voyant.theme-development-runtime.v1", sessionId: "tds_123" }
-    mocks.request.mockResolvedValueOnce({
-      data: { sessionToken: "vyd_private", runtime },
-    })
+    mocks.request.mockResolvedValueOnce({ sessionToken: "vyd_private", runtime })
     const adapter = createThemePlatformAdapter({})
 
     await expect(
@@ -142,7 +147,7 @@ describe("Theme platform Adapter", () => {
       sessionId: "tds_123",
       manifestDigest: `sha256:${"c".repeat(64)}`,
     }
-    mocks.request.mockResolvedValueOnce({ data: { runtime } })
+    mocks.request.mockResolvedValueOnce({ runtime })
     const adapter = createThemePlatformAdapter({})
     const input = {
       expectedManifestDigest: `sha256:${"b".repeat(64)}` as const,

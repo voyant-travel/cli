@@ -106,13 +106,13 @@ export function createThemePlatformAdapter(options: ResolveCloudAuthOptions): Th
       const response = await client.transport.request<unknown>(
         apiPath("/cloud/v1/theme-development-targets"),
       )
-      if (!isRecord(response) || !isThemeDevelopmentTargets(response.data)) {
+      if (!isThemeDevelopmentTargets(response)) {
         throw new ThemePlatformError(
           "theme_targets_response_invalid",
           "The Voyant platform returned an invalid Theme development targets response.",
         )
       }
-      return response.data
+      return response
     },
     async resolveTarget(input) {
       if (!input.selectors.theme || !input.selectors.site || !input.selectors.installation) {
@@ -135,8 +135,8 @@ export function createThemePlatformAdapter(options: ResolveCloudAuthOptions): Th
           },
         },
       )
-      if (!isRecord(response) || !isRecord(response.data)) throw invalidTargetResponse()
-      const target = response.data
+      if (!isRecord(response)) throw invalidTargetResponse()
+      const target = response
       if (
         typeof target.organizationId !== "string" ||
         typeof target.themeId !== "string" ||
@@ -173,10 +173,9 @@ export function createThemePlatformAdapter(options: ResolveCloudAuthOptions): Th
       )
       if (
         !isRecord(response) ||
-        !isRecord(response.data) ||
-        typeof response.data.sessionToken !== "string" ||
-        !response.data.sessionToken.startsWith("vyd_") ||
-        !isRecord(response.data.runtime)
+        typeof response.sessionToken !== "string" ||
+        !response.sessionToken.startsWith("vyd_") ||
+        !isRecord(response.runtime)
       ) {
         throw new ThemePlatformError(
           "theme_development_response_invalid",
@@ -184,8 +183,8 @@ export function createThemePlatformAdapter(options: ResolveCloudAuthOptions): Th
         )
       }
       return {
-        sessionToken: response.data.sessionToken,
-        runtime: response.data.runtime as unknown as ThemeDevelopmentRuntimeDescriptor,
+        sessionToken: response.sessionToken,
+        runtime: response.runtime as unknown as ThemeDevelopmentRuntimeDescriptor,
       }
     },
     async replaceSessionManifest(sessionId, input) {
@@ -193,13 +192,13 @@ export function createThemePlatformAdapter(options: ResolveCloudAuthOptions): Th
         apiPath(`/cloud/v1/theme-development-sessions/${encodeURIComponent(sessionId)}/manifest`),
         { method: "PUT", body: input },
       )
-      if (!isRecord(response) || !isRecord(response.data) || !isRecord(response.data.runtime)) {
+      if (!isRecord(response) || !isRecord(response.runtime)) {
         throw new ThemePlatformError(
           "theme_development_response_invalid",
           "The Voyant platform returned an incompatible Theme Development Runtime after updating the manifest.",
         )
       }
-      return response.data.runtime as unknown as ThemeDevelopmentRuntimeDescriptor
+      return response.runtime as unknown as ThemeDevelopmentRuntimeDescriptor
     },
     async revokeSession(sessionId) {
       await client.transport.request(
